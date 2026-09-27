@@ -26,6 +26,8 @@ class TestCreateInvoice(unittest.TestCase):
 		self.stub("build_change_legs", return_value=([], 0.0))
 		self.stub("invoice_currency_of", return_value="USD")
 		self.stub("get_currency_precision", return_value=2)
+		# The caller's right to sell has its own tests below.
+		self.stub("resolve_pos_profile")
 
 	def stub(self, name, **kwargs):
 		"""Patch `name` in the xpos.api.invoices namespace for the current test."""
@@ -42,6 +44,26 @@ class TestCreateInvoice(unittest.TestCase):
 			invoices.create_invoice('{"customer": "C1", "items": []}')
 
 		mock_frappe.throw.assert_called()
+
+	@patch("xpos.api.invoices.frappe")
+	def test_create_invoice_refuses_a_user_who_may_not_create_invoices(self, mock_frappe):
+		"""The invoice is inserted with ignore_permissions, so create rights are checked first."""
+		mock_frappe.has_permission.side_effect = PermissionError("not permitted")
+
+		with self.assertRaises(PermissionError):
+			invoices.create_invoice('{"pos_profile": "POS-1", "customer": "C1", "items": [{"item_code": "I"}]}')
+
+		mock_frappe.get_doc.assert_not_called()
+
+	@patch("xpos.api.invoices.frappe")
+	def test_create_invoice_refuses_a_user_without_a_seat_at_the_register(self, mock_frappe):
+		"""A user who may sell, but is not assigned to this POS Profile, cannot sell through it."""
+		with patch("xpos.api.invoices.resolve_pos_profile", side_effect=PermissionError("not assigned")) as seat:
+			with self.assertRaises(PermissionError):
+				invoices.create_invoice('{"pos_profile": "POS-1", "customer": "C1", "items": [{"item_code": "I"}]}')
+
+		seat.assert_called_once_with("POS-1")
+		mock_frappe.get_doc.assert_not_called()
 
 	@patch("xpos.api.invoices.frappe")
 	def test_create_invoice_requires_customer(self, mock_frappe):
