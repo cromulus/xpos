@@ -67,14 +67,21 @@ def sale_uoms(item_codes: list[str]) -> dict[str, tuple[str, float]]:
 	else the stock UOM; the counter must do the same, or a feed stocked in
 	pounds and sold by the 50 lb bag rings up as pounds at the bag price. A
 	sales UOM with no conversion row on the item falls back to the stock UOM:
-	``get_conversion_factor`` would answer 1.0 there and sell a Bag as 1 lb.
+	``get_conversion_factor`` would answer 1.0 there and sell a Bag as 1 lb. A
+	serial number is one stock unit, so a serialised item sells its stock unit.
 	"""
 	if not item_codes:
 		return {}
 	items = frappe.get_all(
-		"Item", filters={"name": ["in", list(item_codes)]}, fields=["name", "stock_uom", "sales_uom"]
+		"Item",
+		filters={"name": ["in", list(item_codes)]},
+		fields=["name", "stock_uom", "sales_uom", "has_serial_no"],
 	)
-	wanted = [item for item in items if item.sales_uom and item.sales_uom != item.stock_uom]
+	wanted = [
+		item
+		for item in items
+		if item.sales_uom and item.sales_uom != item.stock_uom and not item.has_serial_no
+	]
 	factors = {}
 	if wanted:
 		rows = frappe.get_all(

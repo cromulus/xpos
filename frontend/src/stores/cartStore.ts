@@ -395,7 +395,8 @@ export const useCartStore = defineStore("cart", () => {
 			return { allowed: true };
 		}
 
-		const uomLabel = item.uom || item.stock_uom;
+		// actual_qty is in the stock unit.
+		const uomLabel = item.stock_uom || item.uom;
 		const actualQty = item.actual_qty ?? 0;
 		if (actualQty <= 0) {
 			return { allowed: false, message: __("{0} is out of stock", [item.item_name]) };
@@ -529,8 +530,13 @@ export const useCartStore = defineStore("cart", () => {
 			return { success: false, message: stockCheck.message };
 		}
 
+		// Same item in the same unit only: a Bag tap must not add 1 lb to a Pound line.
 		const existing = items.value.find(
-			(i: CartItem) => i.item_code === item.item_code && !i.serial_no && !i.batch_no,
+			(i: CartItem) =>
+				i.item_code === item.item_code &&
+				i.uom === (item.uom || item.stock_uom) &&
+				!i.serial_no &&
+				!i.batch_no,
 		);
 
 		if (existing) {

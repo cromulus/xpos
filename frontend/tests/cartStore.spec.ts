@@ -100,6 +100,24 @@ describe("Cart Store", () => {
 			expect(cartStore.items[0].conversion_factor).toBe(50);
 		});
 
+		it("a Bag tap does not add a pound to a Pound line of the same item", () => {
+			const cartStore = useCartStore();
+			cartStore.items.push({ ...makeItem({ item_code: "COW FEED", uom: "Pound", qty: 100, rate: 0.18 }) });
+			cartStore.addItem({
+				item_code: "COW FEED",
+				item_name: "Cow Feed",
+				rate: 9,
+				uom: "Bag",
+				stock_uom: "Pound",
+				conversion_factor: 50,
+			});
+
+			expect(cartStore.items.map((line) => [line.uom, line.qty])).toEqual([
+				["Pound", 100],
+				["Bag", 1],
+			]);
+		});
+
 		it("should calculate item count correctly", () => {
 			const cartStore = useCartStore();
 			cartStore.items = [
