@@ -58,8 +58,8 @@
 					class="flex-[0.9] flex items-center gap-3 p-2.5 rounded-lg border transition-all duration-200 group"
 					:class="
 						cartStore.isReturnMode
-							? 'border-border bg-muted/50 cursor-not-allowed dark:border-muted-foreground/30'
-							: 'border-dashed border-border hover:border-primary hover:bg-primary/5 dark:border-muted-foreground/30 dark:hover:border-primary'
+							? 'border-border bg-muted/50 cursor-not-allowed'
+							: 'border-dashed border-border hover:border-primary hover:bg-primary/5 dark:hover:border-primary'
 					"
 					:disabled="cartStore.isReturnMode"
 				>
@@ -113,7 +113,7 @@
 				</button>
 				<button
 					v-if="cartStore.customer && !cartStore.isReturnMode"
-					class="flex-[0.1] flex items-center gap-3 p-4 rounded-lg border transition-all duration-200 group border-dashed border-border hover:border-primary hover:bg-primary/5 dark:border-muted-foreground/30 dark:hover:border-primary"
+					class="flex-[0.1] flex items-center gap-3 p-4 rounded-lg border transition-all duration-200 group border-dashed border-border hover:border-primary hover:bg-primary/5 dark:hover:border-primary"
 					@click.stop="handleEditCustomer"
 					title="Edit Customer"
 				>
@@ -169,7 +169,7 @@
 					<ShoppingCart class="w-10 h-10 text-muted-foreground/40" />
 				</div>
 				<p class="text-sm font-medium text-muted-foreground">{{ __("Cart is empty") }}</p>
-				<p class="text-xs text-muted-foreground/70 mt-1">
+				<p class="text-xs text-muted-foreground mt-1">
 					{{ __("Click on items to add them here") }}
 				</p>
 			</div>

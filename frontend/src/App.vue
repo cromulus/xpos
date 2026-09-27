@@ -328,7 +328,8 @@ function handleToggleErrorInspector() {
 	showErrorInspector.value = !showErrorInspector.value;
 }
 
-const theme = ref<"light" | "dark" | "system">("system");
+// New browsers start in the high-contrast dark theme (keep index*.html in step).
+const theme = ref<"light" | "dark" | "system">("dark");
 const systemPrefersDark = ref(window.matchMedia("(prefers-color-scheme: dark)").matches);
 
 const isDark = computed(() => {

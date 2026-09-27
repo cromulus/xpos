@@ -68,7 +68,7 @@
 						<div class="text-center py-3">
 							<p
 								class="text-xs font-medium mb-0.5"
-								:class="cartStore.isReturnMode ? 'text-amber-600' : 'text-primary/70'"
+								:class="cartStore.isReturnMode ? 'text-amber-600' : 'text-primary'"
 							>
 								{{ cartStore.isReturnMode ? __("Refund Amount") : __("Amount Due") }}
 							</p>

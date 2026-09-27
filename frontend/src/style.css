@@ -4,49 +4,64 @@
 @config "../tailwind.config.js";
 
 @layer base {
+	/*
+	 * Theme tokens (shadcn-style HSL triples, consumed by tailwind.config.js).
+	 *
+	 * Mule City runs the till all day and is used to a VT100 terminal, so both
+	 * palettes are tuned for contrast (WCAG AAA body text, >= 4.5:1 muted text,
+	 * >= 3:1 borders/inputs) rather than softness. Change tokens here, not
+	 * colours in components.
+	 */
 	:root {
 		--background: 0 0% 100%;
-		--foreground: 222.2 84% 4.9%;
+		--foreground: 222 47% 6%;
 		--card: 0 0% 100%;
-		--card-foreground: 222.2 84% 4.9%;
+		--card-foreground: 222 47% 6%;
 		--popover: 0 0% 100%;
-		--popover-foreground: 222.2 84% 4.9%;
-		--primary: 243 75% 59%;
-		--primary-foreground: 210 40% 98%;
-		--secondary: 210 40% 96.1%;
-		--secondary-foreground: 222.2 47.4% 11.2%;
-		--muted: 210 40% 96.1%;
-		--muted-foreground: 215.4 16.3% 46.9%;
-		--accent: 210 40% 96.1%;
-		--accent-foreground: 222.2 47.4% 11.2%;
-		--destructive: 0 84.2% 60.2%;
-		--destructive-foreground: 210 40% 98%;
-		--border: 214.3 31.8% 91.4%;
-		--input: 214.3 31.8% 91.4%;
-		--ring: 243 75% 59%;
+		--popover-foreground: 222 47% 6%;
+		--primary: 243 75% 52%;
+		--primary-foreground: 0 0% 100%;
+		--secondary: 214 32% 93%;
+		--secondary-foreground: 222 47% 8%;
+		--muted: 214 32% 94%;
+		--muted-foreground: 215 25% 30%;
+		--accent: 214 32% 90%;
+		--accent-foreground: 222 47% 8%;
+		--destructive: 0 75% 42%;
+		--destructive-foreground: 0 0% 100%;
+		--border: 215 16% 58%;
+		--input: 215 18% 50%;
+		--ring: 243 75% 52%;
 		--radius: 0.625rem;
 	}
 
+	/*
+	 * Dark = "terminal": near-black ground, near-white text with a faint
+	 * phosphor tint, P1-style green for primary/focus. Green rather than amber
+	 * because amber is already the app's return/refund cue (CartSummary,
+	 * PaymentDialog) and a sale must never look like a refund. Bright fills
+	 * carry near-black text, the way a terminal shows reverse video.
+	 */
 	.dark {
-		--background: 224 71% 4%;
-		--foreground: 210 40% 98%;
-		--card: 224 50% 10%;
-		--card-foreground: 210 40% 98%;
-		--popover: 224 50% 10%;
-		--popover-foreground: 210 40% 98%;
-		--primary: 243 75% 65%;
-		--primary-foreground: 210 40% 98%;
-		--secondary: 217 33% 17.5%;
-		--secondary-foreground: 210 40% 98%;
-		--muted: 217 33% 15%;
-		--muted-foreground: 215 20% 70%;
-		--accent: 217 33% 20%;
-		--accent-foreground: 210 40% 98%;
-		--destructive: 0 62.8% 55%;
-		--destructive-foreground: 210 40% 98%;
-		--border: 215 25% 27%;
-		--input: 215 25% 27%;
-		--ring: 243 75% 65%;
+		--background: 120 8% 4%;
+		--foreground: 100 30% 92%;
+		--card: 120 6% 7%;
+		--card-foreground: 100 30% 92%;
+		--popover: 120 6% 7%;
+		--popover-foreground: 100 30% 92%;
+		--primary: 130 50% 50%;
+		--primary-foreground: 120 10% 4%;
+		--secondary: 120 5% 15%;
+		--secondary-foreground: 100 30% 92%;
+		--muted: 120 5% 12%;
+		--muted-foreground: 100 10% 72%;
+		--accent: 120 6% 18%;
+		--accent-foreground: 100 30% 94%;
+		--destructive: 0 90% 62%;
+		--destructive-foreground: 120 10% 4%;
+		--border: 100 6% 38%;
+		--input: 100 8% 46%;
+		--ring: 130 50% 50%;
 	}
 
 	* {
@@ -55,6 +70,8 @@
 
 	body {
 		@apply bg-background text-foreground font-sans;
+		/* Prices and quantities line up in columns. */
+		font-variant-numeric: tabular-nums;
 	}
 
 	button:not(:disabled),

@@ -71,10 +71,10 @@
 				{{ item.item_code }}
 			</p>
 			<div class="flex items-center justify-between">
-				<span class="text-sm font-bold text-primary dark:text-primary-foreground tabular-nums">
+				<span class="text-sm font-bold text-primary dark:text-foreground tabular-nums">
 					{{ money(item.rate) }}
 				</span>
-				<span class="text-[10px] text-muted-foreground dark:text-muted-foreground/90 truncate ms-1">
+				<span class="text-[10px] text-muted-foreground truncate ms-1">
 					{{ item.item_group }}
 				</span>
 			</div>
