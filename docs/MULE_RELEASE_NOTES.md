@@ -1,5 +1,25 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc3 (2026-09-27)
+
+mc2 plus these changes (Bill, 2026-09-27):
+
+- `b53d2d0` high-contrast theme, closer to the VT100 terminal the counter is
+  used to (not full xterm): a near-black dark theme with a green accent,
+  stronger borders and focus rings, and darker muted text in light. Dark is the
+  default for new browsers; a browser that already opened XPOS keeps its saved
+  theme until someone clicks the Theme toggle. Colour tokens in `style.css` plus
+  a few hard-coded colours on the sale screen, cart and payment dialog.
+  Generic; could go upstream as an option.
+- The Purchasing menu (Purchase Order, Purchase Invoice, Stock Receiving) shows
+  only when the POS Profile allows purchase orders / receipts, and those routes
+  plus Expenses and Bank Drops send you back to the POS when the profile
+  doesn't allow them (keyboard shortcuts and typed URLs included). Generic;
+  upstreamable.
+
+Verified: vitest 420/420, `vue-tsc` clean, `yarn build` OK. No server code
+changed since mc2.
+
 ## mule-v2.10.1-mc2 (2026-09-27)
 
 mc1 plus these changes:
