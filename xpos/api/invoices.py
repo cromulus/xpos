@@ -1898,7 +1898,8 @@ def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: st
 			"batch_no": getattr(item, "batch_no", None),
 		}
 		for item in doc.items
-		if not getattr(item, "is_offer", False)
+		# A row with no Item (a descriptive line on an imported ticket) cannot be sold.
+		if item.item_code and not getattr(item, "is_offer", False)
 	]
 
 	items = []
