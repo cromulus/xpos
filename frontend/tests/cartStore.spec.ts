@@ -78,6 +78,28 @@ describe("Cart Store", () => {
 			expect(cartStore.items[0].item_code).toBe("ITEM-001");
 		});
 
+		it("adds a tile in the item's sale unit: two taps are 2 Bag of a pound-stocked feed", () => {
+			// get_pos_items returns the Item's Default Sales UOM and its conversion factor.
+			const cartStore = useCartStore();
+			const tile = {
+				item_code: "COW FEED",
+				item_name: "Cow Feed",
+				rate: 9,
+				uom: "Bag",
+				stock_uom: "Pound",
+				conversion_factor: 50,
+				actual_qty: 500,
+				is_stock_item: true,
+			};
+
+			expect(cartStore.addItem(tile).success).toBe(true);
+			expect(cartStore.addItem(tile).success).toBe(true);
+
+			const [line] = cartStore.getInvoiceData("POS-PROFILE-1", "SHIFT-1").items;
+			expect([line.qty, line.uom, line.rate]).toEqual([2, "Bag", 9]);
+			expect(cartStore.items[0].conversion_factor).toBe(50);
+		});
+
 		it("should calculate item count correctly", () => {
 			const cartStore = useCartStore();
 			cartStore.items = [
