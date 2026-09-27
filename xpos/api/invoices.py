@@ -779,8 +779,9 @@ def preview_invoice(data: str | dict):
 	"""
 	from mulecity_erpnext.pos_workspace import preview_cart
 
-	frappe.has_permission(get_invoice_type(), "create", throw=True)
 	data = dict(json.loads(data) if isinstance(data, str) else data)
+	# Only someone who may sell at this register may price a sale here.
+	check_may_sell(data.get("pos_profile"))
 	# A saved draft is previewed as itself (its header kept); nothing is written,
 	# no local id is claimed and no tender is recorded.
 	for key in ("local_id", "payments", "pos_change_legs", "change_amount"):
