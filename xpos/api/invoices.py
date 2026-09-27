@@ -10,6 +10,7 @@ from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 from frappe.utils.background_jobs import enqueue
 
 from xpos.api.exchange import get_currency_precision
+from xpos.api.items import selling_price
 from xpos.api.tender import build_change_legs, build_tender_legs, invoice_currency_of
 from xpos.api.utilities import can_recall_other_shift_tabs, get_invoice_type, is_pos_cashier
 
@@ -42,6 +43,19 @@ def _get_item_rate_precision():
 		return p if p >= 0 else 3
 	except Exception:
 		return 3
+
+
+def _item_field_precision(invoice_doc, fieldname):
+	"""Decimals an invoice line keeps for a rate-like field.
+
+	A site may give the line's rate and discount amount more decimals than
+	float_precision (per-pound feed prices use 9); rounding the cart's values to
+	fewer changes the price, e.g. a $0.005/lb discount becomes $0.01.
+	"""
+	from frappe.model.meta import get_field_precision
+
+	child = frappe.get_meta(invoice_doc.meta.get_field("items").options)
+	return max(_get_item_rate_precision(), cint(get_field_precision(child.get_field(fieldname))))
 
 
 def _resolve_invoice_posting_date(pos, requested_posting_date=None, current_posting_date=None):
@@ -434,7 +448,8 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 			"write_off_cost_center"
 		)
 
-	rate_precision = _get_item_rate_precision()
+	rate_precision = _item_field_precision(invoice_doc, "rate")
+	discount_precision = _item_field_precision(invoice_doc, "discount_amount")
 
 	from xpos.api.auth import user_has_pos_permission
 
@@ -448,17 +463,17 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 		if not allow_rate_change and not is_free_item:
 			price_list = pos.get("selling_price_list")
 			if price_list:
-				price_list_rate = frappe.db.get_value(
-					"Item Price",
-					{
-						"item_code": item_data.get("item_code"),
-						"price_list": price_list,
-						"selling": 1,
-						"uom": item_data.get("uom") or item_data.get("stock_uom"),
-					},
-					"price_list_rate",
+				# The price this customer pays today in this UOM, as ERPNext chooses it.
+				price_list_rate = selling_price(
+					item_data.get("item_code"),
+					price_list,
+					uom=item_data.get("uom") or item_data.get("stock_uom"),
+					conversion_factor=flt(item_data.get("conversion_factor")) or None,
+					customer=invoice_doc.customer,
+					transaction_date=invoice_doc.posting_date,
+					qty=abs(item_qty),
 				)
-				if price_list_rate is not None and flt(price_list_rate, rate_precision) != item_rate:
+				if price_list_rate and flt(price_list_rate, rate_precision) != item_rate:
 					item_rate = flt(price_list_rate, rate_precision)
 
 		item = invoice_doc.append("items", {})
@@ -491,7 +506,7 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 						pass
 
 		disc_pct = flt(item_data.get("discount_percentage", 0), 2)
-		disc_amt = flt(item_data.get("discount_amount", 0), 2)
+		disc_amt = flt(item_data.get("discount_amount", 0), discount_precision)
 
 		max_discount = flt(pos.get("max_discount_percentage_allowed", 0))
 		if max_discount > 0 and disc_pct > max_discount and not is_free_item:
@@ -869,12 +884,13 @@ def save_draft_invoice(data: str | dict):
 
 	apply_sales_person(invoice_doc, data.get("sales_person") or None, pos_profile)
 
-	rate_precision = _get_item_rate_precision()
+	rate_precision = _item_field_precision(invoice_doc, "rate")
+	discount_precision = _item_field_precision(invoice_doc, "discount_amount")
 
 	for item_data in items:
 		item_rate = flt(item_data.get("rate", 0), rate_precision)
 		disc_pct = flt(item_data.get("discount_percentage", 0), 2)
-		disc_amt = flt(item_data.get("discount_amount", 0), 2)
+		disc_amt = flt(item_data.get("discount_amount", 0), discount_precision)
 
 		item = invoice_doc.append("items", {})
 		item.item_code = item_data.get("item_code")
@@ -1838,8 +1854,12 @@ def search_invoices_for_repeat(
 def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: str = "Sales Invoice"):
 	"""Fetch invoice details for repeating/duplicating into a new cart.
 
-	Returns item details with current stock prices so the repeated
-	invoice uses up-to-date pricing.
+	Quantities and units come from the invoice; prices are today's, chosen the
+	way ERPNext chooses them for this customer, date and UOM (``selling_price``),
+	never an old rate or the first Item Price row found. Pricing Rules are
+	applied by the cart afterwards, so discounts start at zero. A site adapter
+	(Mule City: a past custom mix becomes its one mix Item) may replace the
+	lines through ``_mule_repeat_lines``.
 	"""
 	if not frappe.db.exists(doctype, invoice_name):
 		alt = "POS Invoice" if doctype == "Sales Invoice" else "Sales Invoice"
@@ -1849,40 +1869,48 @@ def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: st
 			frappe.throw(_("Invoice {0} not found").format(invoice_name))
 
 	doc = frappe.get_doc(doctype, invoice_name)
+	doc.check_permission("read")
 
 	price_list = None
 	if pos_profile:
 		price_list = frappe.db.get_value("POS Profile", pos_profile, "selling_price_list")
 
-	items = []
-	for item in doc.items:
-		if getattr(item, "is_offer", False):
-			continue
-
-		item_data = {
+	lines = _mule_repeat_lines(doc, price_list) or [
+		{
 			"item_code": item.item_code,
 			"item_name": item.item_name,
 			"qty": abs(item.qty),
-			"rate": item.rate,
 			"uom": item.uom,
 			"stock_uom": item.stock_uom or item.uom,
+			"conversion_factor": flt(item.conversion_factor) or 1,
+			"rate": item.rate,
 			"discount_percentage": flt(item.discount_percentage),
 			"discount_amount": flt(item.discount_amount),
 			"serial_no": getattr(item, "serial_no", None),
 			"batch_no": getattr(item, "batch_no", None),
 		}
+		for item in doc.items
+		if not getattr(item, "is_offer", False)
+	]
 
+	items = []
+	for item_data in lines:
 		if price_list:
-			current_rate = frappe.db.get_value(
-				"Item Price",
-				{"item_code": item.item_code, "price_list": price_list, "selling": 1},
-				"price_list_rate",
+			current_rate = selling_price(
+				item_data["item_code"],
+				price_list,
+				uom=item_data.get("uom"),
+				conversion_factor=item_data.get("conversion_factor"),
+				customer=doc.customer,
+				qty=item_data.get("qty"),
 			)
-			if current_rate is not None:
-				item_data["rate"] = flt(current_rate)
-				item_data["discount_percentage"] = 0
-				item_data["discount_amount"] = 0
-
+			if current_rate:
+				item_data.update(
+					rate=current_rate,
+					price_list_rate=current_rate,
+					discount_percentage=0,
+					discount_amount=0,
+				)
 		items.append(item_data)
 
 	return {
@@ -1894,3 +1922,11 @@ def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: st
 		"currency": doc.currency,
 		"items": items,
 	}
+
+
+def _mule_repeat_lines(doc, price_list):
+	"""Mule City: a past custom-mix ticket repeats as its one mix Item line (plus
+	non-mix lines), resolved by the Mule adapter; None for any other ticket."""
+	from mulecity_erpnext.pos_workspace import repeat_mix_lines
+
+	return repeat_mix_lines(doc, price_list)
