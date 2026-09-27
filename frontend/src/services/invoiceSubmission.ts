@@ -13,7 +13,12 @@ export async function submitDurableInvoice<T>(
 	receipt: ReceiptSnapshot,
 	send: () => Promise<T>,
 ): Promise<T> {
-	const pending = await addPendingInvoice({ data, receipt, customer_name: data.customer, grand_total: receipt.grand_total });
+	const pending = await addPendingInvoice({
+		data,
+		receipt,
+		customer_name: data.customer,
+		grand_total: receipt.grand_total,
+	});
 	window.dispatchEvent(new Event("xpos:pending-invoices-changed"));
 	let result: T;
 	try {

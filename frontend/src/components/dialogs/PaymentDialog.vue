@@ -1406,8 +1406,11 @@ async function submitPayment(withPrint: boolean = true) {
 
 		cartStore.clearAll();
 		if (withPrint && result.name) {
-			try { await printInvoice(result.name); }
-			catch { showError(__("Sale saved. Receipt printing failed; use Reprint.")); }
+			try {
+				await printInvoice(result.name);
+			} catch {
+				showError(__("Sale saved. Receipt printing failed; use Reprint."));
+			}
 		}
 	} catch (error: unknown) {
 		if (isTabConflictError(error)) {
