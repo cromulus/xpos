@@ -344,7 +344,10 @@ async function selectUOM(uom: string, cf: number): Promise<void> {
 		);
 		uomRate.value = fetched > 0 ? fetched : null;
 	}
-	const baseRate = detail.value?.price_list_rate || itemForDetail.value?.rate || 0;
+	// The detail's price is for its own unit (a 50 lb Bag): scale through the stock unit.
+	const baseRate =
+		(detail.value?.price_list_rate || itemForDetail.value?.rate || 0) /
+		(detail.value?.conversion_factor || 1);
 	priceInput.value = uomRate.value !== null ? uomRate.value : baseRate * cf;
 }
 

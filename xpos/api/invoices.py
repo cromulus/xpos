@@ -11,6 +11,7 @@ from frappe.utils.background_jobs import enqueue
 
 from xpos.api.exchange import get_currency_precision
 from xpos.api.items import selling_price
+from xpos.api.profiles import resolve_pos_profile
 from xpos.api.tender import build_change_legs, build_tender_legs, invoice_currency_of
 from xpos.api.utilities import can_recall_other_shift_tabs, get_invoice_type, is_pos_cashier
 
@@ -311,6 +312,13 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	        same cart is never committed twice (exactly-once invoice creation).
 	"""
 	data = json.loads(data) if isinstance(data, str) else data
+
+	# The invoice is inserted with ignore_permissions (the cart sets fields a
+	# cashier may not set directly), so the caller's right to sell is checked
+	# here, before anything else: create permission on the invoice doctype and
+	# a seat at this register.
+	frappe.has_permission(get_invoice_type(), "create", throw=True)
+	resolve_pos_profile(data.get("pos_profile"))
 
 	local_id = local_id or data.get("local_id")
 
@@ -1890,7 +1898,8 @@ def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: st
 			"batch_no": getattr(item, "batch_no", None),
 		}
 		for item in doc.items
-		if not getattr(item, "is_offer", False)
+		# A row with no Item (a descriptive line on an imported ticket) cannot be sold.
+		if item.item_code and not getattr(item, "is_offer", False)
 	]
 
 	items = []

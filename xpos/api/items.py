@@ -60,6 +60,60 @@ def selling_price(
 	return flt(rate)
 
 
+def sale_uoms(item_codes: list[str]) -> dict[str, tuple[str, float]]:
+	"""The unit a new sale line starts in, per item, with its factor to the stock unit.
+
+	ERPNext's ``get_item_details`` starts a selling line in ``Item.sales_uom``,
+	else the stock UOM; the counter must do the same, or a feed stocked in
+	pounds and sold by the 50 lb bag rings up as pounds at the bag price. A
+	sales UOM with no conversion row on the item falls back to the stock UOM:
+	``get_conversion_factor`` would answer 1.0 there and sell a Bag as 1 lb.
+	"""
+	if not item_codes:
+		return {}
+	items = frappe.get_all(
+		"Item", filters={"name": ["in", list(item_codes)]}, fields=["name", "stock_uom", "sales_uom"]
+	)
+	wanted = [item for item in items if item.sales_uom and item.sales_uom != item.stock_uom]
+	factors = {}
+	if wanted:
+		rows = frappe.get_all(
+			"UOM Conversion Detail",
+			filters={
+				"parenttype": "Item",
+				"parent": ["in", [item.name for item in wanted]],
+				"uom": ["in", list({item.sales_uom for item in wanted})],
+			},
+			fields=["parent", "uom", "conversion_factor"],
+		)
+		factors = {(row.parent, row.uom): flt(row.conversion_factor) for row in rows}
+	units = {}
+	for item in items:
+		factor = factors.get((item.name, item.sales_uom))
+		units[item.name] = (item.sales_uom, factor) if factor else (item.stock_uom, 1.0)
+	return units
+
+
+def sale_unit(item_code: str, price_list: str | None, uom: str | None = None, customer: str | None = None) -> dict:
+	"""uom, conversion_factor and rate for a new sale line of one item.
+
+	The item's default sale unit (``sale_uoms``) unless a unit is given, e.g. a
+	barcode printed for the Bag; priced for that unit by ``selling_price``.
+	"""
+	from erpnext.stock.get_item_details import get_conversion_factor
+
+	if uom:
+		stock_uom = frappe.get_cached_value("Item", item_code, "stock_uom")
+		factor = 1.0 if uom == stock_uom else flt(get_conversion_factor(item_code, uom)["conversion_factor"])
+	else:
+		uom, factor = sale_uoms([item_code]).get(item_code, (None, 1.0))
+	return {
+		"uom": uom,
+		"conversion_factor": factor,
+		"rate": selling_price(item_code, price_list, uom=uom, conversion_factor=factor, customer=customer),
+	}
+
+
 def resolve_scanned_item_code(term: str, config: dict) -> str | None:
 	"""Resolve a typed or scanned value to an item code via serial or batch lookup.
 
@@ -231,6 +285,7 @@ def get_pos_items(
 			"local_item_name",
 			"item_group",
 			"stock_uom",
+			"sales_uom",
 			"image",
 			"description",
 			"has_batch_no",
@@ -262,9 +317,15 @@ def get_pos_items(
 	)
 
 	stock = get_stock_qty_map([item.item_code for item in items], warehouse, pos_profile)
+	units = sale_uoms([item.item_code for item in items])
 	for item in items:
-		# Tiles are cached per register, not per customer: today's generic price.
-		item.rate = selling_price(item.item_code, price_list)
+		# One tap sells one of the item's sale unit (a 50 lb Bag of a feed stocked
+		# in pounds). Tiles are cached per register, not per customer: today's
+		# generic price for that unit.
+		item.uom, item.conversion_factor = units.get(item.item_code, (item.stock_uom, 1.0))
+		item.rate = selling_price(
+			item.item_code, price_list, uom=item.uom, conversion_factor=item.conversion_factor
+		)
 
 		item.actual_qty = stock.get(item.item_code, 0)
 
@@ -415,6 +476,9 @@ def search_barcode(barcode: str, pos_profile: str | None = None):
 	def _get_item_rate(item_code):
 		return selling_price(item_code, price_list)
 
+	def _unit(item_code, uom=None):
+		return sale_unit(item_code, price_list, uom=uom)
+
 	barcode_data = frappe.db.get_value(
 		"Item Barcode",
 		{"barcode": barcode},
@@ -429,9 +493,8 @@ def search_barcode(barcode: str, pos_profile: str | None = None):
 			"item_name": item.item_name,
 			"local_item_name": item.get("local_item_name"),
 			"barcode": barcode_data.barcode,
-			"uom": barcode_data.uom or item.stock_uom,
+			**_unit(item.name, barcode_data.uom),
 			"stock_uom": item.stock_uom,
-			"rate": _get_item_rate(item.name),
 			"has_batch_no": item.has_batch_no,
 			"has_serial_no": item.has_serial_no,
 			"is_stock_item": item.is_stock_item,
@@ -446,9 +509,8 @@ def search_barcode(barcode: str, pos_profile: str | None = None):
 			"item_name": item.item_name,
 			"local_item_name": item.get("local_item_name"),
 			"barcode": barcode,
-			"uom": item.stock_uom,
+			**_unit(item.name),
 			"stock_uom": item.stock_uom,
-			"rate": _get_item_rate(item.name),
 			"has_batch_no": item.has_batch_no,
 			"has_serial_no": item.has_serial_no,
 			"is_stock_item": item.is_stock_item,
@@ -472,9 +534,8 @@ def search_barcode(barcode: str, pos_profile: str | None = None):
 				"barcode": scan.get("barcode") or barcode,
 				"batch_no": scan.get("batch_no"),
 				"serial_no": scan.get("serial_no"),
-				"uom": item.stock_uom,
+				**_unit(item.name),
 				"stock_uom": item.stock_uom,
-				"rate": _get_item_rate(item.name),
 				"has_batch_no": item.has_batch_no,
 				"has_serial_no": item.has_serial_no,
 				"is_stock_item": item.is_stock_item,
@@ -531,11 +592,9 @@ def get_item_detail(
 		"allow_negative_stock": item.allow_negative_stock,
 	}
 
-	rate = selling_price(item_code, price_list, customer=customer)
-	result["rate"] = rate
-	result["price_list_rate"] = rate
-	result["uom"] = item.stock_uom
-	result["conversion_factor"] = 1.0
+	# The qty dialog opens in the item's sale unit, priced for this customer.
+	unit = sale_unit(item_code, price_list, customer=customer)
+	result.update(unit, price_list_rate=unit["rate"])
 
 	result["actual_qty"] = get_stock_qty(item_code, warehouse, pos_profile=pos_profile) if warehouse else 0
 
