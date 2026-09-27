@@ -34,7 +34,7 @@ import {
 } from "@/services/pricingService";
 import type { CartPricingLine, FreeItemLine } from "@/services/pricingEngine";
 import { nowDate, toDateOrNow } from "@/utils/datetime";
-import { debounce } from "@/utils";
+import { debounce, extractErrorMessage, isOnline } from "@/utils";
 
 let cartRowSeq = 0;
 
@@ -64,6 +64,16 @@ function parsePricingRules(value: unknown): string[] {
 
 function parseRuleName(value: unknown): string | undefined {
 	return parsePricingRules(value)[0];
+}
+
+/** What ``xpos.api.invoices.preview_invoice`` returns, keyed to the cart it priced. */
+interface ServerPreview {
+	key: string;
+	items: { item_code: string; item_name: string; description?: string; qty: number; uom: string; rate: number; amount: number; stored_grain?: number }[];
+	taxes: { description: string; rate: number; tax_amount: number }[];
+	net_total: number;
+	grand_total: number;
+	amount_due: number;
 }
 
 export const useCartStore = defineStore("cart", () => {
@@ -108,6 +118,16 @@ export const useCartStore = defineStore("cart", () => {
       if (request === muleTaxRequest) muleTaxError.value = "Tax lookup failed. Reselect the customer to retry before taking payment.";
     } finally { if (request === muleTaxRequest) muleTaxPending.value = false; }
   });
+
+	// Server-priced ticket (MuleCity-9f4). Save-time rules can change a cart after the
+	// register priced it (a grain depositor's own grain goes on a $0 line), so before
+	// payment the server builds the ticket save would post and the register charges
+	// that. It is kept only while the cart is unchanged (same key).
+	const serverPreview = ref<ServerPreview | null>(null);
+	// Declared before anything reads the cart's invoice data (the preview key does).
+	let invoiceLocalId = "";
+	const serverPreviewPending = ref(false);
+	const serverPreviewError = ref("");
 
 	const isReturnMode = ref(false);
 	const returnAgainst = ref("");
@@ -301,8 +321,17 @@ export const useCartStore = defineStore("cart", () => {
 		return calculatedTaxes.value.reduce((sum, t) => sum + t.amount, 0);
 	});
 
+	const previewKey = computed(() => JSON.stringify(previewPayload()));
+
 	const grandTotal = computed(() => {
 		const posStore = usePosStore();
+		if (serverPreview.value && serverPreview.value.key === previewKey.value) {
+			// The same settlements the cart's own total takes off below.
+			let due = serverPreview.value.amount_due;
+			if (!isReturnMode.value && redeemLoyaltyPoints.value && loyaltyAmount.value > 0) due -= loyaltyAmount.value;
+			if (!isReturnMode.value && writeOffAmount.value > 0) due -= writeOffAmount.value;
+			return due;
+		}
 		let total = subtotal.value + taxAmount.value;
 
 		// Apply offer item-level discounts
@@ -1114,6 +1143,7 @@ export const useCartStore = defineStore("cart", () => {
 
 	function clearCart(): void {
 		invoiceLocalId = "";
+		serverPreview.value = null;
 		items.value = [];
 		selectedCartIndex.value = -1;
 		discountPercentage.value = 0;
@@ -1158,8 +1188,83 @@ export const useCartStore = defineStore("cart", () => {
 		}
 	}
 
-	function openPaymentDialog(): void {
-        if (muleTaxPending.value || muleTaxError.value) return;
+	/**
+	 * The cart as save would receive it, minus the tender (what the preview prices).
+	 * Write-off and loyalty are settled against the total, not part of it, so they
+	 * stay out: entering them in the payment dialog keeps the preview.
+	 */
+	function previewPayload(): Partial<InvoiceData> {
+		const {
+			local_id,
+			payments,
+			change_amount,
+			pos_change_legs,
+			write_off_amount,
+			redeem_loyalty_points,
+			loyalty_points,
+			loyalty_amount,
+			...cart
+		} = getInvoiceData(posStore.profileName, posStore.posOpeningShift?.name || "");
+		return cart;
+	}
+
+
+	/** The server's lines differ from the cart's (e.g. a $0 stored-grain line was added). */
+	const serverLinesDiffer = computed(() => {
+		const preview = serverPreview.value;
+		if (!preview || preview.key !== previewKey.value) return false;
+		const line = (code: string, qty: number, rate: number) => `${code}:${+qty.toFixed(3)}:${+rate.toFixed(6)}`;
+		const cart = items.value.map((i) => line(i.item_code, i.qty, i.rate)).join("|");
+		return cart !== preview.items.map((i) => line(i.item_code, i.qty, i.rate)).join("|");
+	});
+
+	/** The preview's total while it still prices this cart; sent so the server can hold us to it. */
+	const previewExpectedTotal = computed(() =>
+		serverPreview.value && serverPreview.value.key === previewKey.value && !isReturnMode.value
+			? serverPreview.value.amount_due
+			: null,
+	);
+
+	// A cart that changes after the check is never charged its own sum: drop the
+	// preview, and if payment is open close it so Pay checks again.
+	watch(previewKey, (key) => {
+		if (!serverPreview.value || serverPreview.value.key === key) return;
+		serverPreview.value = null;
+		if (showPaymentDialog.value) {
+			showPaymentDialog.value = false;
+			serverPreviewError.value = __("The cart changed after it was checked. Press Pay again.");
+		}
+	});
+
+	/** The server refused the sale (its ticket changed): forget the preview, show why. */
+	function ticketChanged(message: string): void {
+		serverPreview.value = null;
+		showPaymentDialog.value = false;
+		serverPreviewError.value = message;
+	}
+
+	async function openPaymentDialog(): Promise<void> {
+		if (muleTaxPending.value || muleTaxError.value || serverPreviewPending.value) return;
+		// Offline the server can't be asked; the offline queue posts what the server decides.
+		if (!isReturnMode.value && isOnline()) {
+			const key = previewKey.value;
+			serverPreviewPending.value = true;
+			serverPreviewError.value = "";
+			try {
+				const result = await call<Omit<ServerPreview, "key">>("xpos.api.invoices.preview_invoice", {
+					data: JSON.stringify(previewPayload()),
+				});
+				serverPreview.value = { ...result, key };
+				// The cart or buyer changed while the server was pricing it: press Pay again.
+				if (key !== previewKey.value || muleTaxPending.value || muleTaxError.value) return;
+			} catch (error) {
+				serverPreview.value = null;
+				serverPreviewError.value = extractErrorMessage(error);
+				return;
+			} finally {
+				serverPreviewPending.value = false;
+			}
+		}
 		showPaymentDialog.value = true;
 	}
 
@@ -1350,7 +1455,6 @@ export const useCartStore = defineStore("cart", () => {
 		}
 	}
 
-	let invoiceLocalId = "";
 	function getInvoiceData(posProfile: string, posOpeningShift: string): InvoiceData {
 		const data: InvoiceData = {
 			local_id: invoiceLocalId || (invoiceLocalId = newInvoiceId()),
@@ -1486,6 +1590,36 @@ export const useCartStore = defineStore("cart", () => {
 	}
 
 	function getReceiptSnapshot(invoiceName: string, cashier = ""): ReceiptSnapshot {
+		const snapshot = cartReceiptSnapshot(invoiceName, cashier);
+		const preview = serverPreview.value;
+		if (!serverLinesDiffer.value || !preview) return snapshot;
+		// Print the ticket the server posts (e.g. the $0 stored-grain line), not the cart.
+		return {
+			...snapshot,
+			items: preview.items.map((line) => ({
+				item_code: line.item_code,
+				item_name: line.stored_grain && line.description ? line.description : line.item_name,
+				qty: line.qty,
+				rate: line.rate,
+				amount: line.amount,
+				uom: line.uom,
+				discount_amount: 0,
+				price_list_rate: line.rate,
+			})),
+			taxes: preview.taxes.map((t) => ({
+				description: t.description,
+				rate: t.rate,
+				amount: t.tax_amount,
+				included_in_print_rate: false,
+			})),
+			subtotal: preview.net_total,
+			total_discount: 0,
+			net_total: preview.net_total,
+			total_qty: preview.items.reduce((sum, line) => sum + line.qty, 0),
+		};
+	}
+
+	function cartReceiptSnapshot(invoiceName: string, cashier: string): ReceiptSnapshot {
 		const snapshotItems = items.value.map((item: CartItem) => {
 			const gross = item.qty * item.rate;
 			let discount = 0;
@@ -1566,6 +1700,8 @@ export const useCartStore = defineStore("cart", () => {
 		discountPercentage,
 		discountAmount,
 		muleTaxPending, muleTaxError, muleTaxCategory,
+		serverPreview, serverPreviewPending, serverPreviewError, serverLinesDiffer,
+		previewExpectedTotal, ticketChanged,
 		showPaymentDialog,
 		isReturnMode,
 		returnAgainst,

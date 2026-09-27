@@ -343,12 +343,16 @@
 					? 'bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-amber-500/25 text-white'
 					: 'bg-linear-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 shadow-primary/25'
 			"
-			:disabled="cartStore.isEmpty || !cartStore.customer || cartStore.muleTaxPending || !!cartStore.muleTaxError"
+			:disabled="cartStore.isEmpty || !cartStore.customer || cartStore.muleTaxPending || !!cartStore.muleTaxError || cartStore.serverPreviewPending"
 			@click="handleCheckout()"
 		>
 			<Wallet class="w-5 h-5" />
 			{{ payButtonLabel }}
 		</Button>
+		<p v-if="cartStore.serverPreviewError" class="text-xs text-destructive">
+			{{ __("The ticket could not be checked with the server; payment was not opened.") }}
+			{{ cartStore.serverPreviewError }}
+		</p>
 	</div>
 </template>
 

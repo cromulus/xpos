@@ -112,6 +112,11 @@ export function isNetworkError(error: unknown): boolean {
 	);
 }
 
+/** The server refused the sale because its ticket no longer totals what was charged. */
+export function isTicketChangedError(error: unknown): boolean {
+	return (error as { excType?: string } | null)?.excType === "TicketChangedError";
+}
+
 export function isTabConflictError(error: unknown): boolean {
 	return (error as { excType?: string } | null)?.excType === "TimestampMismatchError";
 }

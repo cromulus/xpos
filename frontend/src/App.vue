@@ -241,7 +241,7 @@ async function doClearCart() {
 
 function handleProcessPayment() {
 	if (cartStore.items.length > 0 && posStore.isShiftOpen) {
-		cartStore.showPaymentDialog = true;
+		cartStore.openPaymentDialog();
 	}
 }
 

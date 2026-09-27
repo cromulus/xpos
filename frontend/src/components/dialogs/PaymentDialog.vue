@@ -78,6 +78,14 @@
 							>
 								{{ money(Math.abs(cartStore.grandTotal)) }}
 							</p>
+							<!-- The server changed the cart (e.g. the customer's own stored grain on a $0 line):
+							     this is the ticket that will post, and the amount above is its total. -->
+							<ul v-if="cartStore.serverLinesDiffer" class="mt-2 px-4 text-xs text-left text-muted-foreground">
+								<li v-for="(line, index) in cartStore.serverPreview?.items" :key="index" class="flex justify-between gap-2">
+									<span>{{ line.description && line.stored_grain ? line.description : line.item_name }} · {{ line.qty }} {{ line.uom }}</span>
+									<span class="tabular-nums">{{ money(line.amount) }}</span>
+								</li>
+							</ul>
 						</div>
 						<div
 							v-if="
@@ -767,7 +775,7 @@ import {
 	type TenderContext,
 } from "@/services/tenderLegs";
 import type { InvoiceChangeLeg, InvoiceData, InvoicePayment, TenderLeg } from "@/types/pos.types";
-import { isOnline, extractErrorMessage, isTabConflictError } from "@/utils";
+import { isOnline, extractErrorMessage, isTabConflictError, isTicketChangedError } from "@/utils";
 import { nowDate } from "@/utils/datetime";
 import {
 	isPaymentDialogSaveAndPrintShortcut,
@@ -1306,6 +1314,7 @@ function buildInvoicePayload(): InvoiceData {
 	cartStore.setChangeLegs(cartStore.isReturnMode ? [] : changeLegs.value.filter((leg) => leg.amount > 0));
 
 	const invoiceData = cartStore.getInvoiceData(posStore.profileName, shiftName);
+	if (cartStore.previewExpectedTotal !== null) invoiceData.expected_total = cartStore.previewExpectedTotal;
 
 	if (!cartStore.isReturnMode && remainingAmount.value > 0 && posStore.allowCreditSale) {
 		invoiceData.is_credit_sale = true;
@@ -1413,7 +1422,10 @@ async function submitPayment(withPrint: boolean = true) {
 			}
 		}
 	} catch (error: unknown) {
-		if (isTabConflictError(error)) {
+		if (isTicketChangedError(error)) {
+			showError(extractErrorMessage(error));
+			cartStore.ticketChanged(extractErrorMessage(error));
+		} else if (isTabConflictError(error)) {
 			showError(__("This tab was changed on another terminal. Reload it and try again."));
 			close();
 			cartStore.openDraftDialog();

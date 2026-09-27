@@ -1,0 +1,165 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * MuleCity-9f4: before payment the register asks the server what the ticket will
+ * post and charges that. A grain depositor's own grain goes on a $0 line at save,
+ * so the cart's own sum ($128.10) overcharged a $48.04 ticket.
+ */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
+import { createPinia, setActivePinia } from "pinia";
+
+vi.mock("@/services/api", () => ({ call: vi.fn(), default: { call: vi.fn() } }));
+vi.mock("@/stores/posStore", () => ({
+	usePosStore: vi.fn(() => ({
+		taxes: [{ charge_type: "On Net Total", rate: 6.75, description: "Tax" }],
+		taxInclusiveMode: false,
+		disableRoundedTotal: true,
+		profile: { name: "Mule City Retail", warehouse: "Main - MCSF", currency: "USD" },
+		currency: "USD",
+		tenderModeFor: vi.fn(() => undefined),
+	})),
+}));
+
+import { call } from "@/services/api";
+import { useCartStore } from "@/stores/cartStore";
+
+const PREVIEW = {
+	items: [
+		{ item_code: "CORN", item_name: "CORN", qty: 300, uom: "Pound", rate: 0.15, amount: 45, stored_grain: 0 },
+		{ item_code: "CORNB-", item_name: "CORN FROM STORAGE", description: "From Brinson Farms's stored corn", qty: 500, uom: "Pound", rate: 0, amount: 0, stored_grain: 1 },
+	],
+	taxes: [{ description: "Tax", rate: 6.75, tax_amount: 3.04 }],
+	net_total: 45,
+	grand_total: 48.04,
+	amount_due: 48.04,
+};
+
+/** The server answers the preview with *preview*. (No profile in the mocked POS
+ * store, so the buyer's Mule tax lookup, covered elsewhere, stays out of the way.) */
+function server(preview: () => Promise<unknown>) {
+	vi.mocked(call).mockImplementation(((method: string) =>
+		method === "xpos.api.invoices.preview_invoice" ? preview() : Promise.resolve({})) as typeof call);
+}
+
+async function depositorCart() {
+	const cart = useCartStore();
+	cart.customer = { name: "Brinson Farms" };
+	cart.items.push({ item_code: "CORN", item_name: "CORN", qty: 800, rate: 0.15, uom: "Pound", discount_percentage: 0, discount_amount: 0 });
+	return cart;
+}
+
+describe("server-priced ticket before payment", () => {
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		vi.mocked(call).mockReset();
+	});
+
+	it("charges the server's total and shows its $0 stored-grain line", async () => {
+		const cart = await depositorCart();
+		expect(cart.grandTotal).toBeCloseTo(128.1, 2);
+		server(() => Promise.resolve(PREVIEW));
+
+		await cart.openPaymentDialog();
+
+		const [, args] = vi.mocked(call).mock.calls.find(([method]) => method === "xpos.api.invoices.preview_invoice")!;
+		const sent = JSON.parse((args as { data: string }).data);
+		expect(sent.payments).toBeUndefined();
+		expect(sent.local_id).toBeUndefined();
+		expect(cart.showPaymentDialog).toBe(true);
+		expect(cart.grandTotal).toBe(48.04);
+		expect(cart.serverLinesDiffer).toBe(true);
+	});
+
+	it("drops the preview as soon as the cart changes", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
+		await cart.openPaymentDialog();
+
+		expect(cart.previewExpectedTotal).toBe(48.04);
+
+		cart.items[0].qty = 100;
+		await nextTick();
+
+		// Never charged on a stale check: payment closes and Pay checks again.
+		expect(cart.showPaymentDialog).toBe(false);
+		expect(cart.serverPreview).toBeNull();
+		expect(cart.previewExpectedTotal).toBeNull();
+		expect(cart.serverPreviewError).toContain("Press Pay again");
+		expect(cart.serverLinesDiffer).toBe(false);
+	});
+
+	it("does not open payment when the server refuses the ticket", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.reject(new Error("Row 1: this grain can only go to its owner.")));
+
+		await cart.openPaymentDialog();
+
+		expect(cart.showPaymentDialog).toBe(false);
+		expect(cart.serverPreviewError).toContain("only go to its owner");
+		expect(cart.grandTotal).toBeCloseTo(128.1, 2);
+	});
+
+	it("a cart the server leaves alone shows no extra lines", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve({
+			...PREVIEW,
+			items: [{ item_code: "CORN", item_name: "CORN", qty: 800, uom: "Pound", rate: 0.15, amount: 120 }],
+			amount_due: 128.1,
+		}));
+		await cart.openPaymentDialog();
+		expect(cart.serverLinesDiffer).toBe(false);
+		expect(cart.grandTotal).toBe(128.1);
+	});
+
+	it("does not open payment if the cart changed while the server was pricing it", async () => {
+		const cart = await depositorCart();
+		let answer: (value: unknown) => void = () => {};
+		server(() => new Promise((resolve) => (answer = resolve)));
+		const opening = cart.openPaymentDialog();
+		cart.items[0].qty = 900;
+		answer(PREVIEW);
+		await opening;
+		expect(cart.showPaymentDialog).toBe(false);
+		expect(cart.grandTotal).toBeCloseTo(144.11, 2);
+	});
+
+	it("a write-off entered at payment comes off the server's total", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
+		await cart.openPaymentDialog();
+		cart.writeOffAmount = 0.04;
+		expect(cart.grandTotal).toBeCloseTo(48.0, 2);
+	});
+
+	it("the instant receipt prints the server's ticket", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
+		await cart.openPaymentDialog();
+		const receipt = cart.getReceiptSnapshot("ACC-SINV-1");
+		expect(receipt.items.map((i) => [i.item_name, i.qty, i.amount])).toEqual([
+			["CORN", 300, 45],
+			["From Brinson Farms's stored corn", 500, 0],
+		]);
+		expect(receipt.grand_total).toBe(48.04);
+		expect(receipt.subtotal).toBe(45);
+	});
+
+	it("clearing the cart forgets the preview", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
+		await cart.openPaymentDialog();
+		cart.clearCart();
+		expect(cart.serverPreview).toBeNull();
+	});
+
+	it("a refused sale (ticket changed) closes payment and says why", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
+		await cart.openPaymentDialog();
+		cart.ticketChanged("The ticket changed after it was checked. Press Pay again.");
+		expect(cart.showPaymentDialog).toBe(false);
+		expect(cart.previewExpectedTotal).toBeNull();
+		expect(cart.serverPreviewError).toContain("Press Pay again");
+	});
+});

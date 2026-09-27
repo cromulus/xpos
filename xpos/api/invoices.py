@@ -302,6 +302,42 @@ def _mule_order_fields(row):
 	return {field: row.get(field) for field in ("sales_order", "so_detail", *_BOUND_ROW_FIELDS[3:]) if row.get(field) is not None}
 
 
+class TicketChangedError(frappe.ValidationError):
+	"""The ticket no longer totals what the register showed and charged."""
+
+
+def check_expected_total(invoice_doc, data: dict) -> None:
+	"""Refuse a sale whose ticket totals something other than the register showed.
+
+	Before payment the register prices the cart on the server (``preview_invoice``)
+	and charges that total. Server rules can change the ticket in between, e.g. a
+	grain depositor's stored grain used by another ticket. Without this check the
+	difference would post silently: as change never handed back, a card credit,
+	or (with credit sale on) a balance left owing. The customer's payment is
+	compared with the total by ERPNext; this compares the total itself, so it
+	holds for credit sales too. Nothing posts; the register previews again.
+	"""
+	expected = data.get("expected_total")
+	if expected in (None, "") or cint(invoice_doc.get("is_return")):
+		return
+	posted = flt(invoice_doc.get("rounded_total") or invoice_doc.get("grand_total"))
+	precision = get_currency_precision(invoice_currency_of(invoice_doc))
+	if flt(posted, precision) != flt(expected, precision):
+		currency = invoice_currency_of(invoice_doc)
+		frappe.throw(
+			_(
+				"The ticket changed after it was checked: it now totals {0}, not the {1} shown. "
+				"Nothing was saved. Press Pay again to see the new ticket; if a card was "
+				"already run for {1}, adjust it."
+			).format(
+				frappe.utils.fmt_money(posted, currency=currency),
+				frappe.utils.fmt_money(flt(expected), currency=currency),
+			),
+			title=_("Ticket changed"),
+			exc=TicketChangedError,
+		)
+
+
 def check_may_sell(pos_profile: str | None) -> None:
 	"""Refuse a caller who may not sell at this register.
 
@@ -313,34 +349,12 @@ def check_may_sell(pos_profile: str | None) -> None:
 	resolve_pos_profile(pos_profile)
 
 
-@frappe.whitelist()
-def create_invoice(data: str | dict, local_id: str | None = None):
-	"""Create a POS Sales Invoice from cart data.
+def _build_invoice_doc(data: dict, local_id: str | None = None):
+	"""Build the unsaved invoice a cart payload becomes: lines, price lock, taxes, payments.
 
-	Args:
-	    data: JSON string (or dict) containing the cart payload.
-	    local_id: Stable client-side id used to deduplicate sync retries so the
-	        same cart is never committed twice (exactly-once invoice creation).
+	Shared by ``create_invoice`` and ``preview_invoice`` so the preview shows exactly
+	what saving will post. Returns ``(invoice_doc, pos_profile_doc, doctype, is_existing_draft)``.
 	"""
-	data = json.loads(data) if isinstance(data, str) else data
-
-	local_id = local_id or data.get("local_id")
-
-	warehouse = data.get("warehouse")
-	if not warehouse and data.get("pos_profile"):
-		warehouse = frappe.get_cached_doc("POS Profile", data["pos_profile"]).warehouse
-	# A replay of a sale that is already posted answers "duplicate" first, so an
-	# offline retry never dead-letters a committed sale.
-	existing = find_invoice_by_local_id(local_id, warehouse)
-	if existing:
-		dt, name = existing
-		doc = frappe.get_doc(dt, name)
-		# Only someone who may read the sale learns about it.
-		doc.check_permission("read")
-		return {**_build_invoice_response(doc), "duplicate": True}
-
-	check_may_sell(data.get("pos_profile"))
-
 	pos_profile = data.get("pos_profile")
 	customer = data.get("customer")
 	items = data.get("items", [])
@@ -350,7 +364,6 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	return_against = data.get("return_against")
 	additional_discount_percentage = flt(data.get("additional_discount_percentage", 0))
 	discount_amount = flt(data.get("discount_amount", 0))
-	submit_in_background = cint(data.get("submit_in_background", 0))
 
 	if not pos_profile:
 		frappe.throw(_("POS Profile is required"))
@@ -694,6 +707,40 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	except Exception:
 		pass
 
+	return invoice_doc, pos, doctype, is_existing_draft
+
+
+@frappe.whitelist()
+def create_invoice(data: str | dict, local_id: str | None = None):
+	"""Create a POS Sales Invoice from cart data.
+
+	Args:
+	    data: JSON string (or dict) containing the cart payload.
+	    local_id: Stable client-side id used to deduplicate sync retries so the
+	        same cart is never committed twice (exactly-once invoice creation).
+	"""
+	data = json.loads(data) if isinstance(data, str) else data
+
+	local_id = local_id or data.get("local_id")
+
+	warehouse = data.get("warehouse")
+	if not warehouse and data.get("pos_profile"):
+		warehouse = frappe.get_cached_doc("POS Profile", data["pos_profile"]).warehouse
+	# A replay of a sale that is already posted answers "duplicate" first, so an
+	# offline retry never dead-letters a committed sale.
+	existing = find_invoice_by_local_id(local_id, warehouse)
+	if existing:
+		dt, name = existing
+		doc = frappe.get_doc(dt, name)
+		# Only someone who may read the sale learns about it.
+		doc.check_permission("read")
+		return {**_build_invoice_response(doc), "duplicate": True}
+
+	check_may_sell(data.get("pos_profile"))
+
+	invoice_doc, pos, doctype, is_existing_draft = _build_invoice_doc(data, local_id)
+	submit_in_background = cint(data.get("submit_in_background", 0))
+
 	try:
 		if is_existing_draft:
 			invoice_doc.save(ignore_permissions=True)
@@ -710,6 +757,7 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 
 	enforce_stock_availability(invoice_doc)
 
+	check_expected_total(invoice_doc, data)
 	_validate_unpaid_balance_permissions(invoice_doc, pos, data)
 
 	from xpos.x_pos.integrations import fbr
@@ -754,6 +802,29 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	invoice_doc.submit()
 
 	return _build_invoice_response(invoice_doc)
+
+
+@frappe.whitelist(methods=["POST"])
+def preview_invoice(data: str | dict):
+	"""The lines and totals saving this cart would post, without saving anything.
+
+	Server rules can change a cart after the register priced it: the Mule adapter
+	moves a grain depositor's own grain onto a $0 line (MuleCity-9f4). The register
+	shows and charges this preview instead of its own sum, so a card is never
+	overcharged. The doc is built by the same code as ``create_invoice``; the
+	adapter runs its save-time rules and rolls them back.
+	"""
+	from mulecity_erpnext.pos_workspace import preview_cart
+
+	data = dict(json.loads(data) if isinstance(data, str) else data)
+	# Only someone who may sell at this register may price a sale here.
+	check_may_sell(data.get("pos_profile"))
+	# A saved draft is previewed as itself (its header kept); nothing is written,
+	# no local id is claimed and no tender is recorded.
+	for key in ("local_id", "payments", "pos_change_legs", "change_amount"):
+		data.pop(key, None)
+	invoice_doc = _build_invoice_doc(data)[0]
+	return preview_cart(invoice_doc)
 
 
 def _submit_invoice_job(invoice_name: str, doctype: str = "Sales Invoice"):
