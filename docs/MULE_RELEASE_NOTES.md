@@ -1,5 +1,11 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc4 (2026-09-27)
+
+mc3 plus: the Mule City panel (Customer Mixes / Orders for Pickup) shows the
+buyer's name instead of the Customer ID ("MC-CUST-3820"); the ID stays as the
+hover text. Verified: vitest 420/420, `vue-tsc` clean, `yarn build` OK.
+
 ## mule-v2.10.1-mc3 (2026-09-27)
 
 mc2 plus these changes (Bill, 2026-09-27):
