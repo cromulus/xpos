@@ -1,5 +1,41 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc2 (2026-09-27)
+
+mc1 plus these changes:
+
+- `fix/mule-grain` (`92bfea9`: `60e03e1`, `87b2d3e`, `f054c05`, `92bfea9`):
+  - Before payment, the register asks the server for a preview
+    (`preview_invoice` -> `mulecity_erpnext.pos_workspace.preview_cart`) and
+    charges what the preview shows. A grain depositor pays only for Mule's
+    grain, by card or by cash (parity gap 02 closed).
+  - The preview is gated like a sale (`check_may_sell`). The sale is held to
+    the total the register showed; a stale preview is refused, never short- or
+    over-paid.
+- `6b7f14f`: test-only. XPOS unit tests stub the site tax adapter, because
+  mulecity_erpnext now copies a return's original taxes.
+- It requires mulecity_erpnext main at `fefc35f4` or later, which has
+  `preview_cart`, returns that copy their taxes, the counter settings seed and
+  the FBR field fixture.
+
+Verified on `6b7f14f`. Bench `f9xpos` has mulecity-full `fefc35f4`, migrated.
+- Frontend: vitest 420/420, `vue-tsc` clean, and `yarn build` OK.
+- xpos: 272/272 unit tests and 6/6 integration tests pass.
+- Grain probes: 16/16 pass.
+- Main parity probes: 24 of 31 pass. The open gaps are 04b and 10. The old
+  test_02 simulates the cart before the preview existed, and g02 replaces it.
+- Probe maintenance: the other failures are harness drift, not XPOS code.
+  - 05, 05c and 05e: host main now seeds `hide_unavailable_items=1` and item
+    groups = Mule City Counter. That hides the probe's fixture items; with
+    those settings off, all three pass.
+  - 07a: it calls a host test helper that was renamed (`_imported_formula` ->
+    `_replayed_formula`).
+- mulecity_erpnext full native suite (`--skip-before-tests`, with xpos
+  installed): 635/635 unit, 20/20 integration and 5/5 other, with 0 failures.
+
+Follow-ups carried from mc1: the P2 shift and rights gates, and the P2
+Electron offline tile UOM.
+
 ## mule-v2.10.1-mc1 (2026-09-27)
 
 XPOS is Mule City's only POS. This fork's `main` is the release branch.
