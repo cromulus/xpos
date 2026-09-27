@@ -334,7 +334,10 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	existing = find_invoice_by_local_id(local_id, warehouse)
 	if existing:
 		dt, name = existing
-		return {**_build_invoice_response(frappe.get_doc(dt, name)), "duplicate": True}
+		doc = frappe.get_doc(dt, name)
+		# Only someone who may read the sale learns about it.
+		doc.check_permission("read")
+		return {**_build_invoice_response(doc), "duplicate": True}
 
 	check_may_sell(data.get("pos_profile"))
 
@@ -484,7 +487,8 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 					item_data.get("item_code"),
 					price_list,
 					uom=item_data.get("uom") or item_data.get("stock_uom"),
-					conversion_factor=flt(item_data.get("conversion_factor")) or None,
+					# The factor comes from the Item's UOM conversion, never the client:
+					# a Bag sent with factor 1 would lock the pound price.
 					customer=invoice_doc.customer,
 					transaction_date=invoice_doc.posting_date,
 					qty=abs(item_qty),
@@ -1406,6 +1410,13 @@ def delete_draft_invoice(name: str, doctype: str = "", pos_opening_shift: str = 
 	doc = frappe.get_doc(doctype, name)
 	if doc.docstatus != 0:
 		frappe.throw(_("Only draft invoices can be deleted"))
+	# The delete below ignores permissions, so only a parked register sale may go,
+	# by someone who may sell at its register and edit this draft. Counter staff
+	# discard their parked tabs; they need not hold delete rights on invoices.
+	if not doc.get("is_pos") or not doc.get("pos_profile"):
+		frappe.throw(_("Only a parked POS sale can be deleted here."), frappe.PermissionError)
+	check_may_sell(doc.pos_profile)
+	doc.check_permission("write")
 
 	draft_shift = doc.get("pos_opening_shift")
 	is_foreign_tab = bool(draft_shift) and bool(pos_opening_shift) and draft_shift != pos_opening_shift

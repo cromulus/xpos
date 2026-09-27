@@ -238,14 +238,47 @@ class TestSaveDraftInvoiceConcurrency(unittest.TestCase):
 class TestDeleteDraftInvoiceGuard(unittest.TestCase):
 	"""A colleague's live tab must not be one stray click from deletion."""
 
-	def _draft(self, shift):
+	def setUp(self):
+		patcher = patch("xpos.api.invoices.check_may_sell")
+		self.may_sell = patcher.start()
+		self.addCleanup(patcher.stop)
+
+	def _draft(self, shift, is_pos=1):
 		draft = MagicMock()
 		draft.docstatus = 0
+		draft.pos_profile = PROFILE
 		draft.get.side_effect = lambda key: {
 			"pos_opening_shift": shift,
 			"pos_profile": PROFILE,
+			"is_pos": is_pos,
 		}.get(key)
 		return draft
+
+	@patch("xpos.api.invoices._detect_invoice_doctype", return_value="Sales Invoice")
+	@patch("xpos.api.invoices.frappe")
+	def test_a_desk_draft_cannot_be_deleted_from_the_register(self, mock_frappe, _mock_detect):
+		draft = self._draft(SHIFT_B, is_pos=0)
+		mock_frappe.get_doc.return_value = draft
+		mock_frappe.throw.side_effect = raising_throw
+
+		with self.assertRaises(Exception):
+			invoices.delete_draft_invoice("SI-001", pos_opening_shift=SHIFT_B)
+
+		draft.delete.assert_not_called()
+
+	@patch("xpos.api.invoices._detect_invoice_doctype", return_value="Sales Invoice")
+	@patch("xpos.api.invoices.frappe")
+	def test_deleting_a_tab_needs_a_seat_and_edit_rights_on_it(self, mock_frappe, _mock_detect):
+		draft = self._draft(SHIFT_B)
+		draft.check_permission.side_effect = PermissionError("no write")
+		mock_frappe.get_doc.return_value = draft
+
+		with self.assertRaises(PermissionError):
+			invoices.delete_draft_invoice("SI-001", pos_opening_shift=SHIFT_B)
+
+		self.may_sell.assert_called_once_with(PROFILE)
+		draft.check_permission.assert_called_once_with("write")
+		draft.delete.assert_not_called()
 
 	@patch("xpos.api.invoices._detect_invoice_doctype", return_value="Sales Invoice")
 	@patch("xpos.api.invoices.can_recall_other_shift_tabs", return_value=False)
