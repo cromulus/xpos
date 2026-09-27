@@ -359,6 +359,9 @@ async function onBarcodeScan(barcode: string) {
 				rate: result.rate || 0,
 				stock_uom: result.stock_uom || result.uom,
 				uom: result.uom,
+				// The scan starts in the item's sale unit (a 50 lb Bag): keep its factor.
+				conversion_factor: result.conversion_factor,
+				is_stock_item: result.is_stock_item,
 				image: result.image,
 				has_batch_no: result.has_batch_no,
 				has_serial_no: result.has_serial_no,

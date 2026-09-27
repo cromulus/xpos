@@ -66,6 +66,25 @@ class TestCreateInvoice(unittest.TestCase):
 		mock_frappe.get_doc.assert_not_called()
 
 	@patch("xpos.api.invoices.frappe")
+	def test_a_replay_of_a_posted_sale_is_answered_before_the_seat_check(self, mock_frappe):
+		"""An offline retry of a committed sale returns it even if the cashier lost the seat."""
+		with patch("xpos.api.invoices.find_invoice_by_local_id", return_value=("Sales Invoice", "INV-1")), patch(
+			"xpos.api.invoices._build_invoice_response", return_value={"name": "INV-1"}
+		), patch("xpos.api.invoices.resolve_pos_profile", side_effect=PermissionError("not assigned")):
+			result = invoices.create_invoice('{"pos_profile": "POS-1", "local_id": "inv_1", "customer": "C1"}')
+
+		self.assertEqual(result, {"name": "INV-1", "duplicate": True})
+
+	@patch("xpos.api.invoices.frappe")
+	def test_a_draft_is_refused_without_a_seat_at_the_register(self, mock_frappe):
+		"""Parking a sale inserts an invoice too, so it needs the same right to sell."""
+		with patch("xpos.api.invoices.resolve_pos_profile", side_effect=PermissionError("not assigned")):
+			with self.assertRaises(PermissionError):
+				invoices.save_draft_invoice('{"pos_profile": "POS-1", "customer": "C1", "items": [{"item_code": "I"}]}')
+
+		mock_frappe.get_doc.assert_not_called()
+
+	@patch("xpos.api.invoices.frappe")
 	def test_create_invoice_requires_customer(self, mock_frappe):
 		"""Test that create_invoice throws error without customer."""
 		mock_frappe.throw.side_effect = Exception("Customer is required")

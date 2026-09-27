@@ -108,7 +108,7 @@
 									:variant="batch.qty > 0 ? 'success' : 'destructive'"
 									class="text-[10px]"
 								>
-									{{ qty(batch.qty) }} {{ selectedUOM || detail.stock_uom }}
+									{{ qty(batch.qty) }} {{ detail.stock_uom }}
 								</Badge>
 							</button>
 						</div>

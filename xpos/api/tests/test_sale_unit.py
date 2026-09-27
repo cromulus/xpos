@@ -20,7 +20,7 @@ def _uom(name):
 	return name
 
 
-def _item(code, stock_uom, sales_uom=None, factor=None):
+def _item(code, stock_uom, sales_uom=None, factor=None, **fields):
 	item = frappe.get_doc(
 		{
 			"doctype": "Item",
@@ -30,6 +30,7 @@ def _item(code, stock_uom, sales_uom=None, factor=None):
 			"stock_uom": stock_uom,
 			"sales_uom": sales_uom,
 			"is_stock_item": 1,
+			**fields,
 		}
 	)
 	if factor:
@@ -73,3 +74,8 @@ class TestSaleUnit(IntegrationTestCase):
 		feed = _item(f"XPOS-BC-{self.run}", self.kg, self.sack, 25)
 		_price(feed, self.kg, 0.5)
 		self.assertEqual(sale_unit(feed, PRICE_LIST, uom=self.kg), {"uom": self.kg, "conversion_factor": 1.0, "rate": 0.5})
+
+	def test_a_serialised_item_sells_its_stock_unit(self):
+		"""One serial number is one stock unit, so a sack of 25 serials is not one line."""
+		feed = _item(f"XPOS-SER-{self.run}", self.kg, self.sack, 25, has_serial_no=1)
+		self.assertEqual(sale_uoms([feed])[feed], (self.kg, 1.0))

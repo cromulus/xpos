@@ -302,6 +302,17 @@ def _mule_order_fields(row):
 	return {field: row.get(field) for field in ("sales_order", "so_detail", *_BOUND_ROW_FIELDS[3:]) if row.get(field) is not None}
 
 
+def check_may_sell(pos_profile: str | None) -> None:
+	"""Refuse a caller who may not sell at this register.
+
+	Invoices are inserted with ignore_permissions (the cart sets fields a
+	cashier may not set directly), so the right to sell is checked here: create
+	permission on the invoice doctype and a seat at the POS Profile.
+	"""
+	frappe.has_permission(get_invoice_type(), "create", throw=True)
+	resolve_pos_profile(pos_profile)
+
+
 @frappe.whitelist()
 def create_invoice(data: str | dict, local_id: str | None = None):
 	"""Create a POS Sales Invoice from cart data.
@@ -313,22 +324,22 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	"""
 	data = json.loads(data) if isinstance(data, str) else data
 
-	# The invoice is inserted with ignore_permissions (the cart sets fields a
-	# cashier may not set directly), so the caller's right to sell is checked
-	# here, before anything else: create permission on the invoice doctype and
-	# a seat at this register.
-	frappe.has_permission(get_invoice_type(), "create", throw=True)
-	resolve_pos_profile(data.get("pos_profile"))
-
 	local_id = local_id or data.get("local_id")
 
 	warehouse = data.get("warehouse")
 	if not warehouse and data.get("pos_profile"):
 		warehouse = frappe.get_cached_doc("POS Profile", data["pos_profile"]).warehouse
+	# A replay of a sale that is already posted answers "duplicate" first, so an
+	# offline retry never dead-letters a committed sale.
 	existing = find_invoice_by_local_id(local_id, warehouse)
 	if existing:
 		dt, name = existing
-		return {**_build_invoice_response(frappe.get_doc(dt, name)), "duplicate": True}
+		doc = frappe.get_doc(dt, name)
+		# Only someone who may read the sale learns about it.
+		doc.check_permission("read")
+		return {**_build_invoice_response(doc), "duplicate": True}
+
+	check_may_sell(data.get("pos_profile"))
 
 	pos_profile = data.get("pos_profile")
 	customer = data.get("customer")
@@ -476,7 +487,8 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 					item_data.get("item_code"),
 					price_list,
 					uom=item_data.get("uom") or item_data.get("stock_uom"),
-					conversion_factor=flt(item_data.get("conversion_factor")) or None,
+					# The factor comes from the Item's UOM conversion, never the client:
+					# a Bag sent with factor 1 would lock the pound price.
 					customer=invoice_doc.customer,
 					transaction_date=invoice_doc.posting_date,
 					qty=abs(item_qty),
@@ -820,6 +832,7 @@ def save_draft_invoice(data: str | dict):
 	that draft is updated in place rather than creating a new document.
 	"""
 	data = json.loads(data) if isinstance(data, str) else data
+	check_may_sell(data.get("pos_profile"))
 
 	pos_profile = data.get("pos_profile")
 	customer = data.get("customer")
@@ -1397,6 +1410,13 @@ def delete_draft_invoice(name: str, doctype: str = "", pos_opening_shift: str = 
 	doc = frappe.get_doc(doctype, name)
 	if doc.docstatus != 0:
 		frappe.throw(_("Only draft invoices can be deleted"))
+	# The delete below ignores permissions, so only a parked register sale may go,
+	# by someone who may sell at its register and edit this draft. Counter staff
+	# discard their parked tabs; they need not hold delete rights on invoices.
+	if not doc.get("is_pos") or not doc.get("pos_profile"):
+		frappe.throw(_("Only a parked POS sale can be deleted here."), frappe.PermissionError)
+	check_may_sell(doc.pos_profile)
+	doc.check_permission("write")
 
 	draft_shift = doc.get("pos_opening_shift")
 	is_foreign_tab = bool(draft_shift) and bool(pos_opening_shift) and draft_shift != pos_opening_shift
