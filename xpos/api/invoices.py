@@ -302,6 +302,17 @@ def _mule_order_fields(row):
 	return {field: row.get(field) for field in ("sales_order", "so_detail", *_BOUND_ROW_FIELDS[3:]) if row.get(field) is not None}
 
 
+def check_may_sell(pos_profile: str | None) -> None:
+	"""Refuse a caller who may not sell at this register.
+
+	Invoices are inserted with ignore_permissions (the cart sets fields a
+	cashier may not set directly), so the right to sell is checked here: create
+	permission on the invoice doctype and a seat at the POS Profile.
+	"""
+	frappe.has_permission(get_invoice_type(), "create", throw=True)
+	resolve_pos_profile(pos_profile)
+
+
 @frappe.whitelist()
 def create_invoice(data: str | dict, local_id: str | None = None):
 	"""Create a POS Sales Invoice from cart data.
@@ -313,22 +324,19 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	"""
 	data = json.loads(data) if isinstance(data, str) else data
 
-	# The invoice is inserted with ignore_permissions (the cart sets fields a
-	# cashier may not set directly), so the caller's right to sell is checked
-	# here, before anything else: create permission on the invoice doctype and
-	# a seat at this register.
-	frappe.has_permission(get_invoice_type(), "create", throw=True)
-	resolve_pos_profile(data.get("pos_profile"))
-
 	local_id = local_id or data.get("local_id")
 
 	warehouse = data.get("warehouse")
 	if not warehouse and data.get("pos_profile"):
 		warehouse = frappe.get_cached_doc("POS Profile", data["pos_profile"]).warehouse
+	# A replay of a sale that is already posted answers "duplicate" first, so an
+	# offline retry never dead-letters a committed sale.
 	existing = find_invoice_by_local_id(local_id, warehouse)
 	if existing:
 		dt, name = existing
 		return {**_build_invoice_response(frappe.get_doc(dt, name)), "duplicate": True}
+
+	check_may_sell(data.get("pos_profile"))
 
 	pos_profile = data.get("pos_profile")
 	customer = data.get("customer")
@@ -820,6 +828,7 @@ def save_draft_invoice(data: str | dict):
 	that draft is updated in place rather than creating a new document.
 	"""
 	data = json.loads(data) if isinstance(data, str) else data
+	check_may_sell(data.get("pos_profile"))
 
 	pos_profile = data.get("pos_profile")
 	customer = data.get("customer")

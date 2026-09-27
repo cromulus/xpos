@@ -139,6 +139,12 @@ class TestStaleDraftGuard(unittest.TestCase):
 class TestSaveDraftInvoiceConcurrency(unittest.TestCase):
 	"""``save_draft_invoice`` guards the update and re-homes the tab to the saver."""
 
+	def setUp(self):
+		# The caller's right to sell has its own tests (test_invoices).
+		patcher = patch("xpos.api.invoices.resolve_pos_profile")
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	def _pos_profile(self):
 		pos = MagicMock()
 		pos.name = PROFILE
