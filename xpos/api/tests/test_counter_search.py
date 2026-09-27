@@ -14,10 +14,9 @@ class TestCounterSearch(unittest.TestCase):
 			"xpos.api.items.get_item_search_settings", return_value=config
 		), patch("xpos.api.items.get_invoice_type", return_value="Sales Invoice"), patch(
 			"xpos.api.items.get_stock_qty_map", return_value={"Prime": 1}
-		):
+		), patch("xpos.api.items.selling_price", return_value=26.5):
 			api.get_cached_doc.return_value = frappe._dict(warehouse="Main", item_groups=[], selling_price_list="Retail")
 			api.get_list.return_value = [frappe._dict(item_code="Prime", mule_legacy_product_code="MP")]
-			api.db.get_value.return_value = 26.5
 			for term in ("MP", ""):
 				rows = get_pos_items("Till", search_term=term)
 				query = api.get_list.call_args.kwargs
