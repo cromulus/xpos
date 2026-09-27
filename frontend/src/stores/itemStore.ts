@@ -71,19 +71,31 @@ export const useItemStore = defineStore("items", () => {
 			while (true) {
 				const size = limit ? Math.min(200, limit + 1 - allItems.length) : 200;
 				const batch = await call<POSItem[]>("xpos.api.items.get_pos_items", {
-					pos_profile: posProfile, search_term: "", item_group: "",
-					start: allItems.length, page_length: size,
+					pos_profile: posProfile,
+					search_term: "",
+					item_group: "",
+					start: allItems.length,
+					page_length: size,
 				});
 				allItems.push(...batch);
-				if (batch.length < size) { complete = true; break; }
+				if (batch.length < size) {
+					complete = true;
+					break;
+				}
 				if (limit && allItems.length > limit) break;
 			}
-			const selected = (limit ? allItems.slice(0, limit) : allItems)
-				.map((item, rank) => ({ ...item, xpos_cache_rank: rank }));
+			const selected = (limit ? allItems.slice(0, limit) : allItems).map((item, rank) => ({
+				...item,
+				xpos_cache_rank: rank,
+			}));
 			// Catalog rows already contain fresh stock; do not fetch it all a second time.
 			await idbCacheItems(selected);
 			const warehouse = usePosStore().warehouse;
-			if (warehouse) await cacheStockForWarehouse(warehouse, selected.map(item => ({ item_code: item.item_code, actual_qty: item.actual_qty || 0 })));
+			if (warehouse)
+				await cacheStockForWarehouse(
+					warehouse,
+					selected.map((item) => ({ item_code: item.item_code, actual_qty: item.actual_qty || 0 })),
+				);
 			status.finish("Products and stock", posProfile, selected.length, complete);
 		} catch (error) {
 			status.fail("Products and stock");
