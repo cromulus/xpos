@@ -313,34 +313,12 @@ def check_may_sell(pos_profile: str | None) -> None:
 	resolve_pos_profile(pos_profile)
 
 
-@frappe.whitelist()
-def create_invoice(data: str | dict, local_id: str | None = None):
-	"""Create a POS Sales Invoice from cart data.
+def _build_invoice_doc(data: dict, local_id: str | None = None):
+	"""Build the unsaved invoice a cart payload becomes: lines, price lock, taxes, payments.
 
-	Args:
-	    data: JSON string (or dict) containing the cart payload.
-	    local_id: Stable client-side id used to deduplicate sync retries so the
-	        same cart is never committed twice (exactly-once invoice creation).
+	Shared by ``create_invoice`` and ``preview_invoice`` so the preview shows exactly
+	what saving will post. Returns ``(invoice_doc, pos_profile_doc, doctype, is_existing_draft)``.
 	"""
-	data = json.loads(data) if isinstance(data, str) else data
-
-	local_id = local_id or data.get("local_id")
-
-	warehouse = data.get("warehouse")
-	if not warehouse and data.get("pos_profile"):
-		warehouse = frappe.get_cached_doc("POS Profile", data["pos_profile"]).warehouse
-	# A replay of a sale that is already posted answers "duplicate" first, so an
-	# offline retry never dead-letters a committed sale.
-	existing = find_invoice_by_local_id(local_id, warehouse)
-	if existing:
-		dt, name = existing
-		doc = frappe.get_doc(dt, name)
-		# Only someone who may read the sale learns about it.
-		doc.check_permission("read")
-		return {**_build_invoice_response(doc), "duplicate": True}
-
-	check_may_sell(data.get("pos_profile"))
-
 	pos_profile = data.get("pos_profile")
 	customer = data.get("customer")
 	items = data.get("items", [])
@@ -350,7 +328,6 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	return_against = data.get("return_against")
 	additional_discount_percentage = flt(data.get("additional_discount_percentage", 0))
 	discount_amount = flt(data.get("discount_amount", 0))
-	submit_in_background = cint(data.get("submit_in_background", 0))
 
 	if not pos_profile:
 		frappe.throw(_("POS Profile is required"))
@@ -694,6 +671,40 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	except Exception:
 		pass
 
+	return invoice_doc, pos, doctype, is_existing_draft
+
+
+@frappe.whitelist()
+def create_invoice(data: str | dict, local_id: str | None = None):
+	"""Create a POS Sales Invoice from cart data.
+
+	Args:
+	    data: JSON string (or dict) containing the cart payload.
+	    local_id: Stable client-side id used to deduplicate sync retries so the
+	        same cart is never committed twice (exactly-once invoice creation).
+	"""
+	data = json.loads(data) if isinstance(data, str) else data
+
+	local_id = local_id or data.get("local_id")
+
+	warehouse = data.get("warehouse")
+	if not warehouse and data.get("pos_profile"):
+		warehouse = frappe.get_cached_doc("POS Profile", data["pos_profile"]).warehouse
+	# A replay of a sale that is already posted answers "duplicate" first, so an
+	# offline retry never dead-letters a committed sale.
+	existing = find_invoice_by_local_id(local_id, warehouse)
+	if existing:
+		dt, name = existing
+		doc = frappe.get_doc(dt, name)
+		# Only someone who may read the sale learns about it.
+		doc.check_permission("read")
+		return {**_build_invoice_response(doc), "duplicate": True}
+
+	check_may_sell(data.get("pos_profile"))
+
+	invoice_doc, pos, doctype, is_existing_draft = _build_invoice_doc(data, local_id)
+	submit_in_background = cint(data.get("submit_in_background", 0))
+
 	try:
 		if is_existing_draft:
 			invoice_doc.save(ignore_permissions=True)
@@ -754,6 +765,26 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	invoice_doc.submit()
 
 	return _build_invoice_response(invoice_doc)
+
+
+@frappe.whitelist(methods=["POST"])
+def preview_invoice(data: str | dict):
+	"""The lines and totals saving this cart would post, without saving anything.
+
+	Server rules can change a cart after the register priced it: the Mule adapter
+	moves a grain depositor's own grain onto a $0 line (MuleCity-9f4). The register
+	shows and charges this preview instead of its own sum, so a card is never
+	overcharged. The doc is built by the same code as ``create_invoice``; the
+	adapter runs its save-time rules and rolls them back.
+	"""
+	from mulecity_erpnext.pos_workspace import preview_cart
+
+	data = dict(json.loads(data) if isinstance(data, str) else data)
+	# A preview never edits a saved draft, claims a local id or records a tender.
+	for key in ("name", "modified", "local_id", "payments", "pos_change_legs", "change_amount"):
+		data.pop(key, None)
+	invoice_doc = _build_invoice_doc(data)[0]
+	return preview_cart(invoice_doc)
 
 
 def _submit_invoice_job(invoice_name: str, doctype: str = "Sales Invoice"):

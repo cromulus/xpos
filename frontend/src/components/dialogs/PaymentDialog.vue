@@ -78,6 +78,14 @@
 							>
 								{{ money(Math.abs(cartStore.grandTotal)) }}
 							</p>
+							<!-- The server changed the cart (e.g. the customer's own stored grain on a $0 line):
+							     this is the ticket that will post, and the amount above is its total. -->
+							<ul v-if="cartStore.serverLinesDiffer" class="mt-2 px-4 text-xs text-left text-muted-foreground">
+								<li v-for="(line, index) in cartStore.serverPreview?.items" :key="index" class="flex justify-between gap-2">
+									<span>{{ line.description && line.stored_grain ? line.description : line.item_name }} · {{ line.qty }} {{ line.uom }}</span>
+									<span class="tabular-nums">{{ money(line.amount) }}</span>
+								</li>
+							</ul>
 						</div>
 						<div
 							v-if="

@@ -34,7 +34,7 @@ import {
 } from "@/services/pricingService";
 import type { CartPricingLine, FreeItemLine } from "@/services/pricingEngine";
 import { nowDate, toDateOrNow } from "@/utils/datetime";
-import { debounce } from "@/utils";
+import { debounce, extractErrorMessage, isOnline } from "@/utils";
 
 let cartRowSeq = 0;
 
@@ -64,6 +64,16 @@ function parsePricingRules(value: unknown): string[] {
 
 function parseRuleName(value: unknown): string | undefined {
 	return parsePricingRules(value)[0];
+}
+
+/** What ``xpos.api.invoices.preview_invoice`` returns, keyed to the cart it priced. */
+interface ServerPreview {
+	key: string;
+	items: { item_code: string; item_name: string; description?: string; qty: number; uom: string; rate: number; amount: number; stored_grain?: number }[];
+	taxes: { description: string; rate: number; tax_amount: number }[];
+	net_total: number;
+	grand_total: number;
+	amount_due: number;
 }
 
 export const useCartStore = defineStore("cart", () => {
@@ -108,6 +118,14 @@ export const useCartStore = defineStore("cart", () => {
       if (request === muleTaxRequest) muleTaxError.value = "Tax lookup failed. Reselect the customer to retry before taking payment.";
     } finally { if (request === muleTaxRequest) muleTaxPending.value = false; }
   });
+
+	// Server-priced ticket (MuleCity-9f4). Save-time rules can change a cart after the
+	// register priced it (a grain depositor's own grain goes on a $0 line), so before
+	// payment the server builds the ticket save would post and the register charges
+	// that. It is kept only while the cart is unchanged (same key).
+	const serverPreview = ref<ServerPreview | null>(null);
+	const serverPreviewPending = ref(false);
+	const serverPreviewError = ref("");
 
 	const isReturnMode = ref(false);
 	const returnAgainst = ref("");
@@ -301,8 +319,13 @@ export const useCartStore = defineStore("cart", () => {
 		return calculatedTaxes.value.reduce((sum, t) => sum + t.amount, 0);
 	});
 
+	const previewKey = computed(() => JSON.stringify(previewPayload()));
+
 	const grandTotal = computed(() => {
 		const posStore = usePosStore();
+		if (serverPreview.value && serverPreview.value.key === previewKey.value) {
+			return serverPreview.value.amount_due;
+		}
 		let total = subtotal.value + taxAmount.value;
 
 		// Apply offer item-level discounts
@@ -1158,8 +1181,45 @@ export const useCartStore = defineStore("cart", () => {
 		}
 	}
 
-	function openPaymentDialog(): void {
-        if (muleTaxPending.value || muleTaxError.value) return;
+	/** The cart as save would receive it, minus the tender (what the preview prices). */
+	function previewPayload(): Partial<InvoiceData> {
+		const { local_id, payments, change_amount, pos_change_legs, name, modified, ...cart } = getInvoiceData(
+			posStore.profileName,
+			"",
+		);
+		return cart;
+	}
+
+
+	/** The server's lines differ from the cart's (e.g. a $0 stored-grain line was added). */
+	const serverLinesDiffer = computed(() => {
+		const preview = serverPreview.value;
+		if (!preview || preview.key !== previewKey.value) return false;
+		const line = (code: string, qty: number, rate: number) => `${code}:${+qty.toFixed(3)}:${+rate.toFixed(6)}`;
+		const cart = items.value.map((i) => line(i.item_code, i.qty, i.rate)).join("|");
+		return cart !== preview.items.map((i) => line(i.item_code, i.qty, i.rate)).join("|");
+	});
+
+	async function openPaymentDialog(): Promise<void> {
+		if (muleTaxPending.value || muleTaxError.value || serverPreviewPending.value) return;
+		// Offline the server can't be asked; the offline queue posts what the server decides.
+		if (!isReturnMode.value && isOnline()) {
+			const key = previewKey.value;
+			serverPreviewPending.value = true;
+			serverPreviewError.value = "";
+			try {
+				const result = await call<Omit<ServerPreview, "key">>("xpos.api.invoices.preview_invoice", {
+					data: JSON.stringify(previewPayload()),
+				});
+				serverPreview.value = { ...result, key };
+			} catch (error) {
+				serverPreview.value = null;
+				serverPreviewError.value = extractErrorMessage(error);
+				return;
+			} finally {
+				serverPreviewPending.value = false;
+			}
+		}
 		showPaymentDialog.value = true;
 	}
 
@@ -1566,6 +1626,7 @@ export const useCartStore = defineStore("cart", () => {
 		discountPercentage,
 		discountAmount,
 		muleTaxPending, muleTaxError, muleTaxCategory,
+		serverPreview, serverPreviewPending, serverPreviewError, serverLinesDiffer,
 		showPaymentDialog,
 		isReturnMode,
 		returnAgainst,
