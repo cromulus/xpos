@@ -143,6 +143,35 @@ def get_pos_items(
 			min(effective_page_length, search_limit) if effective_page_length > 0 else search_limit
 		)
 
+	product_order = pos.get("xpos_product_order") or "Alphabetical"
+	metric = {
+		"Most Recent Purchase": "last_purchase",
+		"Most Revenue": "revenue",
+		"Most Transactions": "transactions",
+	}.get(product_order)
+	# Rank eligible names first; fetch price/stock/details only for the requested page.
+	page_codes = None
+	if metric:
+		eligible = frappe.get_list(
+			"Item",
+			filters=filters,
+			or_filters=or_filters,
+			fields=["name"],
+			order_by="item_name asc, name asc",
+			limit_page_length=0,
+		)
+		ranking = get_item_sales_ranking(pos.company, metric)
+		eligible.sort(key=lambda row: ranking.get(row.name, len(ranking)))
+		page_codes = [
+			row.name
+			for row in eligible[
+				cint(start) : cint(start) + effective_page_length if effective_page_length else None
+			]
+		]
+		if not page_codes:
+			return []
+		filters["name"] = ["in", page_codes]
+
 	items = frappe.get_list(
 		"Item",
 		filters=filters,
@@ -163,15 +192,22 @@ def get_pos_items(
 			"brand",
 			"max_discount",
 		],
-		order_by="item_name asc",
-		limit_start=cint(start),
+		order_by={"Item Code": "name asc", "Recently Updated": "modified desc, name asc"}.get(
+			pos.get("xpos_product_order"), "item_name asc, name asc"
+		),
+		limit_start=0 if page_codes is not None else cint(start),
 		limit_page_length=effective_page_length,
 	)
+
+	if page_codes is not None:
+		positions = {code: index for index, code in enumerate(page_codes)}
+		items.sort(key=lambda item: positions[item.item_code])
 
 	price_list = pos.selling_price_list or frappe.db.get_single_value(
 		"Selling Settings", "selling_price_list"
 	)
 
+	stock = get_stock_qty_map([item.item_code for item in items], warehouse, pos_profile)
 	for item in items:
 		item.rate = (
 			frappe.db.get_value(
@@ -182,9 +218,7 @@ def get_pos_items(
 			or 0
 		)
 
-		item.actual_qty = (
-			get_stock_qty(item.item_code, warehouse, pos_profile=pos_profile) if warehouse else 0
-		)
+		item.actual_qty = stock.get(item.item_code, 0)
 
 	if include_uoms and items:
 		item_codes = [item.item_code for item in items]
@@ -710,6 +744,57 @@ def get_price_for_uom(
 		or 1.0
 	)
 	return {"rate": flt(base_rate) * flt(conversion_factor)}
+
+
+def get_item_sales_ranking(company: str, metric: str) -> dict[str, int]:
+	"""Lifetime company sales; returns net revenue, and consolidated tickets count once."""
+	if metric not in {"last_purchase", "revenue", "transactions"}:
+		frappe.throw("Invalid product ranking")
+	rows = frappe.db.sql(
+		f"""
+		SELECT item_code, MAX(CASE WHEN is_return = 0 THEN posted END) AS last_purchase,
+		SUM(base_net_amount) AS revenue,
+		COUNT(DISTINCT CASE WHEN is_return = 0 THEN ticket END) AS transactions
+		FROM (
+		 SELECT i.item_code, TIMESTAMP(s.posting_date,s.posting_time) AS posted,
+		 s.is_return, i.base_net_amount, CONCAT('SI:',s.name) AS ticket
+		 FROM `tabSales Invoice Item` i JOIN `tabSales Invoice` s ON i.parent = s.name
+		 WHERE s.docstatus = 1 AND s.company = %(company)s AND IFNULL(s.is_consolidated,0) = 0
+		 UNION ALL
+		 SELECT i.item_code, TIMESTAMP(s.posting_date,s.posting_time), s.is_return,
+		 i.base_net_amount, CONCAT('POS:',s.name)
+		 FROM `tabPOS Invoice Item` i JOIN `tabPOS Invoice` s ON i.parent = s.name
+		 WHERE s.docstatus = 1 AND s.company = %(company)s
+		) sales GROUP BY item_code ORDER BY {metric} DESC, item_code ASC
+	""",
+		{"company": company},
+		as_dict=True,
+	)
+	return {row.item_code: index for index, row in enumerate(rows)}
+
+
+def get_stock_qty_map(item_codes: list[str], warehouse: str, pos_profile: str | None = None):
+	"""Read a catalog page's stock together, preserving pending POS deductions."""
+	if not item_codes or not warehouse:
+		return {}
+	warehouses = [warehouse]
+	if frappe.db.get_value("Warehouse", warehouse, "is_group"):
+		warehouses = frappe.db.get_descendants("Warehouse", warehouse) or []
+	Bin = DocType("Bin")
+	rows = (
+		frappe.qb.from_(Bin)
+		.select(Bin.item_code, Sum(Bin.actual_qty).as_("actual_qty"))
+		.where(Bin.item_code.isin(item_codes))
+		.where(Bin.warehouse.isin(warehouses))
+		.groupby(Bin.item_code)
+		.run(as_dict=True)
+	)
+	stock = {row.item_code: flt(row.actual_qty) for row in rows}
+	if pos_profile and get_invoice_type() == "POS Invoice":
+		pending = _get_pending_pos_qty_map(warehouses, item_codes=item_codes)
+		for code in item_codes:
+			stock[code] = stock.get(code, 0) - pending.get(code, 0)
+	return stock
 
 
 def get_stock_qty(item_code: str, warehouse: str, pos_profile: str | None = None):

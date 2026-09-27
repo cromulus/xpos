@@ -1,5 +1,8 @@
 <template>
 	<div class="flex flex-col h-full overflow-hidden">
+    <MuleWorkspace :customer="cartStore.customer?.name" :profile="posStore.profileName" :request="call"
+      :cart-has-items="!cartStore.isEmpty" @pickup="cartStore.loadFromInvoice" />
+    <p v-if="cartStore.muleTaxError" role="alert" class="p-2 text-red-700">{{ cartStore.muleTaxError }}</p>
 		<div
 			class="md:hidden shrink-0 flex items-center bg-muted/60 border-b border-border mx-3 mt-2 mb-0 rounded-xl overflow-hidden"
 		>
@@ -177,6 +180,7 @@
 </template>
 
 <script setup lang="ts">
+import MuleWorkspace from "@/components/MuleWorkspace.vue";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
@@ -530,7 +534,7 @@ async function fetchAndApplyItemTax(item: POSItem) {
 		}>("xpos.api.taxes.get_item_tax_template", {
 			item_code: item.item_code,
 			company: posStore.companyName,
-			tax_category: "",
+			tax_category: cartStore.muleTaxCategory,
 		});
 		if (taxData && taxData.item_tax_template) {
 			cartStore.setItemTax(item.item_code, taxData.item_tax_template, taxData.item_tax_map || {});
@@ -544,7 +548,7 @@ async function fetchAndApplyItemTax(item: POSItem) {
 		if (isNetworkError(e)) {
 			try {
 				const cached = await getCachedItemTax(item.item_code, posStore.companyName);
-				if (cached && cached.item_tax_template) {
+				if (cached && cached.item_tax_template && !cartStore.muleTaxCategory) {
 					cartStore.setItemTax(item.item_code, cached.item_tax_template, cached.item_tax_map || {});
 					return;
 				}

@@ -281,6 +281,12 @@ def find_invoice_by_local_id(local_id: str | None, warehouse: str | None = None)
 	return None
 
 
+def _mule_order_fields(row):
+	"""Carry only source links and accepted-quote evidence across invoice transports."""
+	from mulecity_erpnext.mule_feed_formula.transaction_validation import _BOUND_ROW_FIELDS
+	return {field: row.get(field) for field in ("sales_order", "so_detail", *_BOUND_ROW_FIELDS[3:]) if row.get(field) is not None}
+
+
 @frappe.whitelist()
 def create_invoice(data: str | dict, local_id: str | None = None):
 	"""Create a POS Sales Invoice from cart data.
@@ -295,6 +301,8 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	local_id = local_id or data.get("local_id")
 
 	warehouse = data.get("warehouse")
+	if not warehouse and data.get("pos_profile"):
+		warehouse = frappe.get_cached_doc("POS Profile", data["pos_profile"]).warehouse
 	existing = find_invoice_by_local_id(local_id, warehouse)
 	if existing:
 		dt, name = existing
@@ -462,6 +470,7 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 		item.qty = item_qty
 		item.uom = item_data.get("uom") or item_data.get("stock_uom")
 		item.warehouse = item_data.get("warehouse") or pos.warehouse
+		item.update(_mule_order_fields(item_data))
 
 		if is_return:
 			item.warehouse = item_data.get("warehouse") or item_data.get("source_warehouse") or item.warehouse
@@ -551,6 +560,8 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 				invoice_doc,
 			)
 
+	from mulecity_erpnext.pos_workspace import apply_customer_taxes
+	apply_customer_taxes(invoice_doc)
 	_apply_invoice_delivery_charge_fields(invoice_doc, data)
 
 	loyalty_paid = 0
@@ -653,7 +664,8 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 			invoice_doc.save(ignore_permissions=True)
 		else:
 			invoice_doc.insert(ignore_permissions=True)
-	except frappe.exceptions.UniqueValidationError:
+	except (frappe.exceptions.UniqueValidationError, frappe.QueryDeadlockError):
+		# Concurrent attempts may contend on the naming series before reaching the unique ID.
 		frappe.db.rollback()
 		existing = find_invoice_by_local_id(local_id, warehouse)
 		if existing:
@@ -870,6 +882,7 @@ def save_draft_invoice(data: str | dict):
 		item.qty = flt(item_data.get("qty", 1))
 		item.uom = item_data.get("uom") or item_data.get("stock_uom")
 		item.warehouse = item_data.get("warehouse") or pos.warehouse
+		item.update(_mule_order_fields(item_data))
 
 		if cint(item_data.get("is_free_item")):
 			item.is_free_item = 1
@@ -894,6 +907,8 @@ def save_draft_invoice(data: str | dict):
 	if pos.taxes_and_charges:
 		invoice_doc.taxes_and_charges = pos.taxes_and_charges
 
+	from mulecity_erpnext.pos_workspace import apply_customer_taxes
+	apply_customer_taxes(invoice_doc)
 	payments = data.get("payments", [])
 	if payments:
 		invoice_doc.set("payments", [])
@@ -1313,6 +1328,9 @@ def get_invoice_details(invoice_name: str, doctype: str = ""):
 		),
 		"items": [
 			{
+				**_mule_order_fields(i),
+				"conversion_factor": i.conversion_factor,
+				"warehouse": i.warehouse,
 				"item_code": i.item_code,
 				"item_name": i.item_name,
 				"qty": i.qty,

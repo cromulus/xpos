@@ -1,3 +1,5 @@
+import { newInvoiceId } from "@/services/invoiceSubmission";
+import { muleOrderFields } from "@/services/muleOrderFields";
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { call } from "@/services/api";
@@ -65,6 +67,7 @@ function parseRuleName(value: unknown): string | undefined {
 }
 
 export const useCartStore = defineStore("cart", () => {
+	const posStore = usePosStore();
 	const items = ref<CartItem[]>([]);
 	const selectedCartIndex = ref(-1);
 	const customer = ref<{
@@ -79,7 +82,33 @@ export const useCartStore = defineStore("cart", () => {
 	const discountPercentage = ref(0);
 	const discountAmount = ref(0);
 	const showPaymentDialog = ref(false);
-	const posStore = usePosStore();
+  const muleTaxPending = ref(false);
+  const muleTaxError = ref("");
+  const muleTaxCategory = ref("");
+  let muleTaxRequest = 0;
+  watch(() => [customer.value?.name, posStore.profileName], async ([buyer, profile]) => {
+    if (!buyer || !profile) return;
+    const request = ++muleTaxRequest;
+    muleTaxPending.value = true;
+    muleTaxError.value = "";
+    showPaymentDialog.value = false;
+    try {
+      const context = await call<any>("mulecity_erpnext.pos_workspace.tax_context", {customer: buyer, pos_profile: profile});
+      if (request !== muleTaxRequest) return;
+      posStore.taxes = context.taxes;
+      muleTaxCategory.value = context.tax_category || "";
+      // A customer's item overrides must not survive a buyer change.
+      for (const item of items.value) {
+        const tax = await call<any>("xpos.api.taxes.get_item_tax_template", {item_code: item.item_code, company: posStore.companyName, tax_category: muleTaxCategory.value});
+        if (request !== muleTaxRequest) return;
+        item.item_tax_template = tax.item_tax_template || undefined;
+        item.item_tax_map = tax.item_tax_map || {};
+      }
+    } catch (error) {
+      if (request === muleTaxRequest) muleTaxError.value = "Tax lookup failed. Reselect the customer to retry before taking payment.";
+    } finally { if (request === muleTaxRequest) muleTaxPending.value = false; }
+  });
+
 	const isReturnMode = ref(false);
 	const returnAgainst = ref("");
 	const returnItemCodes = ref<string[]>([]);
@@ -508,6 +537,7 @@ export const useCartStore = defineStore("cart", () => {
 			existing.qty += isReturnMode.value ? -1 : 1;
 		} else {
 			items.value.push({
+                ...muleOrderFields(item),
 				uid: nextRowId(),
 				item_code: item.item_code,
 				item_name: item.item_name,
@@ -1077,6 +1107,7 @@ export const useCartStore = defineStore("cart", () => {
 	}
 
 	function clearCart(): void {
+		invoiceLocalId = "";
 		items.value = [];
 		selectedCartIndex.value = -1;
 		discountPercentage.value = 0;
@@ -1122,6 +1153,7 @@ export const useCartStore = defineStore("cart", () => {
 	}
 
 	function openPaymentDialog(): void {
+        if (muleTaxPending.value || muleTaxError.value) return;
 		showPaymentDialog.value = true;
 	}
 
@@ -1196,6 +1228,7 @@ export const useCartStore = defineStore("cart", () => {
 					}
 
 					items.value.push({
+                        ...muleOrderFields(item),
 						uid: nextRowId(),
 						item_code: item.item_code,
 						item_name: item.item_name,
@@ -1213,7 +1246,7 @@ export const useCartStore = defineStore("cart", () => {
 						is_stock_item: item.is_stock_item,
 						has_serial_no: item.has_serial_no || false,
 						has_batch_no: item.has_batch_no || false,
-						conversion_factor: 1,
+						conversion_factor: item.conversion_factor || 1,
 						pos_notes: item.additional_notes || "",
 						pos_delivery_date: item.delivery_date || "",
 						pos_is_free_item: !!item.is_free_item,
@@ -1289,6 +1322,7 @@ export const useCartStore = defineStore("cart", () => {
 		};
 		for (const item of invoiceData.items) {
 			items.value.push({
+                ...muleOrderFields(item),
 				uid: nextRowId(),
 				item_code: item.item_code,
 				item_name: item.item_name,
@@ -1302,20 +1336,23 @@ export const useCartStore = defineStore("cart", () => {
 				discount_amount: item.discount_amount || 0,
 				serial_no: item.serial_no || "",
 				batch_no: item.batch_no || "",
-				actual_qty: 0,
+				actual_qty: (item as any).actual_qty || 0,
 				has_serial_no: false,
 				has_batch_no: false,
-				conversion_factor: 1,
+				conversion_factor: (item as any).conversion_factor || 1,
 			} as CartItem);
 		}
 	}
 
+	let invoiceLocalId = "";
 	function getInvoiceData(posProfile: string, posOpeningShift: string): InvoiceData {
 		const data: InvoiceData = {
+			local_id: invoiceLocalId || (invoiceLocalId = newInvoiceId()),
 			pos_profile: posProfile,
 			customer: customer.value?.name || "",
 			items: items.value.map(
 				(item: CartItem): InvoiceItem => ({
+                    ...muleOrderFields(item),
 					item_code: item.item_code,
 					item_name: item.item_name,
 					local_item_name: item.local_item_name,
@@ -1522,6 +1559,7 @@ export const useCartStore = defineStore("cart", () => {
 		customer,
 		discountPercentage,
 		discountAmount,
+		muleTaxPending, muleTaxError, muleTaxCategory,
 		showPaymentDialog,
 		isReturnMode,
 		returnAgainst,
