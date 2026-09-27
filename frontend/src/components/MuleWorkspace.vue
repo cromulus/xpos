@@ -10,7 +10,7 @@
   <Teleport to="body">
     <dialog ref="dialog" class="mule-workspace" @close="mode = ''">
       <header><div><h2>{{ mode === 'mixes' ? 'Customer mixes' : 'Orders for pickup' }}</h2>
-        <p>Buyer: <strong>{{ customer || 'Choose a customer at the register' }}</strong></p></div>
+        <p>Buyer: <strong :title="customer || undefined">{{ customerName || customer || 'Choose a customer at the register' }}</strong></p></div>
         <button type="button" aria-label="Close customer work" @click="dialog.close()">Close</button></header>
       <form class="mule-search" @submit.prevent="search(0)">
         <input v-model="term" :placeholder="mode === 'mixes' ? 'Recipe, owner name or account code' : 'Customer name or order number'" aria-label="Search customer work" />
@@ -62,7 +62,8 @@
 <script setup>
 import { ref, watch } from 'vue';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
-const props = defineProps({customer: String, profile: String, request: Function, cartHasItems: Boolean});
+// customer is the Customer ID (used in every call); customerName is what people read.
+const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean});
 const emit = defineEmits(['pickup']);
 const dialog = ref(null), mode = ref(''), term = ref(''), mine = ref(false);
 const rows = ref([]), busy = ref(false), error = ref(''), more = ref(false), start = ref(0);
