@@ -111,19 +111,19 @@ watch(() => props.customer, () => { if (mode.value) search(0); });
 
 <style scoped>
 /* A compact counter toolbar and readable recipe sheet, using host typography. */
-.mule-counter-tools { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid #ced6d0; background:#f1f7f2; color:#173c28; flex-shrink:0; }
+.mule-counter-tools { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid hsl(var(--border)); background:hsl(var(--secondary)); color:hsl(var(--foreground)); flex-shrink:0; }
 .mule-counter-tools strong { margin-right:8px; } .mule-counter-tools small { margin-left:auto; }
-.mule-counter-tools button, .mule-workspace button { border:1px solid #698874; border-radius:5px; padding:7px 12px; background:white; color:#173c28; cursor:pointer; font:inherit; }
-button:disabled { opacity:.5; cursor:not-allowed; } button:focus-visible, a:focus-visible, input:focus-visible { outline:3px solid #31784c; outline-offset:2px; }
-.mule-counter-tools a, .mule-workspace a { color:#195e35; text-decoration:underline; }
-.mule-workspace { margin:auto; width:min(950px,94vw); max-height:88vh; padding:22px; border:1px solid #698874; border-radius:8px; background:white; color:#172a1d; overflow:auto; font:16px/1.45 system-ui,sans-serif; }
+.mule-counter-tools button, .mule-workspace button { border:1px solid hsl(var(--border)); border-radius:5px; padding:7px 12px; background:hsl(var(--card)); color:hsl(var(--foreground)); cursor:pointer; font:inherit; }
+button:disabled { opacity:.5; cursor:not-allowed; } button:focus-visible, a:focus-visible, input:focus-visible { outline:3px solid hsl(var(--ring)); outline-offset:2px; }
+.mule-counter-tools a, .mule-workspace a { color:hsl(var(--primary)); text-decoration:underline; }
+.mule-workspace { margin:auto; width:min(950px,94vw); max-height:88vh; padding:22px; border:1px solid hsl(var(--border)); border-radius:8px; background:hsl(var(--card)); color:hsl(var(--foreground)); overflow:auto; font-size:16px; line-height:1.45; font-family:inherit; }
 .mule-workspace::backdrop { background:rgba(0,0,0,.4); }
 .mule-workspace header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
 .mule-workspace h2 { font-size:24px; font-weight:700; margin:0; } .mule-workspace h3 { font-size:20px; font-weight:650; }
-.mule-workspace p { margin:6px 0 12px; } .mule-workspace input:not([type=checkbox]) { border:1px solid #88958c; padding:8px; border-radius:4px; background:white; color:#172a1d; }
+.mule-workspace p { margin:6px 0 12px; } .mule-workspace input:not([type=checkbox]) { border:1px solid hsl(var(--input)); padding:8px; border-radius:4px; background:hsl(var(--card)); color:hsl(var(--foreground)); }
 .mule-search { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; align-items:center; } .mule-search>input { flex:1; min-width:220px; }
-.mule-results article { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #d8e1da; } .mule-results article>div { flex:1; } .mule-results p { font-size:14px; margin:4px 0; }
-.mule-recipe { border-top:3px solid #31784c; margin-top:20px; padding-top:16px; } .mule-recipe table { width:100%; border-collapse:collapse; margin:12px 0; } th,td { padding:7px; text-align:left; border-bottom:1px solid #d8e1da; }
+.mule-results article { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid hsl(var(--border)); } .mule-results article>div { flex:1; } .mule-results p { font-size:14px; margin:4px 0; }
+.mule-recipe { border-top:3px solid hsl(var(--ring)); margin-top:20px; padding-top:16px; } .mule-recipe table { width:100%; border-collapse:collapse; margin:12px 0; } th,td { padding:7px; text-align:left; border-bottom:1px solid hsl(var(--border)); }
 .mule-order { display:flex; flex-wrap:wrap; gap:12px; align-items:end; } .mule-order label { display:flex; flex-direction:column; } .mule-order input { max-width:180px; }
-.mule-error { color:#a12519; } .mule-workspace footer { display:flex; gap:12px; margin-top:16px; align-items:center; }
+.mule-error { color:hsl(var(--destructive)); } .mule-workspace footer { display:flex; gap:12px; margin-top:16px; align-items:center; }
 </style>

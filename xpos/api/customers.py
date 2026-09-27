@@ -252,12 +252,30 @@ def create_customer(
 	address_line1: str = None,
 	city: str = None,
 	country: str = None,
+	address_line2: str = None,
+	state: str = None,
+	pincode: str = None,
+	mule_customer_kind: str = None,
+	request_tax_exemption: int = 0,
 ):
 	"""
 	Create a new customer with optional address.
 	"""
 	if not customer_name:
 		frappe.throw(_("Customer name is required"))
+
+	# Validate before inserting the customer so a partial address is never lost.
+	if any((address_line1, address_line2, city, state, pincode)) and not (
+		(address_line1 or "").strip() and (city or "").strip()
+	):
+		frappe.throw(_("Street address and city are required to save an address"))
+
+	if mule_customer_kind and mule_customer_kind not in ("Farmer", "Reseller", "Other"):
+		frappe.throw(_("Customer type must be Farmer, Reseller, or Other"))
+	if mule_customer_kind or cint(request_tax_exemption):
+		meta = frappe.get_meta("Customer")
+		if not all(meta.has_field(field) for field in ("mule_customer_kind", "mule_tax_exemption_requested")):
+			frappe.throw(_("Mule City customer classification fields are not configured"))
 
 	if not customer_group:
 		customer_group = (
@@ -278,6 +296,13 @@ def create_customer(
 			"email_id": email_id,
 		}
 	)
+
+	# Classification and requests are informational; only approved native tax
+	# configuration can change tax treatment.
+	if mule_customer_kind:
+		customer.mule_customer_kind = mule_customer_kind
+	if cint(request_tax_exemption):
+		customer.mule_tax_exemption_requested = 1
 
 	if tax_id:
 		customer.tax_id = tax_id
@@ -303,6 +328,9 @@ def create_customer(
 			{
 				"customer": customer.name,
 				"address_line1": address_line1,
+				"address_line2": address_line2,
+				"state": state,
+				"pincode": pincode,
 				"city": city,
 				"country": country or frappe.db.get_single_value("Global Defaults", "country"),
 				"is_primary_address": 1,

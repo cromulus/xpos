@@ -15,7 +15,7 @@
 					<Badge variant="outline" class="text-[10px] font-mono">Ctrl+G</Badge>
 				</div>
 				<DialogDescription class="text-xs">{{
-					__("Search and select a past invoice to load into the cart")
+					cartStore.customer ? __("Recent invoices for {0}", [cartStore.customerName]) : __("Search and select a past invoice to load into the cart")
 				}}</DialogDescription>
 			</DialogHeader>
 
@@ -74,11 +74,8 @@
 					</div>
 				</div>
 
-				<p v-else-if="searchTerm.length >= 2" class="text-center text-sm text-muted-foreground py-8">
-					{{ __("No invoices found") }}
-				</p>
 				<p v-else class="text-center text-sm text-muted-foreground py-8">
-					{{ __("Enter an invoice number or customer name to search") }}
+					{{ __("No invoices found") }}
 				</p>
 			</div>
 			<DialogFooter class="shrink-0 border-t border-border px-5 py-4">
@@ -89,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from "vue";
+import { ref, watch, nextTick, onUnmounted } from "vue";
 import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
@@ -146,12 +143,15 @@ const isLoading = ref(false);
 const hasMore = ref(false);
 const currentPage = ref(1);
 
+let searchRequest = 0;
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 watch(
-	() => props.open,
-	(val) => {
-		if (val) {
+	() => [props.open, cartStore.customer?.name] as const,
+	([open]) => {
+		if (open) {
+			currentPage.value = 1;
+			searchInvoices();
 			nextTick(() => {
 				const el = searchInputRef.value?.$el as HTMLElement | undefined;
 				if (el) {
@@ -161,20 +161,26 @@ watch(
 			});
 		}
 	},
+	{ immediate: true },
 );
 
-function debouncedSearch() {
+onUnmounted(cancelSearch);
+
+function cancelSearch() {
+	searchRequest++;
 	if (searchTimeout) clearTimeout(searchTimeout);
+}
+
+function debouncedSearch() {
+	cancelSearch();
 	currentPage.value = 1;
 	searchTimeout = setTimeout(() => searchInvoices(), 300);
 }
 
 async function searchInvoices() {
-	if (searchTerm.value.length < 2) {
-		invoices.value = [];
-		hasMore.value = false;
-		return;
-	}
+	// An empty search shows recent invoices for the selected customer.
+	const request = ++searchRequest;
+	const page = currentPage.value;
 	isSearching.value = true;
 	try {
 		const result = await call<{ invoices: SearchInvoice[]; has_more: boolean }>(
@@ -182,20 +188,24 @@ async function searchInvoices() {
 			{
 				company: posStore.companyName,
 				search_term: searchTerm.value,
+				customer: cartStore.customer?.name || "",
 				pos_profile: posStore.profileName,
-				page: currentPage.value,
+				page,
 			},
 		);
-		if (currentPage.value === 1) {
+		if (request !== searchRequest) return;
+		if (page === 1) {
 			invoices.value = result?.invoices || [];
 		} else {
 			invoices.value.push(...(result?.invoices || []));
 		}
 		hasMore.value = result?.has_more || false;
 	} catch (error) {
+		if (request !== searchRequest) return;
 		console.error("Error searching invoices:", error);
+		showError(__("Failed to fetch invoices. Please try again."));
 	} finally {
-		isSearching.value = false;
+		if (request === searchRequest) isSearching.value = false;
 	}
 }
 
@@ -241,6 +251,7 @@ async function selectInvoice(inv: SearchInvoice) {
 }
 
 function close() {
+	cancelSearch();
 	searchTerm.value = "";
 	invoices.value = [];
 	hasMore.value = false;

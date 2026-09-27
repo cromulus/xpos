@@ -136,6 +136,18 @@
 						/>
 					</div>
 
+					<div>
+						<label for="mule-customer-kind" class="text-xs font-medium text-muted-foreground mb-1 block">{{ __("Customer type") }}</label>
+						<select id="mule-customer-kind" v-model="newCustomer.mule_customer_kind" class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+							<option>Other</option><option>Farmer</option><option>Reseller</option>
+						</select>
+					</div>
+					<label class="flex items-center gap-2 text-sm">
+						<input v-model="newCustomer.request_tax_exemption" type="checkbox" />
+						{{ __("Request tax exemption") }}
+					</label>
+					<p v-if="newCustomer.request_tax_exemption" class="text-xs text-muted-foreground">{{ __("Pending Brandy's review. This request does not change the customer's tax treatment.") }}</p>
+
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
@@ -162,18 +174,6 @@
 							}}</label>
 							<Input v-model="newCustomer.email_id" type="email" :placeholder="__('Email')" />
 						</div>
-						<div>
-							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-								__("Gender")
-							}}</label>
-							<Autocomplete
-								v-model="newCustomer.gender"
-								:options="genderOptions"
-								:placeholder="__('Select gender')"
-								:show-search-icon="false"
-								:max-visible="5"
-							/>
-						</div>
 					</div>
 
 					<div>
@@ -186,6 +186,22 @@
 							:placeholder="__('Address line 1')"
 						/>
 					</div>
+
+					<div>
+						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{ __("Address line 2") }}</label>
+						<Input v-model="newCustomer.address_line2" :placeholder="__('Apartment, suite, etc.')" />
+					</div>
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{ __("State") }}</label>
+							<Input v-model="newCustomer.state" :placeholder="__('State')" />
+						</div>
+						<div>
+							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{ __("ZIP / Postal code") }}</label>
+							<Input v-model="newCustomer.pincode" :placeholder="__('ZIP / Postal code')" />
+						</div>
+					</div>
+					<p v-if="hasAddress && (!newCustomer.address_line1.trim() || !newCustomer.city.trim())" class="text-xs text-destructive">{{ __("Enter both street address and city to save the address.") }}</p>
 
 					<div class="grid grid-cols-2 gap-3">
 						<div>
@@ -208,44 +224,8 @@
 						</div>
 					</div>
 
-					<div class="grid grid-cols-2 gap-3">
-						<div>
-							<label class="text-xs font-medium text-muted-foreground mb-1 block"
-								>{{ __("Customer Group") }} *</label
-							>
-							<Autocomplete
-								v-model="newCustomer.customer_group"
-								:options="customerGroupOptions"
-								:placeholder="__('Select group')"
-								:show-search-icon="false"
-								:max-visible="10"
-							/>
-						</div>
-						<div>
-							<label class="text-xs font-medium text-muted-foreground mb-1 block"
-								>{{ __("Territory") }} *</label
-							>
-							<Autocomplete
-								v-model="newCustomer.territory"
-								:options="territoryOptions"
-								:placeholder="__('Select territory')"
-								:show-search-icon="true"
-								:max-visible="10"
-							/>
-						</div>
-					</div>
 
 					<div class="grid grid-cols-2 gap-3">
-						<div>
-							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-								__("Referral Code")
-							}}</label>
-							<Input
-								v-model="newCustomer.referral_code"
-								type="text"
-								:placeholder="__('Referral code')"
-							/>
-						</div>
 						<div>
 							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
 								__("Birthday")
@@ -281,16 +261,11 @@ import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
 import { usePosStore } from "@/stores/posStore";
-import { showSuccess, showError, call } from "@/services/api";
+import { showSuccess, showError } from "@/services/api";
 import {
-	cacheCustomerGroups,
-	getCachedCustomerGroups,
-	cacheTerritories,
-	getCachedTerritories,
 	cacheCountries,
 	getCachedCountries,
 } from "@/services/dbBridge";
-import { isOnline } from "@/utils";
 import {
 	Dialog,
 	DialogContent,
@@ -321,24 +296,7 @@ const search = ref("");
 const showNewForm = ref(false);
 const isCreating = ref(false);
 const highlightedIndex = ref(-1);
-const customerGroups = ref<string[]>([]);
-const territories = ref<string[]>([]);
 const countries = ref<string[]>([]);
-
-const genderOptions: AutocompleteOption[] = [
-	{ label: __("Male"), value: "Male" },
-	{ label: __("Female"), value: "Female" },
-	{ label: __("Other"), value: "Other" },
-	{ label: __("Prefer not to say"), value: "Prefer not to say" },
-];
-
-const customerGroupOptions = computed<AutocompleteOption[]>(() =>
-	customerGroups.value.map((g) => ({ label: g, value: g })),
-);
-
-const territoryOptions = computed<AutocompleteOption[]>(() =>
-	territories.value.map((t) => ({ label: t, value: t })),
-);
 
 const countryOptions = computed<AutocompleteOption[]>(() =>
 	countries.value.map((c) => ({ label: c, value: c })),
@@ -346,26 +304,30 @@ const countryOptions = computed<AutocompleteOption[]>(() =>
 
 const defaultNewCustomer = () => ({
 	customer_name: "",
+	mule_customer_kind: "Other",
+	request_tax_exemption: false,
 	tax_id: "",
 	mobile_no: "",
 	address_line1: "",
+	address_line2: "",
+	state: "",
+	pincode: "",
 	city: "",
 	country: "",
 	email_id: "",
-	gender: "Male",
-	referral_code: "",
 	birthday: "",
-	customer_group: "Individual",
-	territory: "Rest Of The World",
 });
 
 const newCustomer = ref(defaultNewCustomer());
 
+// Do not silently discard an address when only part of it was entered.
+const hasAddress = computed(() => [newCustomer.value.address_line1, newCustomer.value.address_line2,
+	newCustomer.value.city, newCustomer.value.state, newCustomer.value.pincode].some(value => value.trim()));
+
 const canCreate = computed(
 	() =>
 		!!newCustomer.value.customer_name.trim() &&
-		!!newCustomer.value.customer_group &&
-		!!newCustomer.value.territory,
+		(!hasAddress.value || (!!newCustomer.value.address_line1.trim() && !!newCustomer.value.city.trim())),
 );
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -392,58 +354,14 @@ function loadDropdownData() {
 	if (boot?.countries?.length) {
 		countries.value = boot.countries.map((c) => c.name || "").filter(Boolean);
 	}
-	if (boot?.territories?.length) {
-		territories.value = boot.territories.map((t) => t.name || t.territory_name || "").filter(Boolean);
-	}
 
 	fetchDropdownOptions();
 }
 
 async function fetchDropdownOptions() {
-	const [cachedGroups, cachedTerritories, cachedCountries] = await Promise.all([
-		getCachedCustomerGroups(),
-		getCachedTerritories(),
-		getCachedCountries(),
-	]);
-
-	if (cachedGroups.length) customerGroups.value = cachedGroups;
-	if (!territories.value.length && cachedTerritories.length) territories.value = cachedTerritories;
+	const cachedCountries = await getCachedCountries();
 	if (!countries.value.length && cachedCountries.length) countries.value = cachedCountries;
-
-	if (!isOnline()) {
-		if (!customerGroups.value.length) customerGroups.value = ["All Customer Groups"];
-		if (!territories.value.length) territories.value = ["All Territories"];
-		if (!countries.value.length) countries.value = ["Pakistan"];
-		return;
-	}
-
-	try {
-		const groupsResult = await call<string[]>("xpos.api.customers.get_customer_groups").catch(
-			() => [] as string[],
-		);
-		if (groupsResult?.length) {
-			customerGroups.value = groupsResult;
-			await cacheCustomerGroups(groupsResult).catch(() => {});
-		} else if (!customerGroups.value.length) {
-			customerGroups.value = ["All Customer Groups"];
-		}
-
-		if (territories.value.length) {
-			await cacheTerritories(territories.value).catch(() => {});
-		} else {
-			territories.value = ["All Territories"];
-		}
-
-		if (countries.value.length) {
-			await cacheCountries(countries.value).catch(() => {});
-		} else {
-			countries.value = ["Pakistan"];
-		}
-	} catch {
-		if (!customerGroups.value.length) customerGroups.value = ["All Customer Groups"];
-		if (!territories.value.length) territories.value = ["All Territories"];
-		if (!countries.value.length) countries.value = ["Pakistan"];
-	}
+	if (countries.value.length) await cacheCountries(countries.value).catch(() => {});
 }
 
 function openNewForm() {
@@ -507,15 +425,16 @@ async function createAndSelect() {
 	try {
 		const payload: Record<string, unknown> = {
 			customer_name: newCustomer.value.customer_name,
+			mule_customer_kind: newCustomer.value.mule_customer_kind,
+			request_tax_exemption: newCustomer.value.request_tax_exemption ? 1 : 0,
 			mobile_no: newCustomer.value.mobile_no || undefined,
 			email_id: newCustomer.value.email_id || undefined,
 			tax_id: newCustomer.value.tax_id || undefined,
-			gender: newCustomer.value.gender || undefined,
-			referral_code: newCustomer.value.referral_code || undefined,
 			birthday: newCustomer.value.birthday || undefined,
-			customer_group: newCustomer.value.customer_group || undefined,
-			territory: newCustomer.value.territory || undefined,
 			address_line1: newCustomer.value.address_line1 || undefined,
+			address_line2: newCustomer.value.address_line2 || undefined,
+			state: newCustomer.value.state || undefined,
+			pincode: newCustomer.value.pincode || undefined,
 			city: newCustomer.value.city || undefined,
 			country: newCustomer.value.country || undefined,
 		};

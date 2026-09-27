@@ -191,6 +191,11 @@ def get_pos_items(
 			"is_stock_item",
 			"brand",
 			"max_discount",
+			# Cache the configured search values too, so aliases work offline.
+			*[
+				field for field in config["fields"]
+				if field not in {"name", "item_code", "item_name", "local_item_name", "description"}
+			],
 		],
 		order_by={"Item Code": "name asc", "Recently Updated": "modified desc, name asc"}.get(
 			pos.get("xpos_product_order"), "item_name asc, name asc"

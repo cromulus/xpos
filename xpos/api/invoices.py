@@ -1794,10 +1794,14 @@ def search_invoices_for_repeat(
 		"is_return": 0,
 	}
 
-	if search_term:
-		filters["name"] = ["like", f"%{search_term}%"]
+	# Match the fields promised by the counter's search box; keep company/status
+	# constraints separate so the OR cannot include another company's invoices.
+	term = search_term.strip()
+	or_filters = [
+		[field, "like", f"%{term}%"] for field in ("name", "customer", "customer_name")
+	] if term else []
 	if customer:
-		filters["customer"] = ["like", f"%{customer}%"]
+		filters["customer"] = customer
 	if from_date and to_date:
 		filters["posting_date"] = ["between", [from_date, to_date]]
 	elif from_date:
@@ -1808,6 +1812,7 @@ def search_invoices_for_repeat(
 	invoices = frappe.get_list(
 		doctype,
 		filters=filters,
+		or_filters=or_filters,
 		fields=[
 			"name",
 			"customer",
