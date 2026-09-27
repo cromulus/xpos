@@ -136,18 +136,6 @@
 						/>
 					</div>
 
-					<div>
-						<label for="mule-customer-kind" class="text-xs font-medium text-muted-foreground mb-1 block">{{ __("Customer type") }}</label>
-						<select id="mule-customer-kind" v-model="newCustomer.mule_customer_kind" class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-							<option>Other</option><option>Farmer</option><option>Reseller</option>
-						</select>
-					</div>
-					<label class="flex items-center gap-2 text-sm">
-						<input v-model="newCustomer.request_tax_exemption" type="checkbox" />
-						{{ __("Request tax exemption") }}
-					</label>
-					<p v-if="newCustomer.request_tax_exemption" class="text-xs text-muted-foreground">{{ __("Pending Brandy's review. This request does not change the customer's tax treatment.") }}</p>
-
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
@@ -304,8 +292,6 @@ const countryOptions = computed<AutocompleteOption[]>(() =>
 
 const defaultNewCustomer = () => ({
 	customer_name: "",
-	mule_customer_kind: "Other",
-	request_tax_exemption: false,
 	tax_id: "",
 	mobile_no: "",
 	address_line1: "",
@@ -425,8 +411,6 @@ async function createAndSelect() {
 	try {
 		const payload: Record<string, unknown> = {
 			customer_name: newCustomer.value.customer_name,
-			mule_customer_kind: newCustomer.value.mule_customer_kind,
-			request_tax_exemption: newCustomer.value.request_tax_exemption ? 1 : 0,
 			mobile_no: newCustomer.value.mobile_no || undefined,
 			email_id: newCustomer.value.email_id || undefined,
 			tax_id: newCustomer.value.tax_id || undefined,

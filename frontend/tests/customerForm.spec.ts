@@ -30,13 +30,10 @@ describe("New Customer", () => {
 		for (const [placeholder, value] of Object.entries({ "Full name": "Test Buyer", "Address line 1": "123 Main St", "Apartment, suite, etc.": "Suite 2", City: "Benson", State: "NC", "ZIP / Postal code": "27504" })) {
 			wrapper.findComponent(`[placeholder="${placeholder}"]`).vm.$emit("update:modelValue", value);
 		}
-		await wrapper.find("select").setValue("Farmer");
-		await wrapper.find('input[type="checkbox"]').setValue(true);
 		await flushPromises();
-		expect(wrapper.text()).toContain("Pending Brandy");
 		await wrapper.findAll("button-stub").find(b => b.text().includes("Create & Select"))!.trigger("click");
 		await flushPromises();
-		expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ mule_customer_kind: "Farmer", request_tax_exemption: 1, address_line1: "123 Main St", address_line2: "Suite 2", city: "Benson", state: "NC", pincode: "27504" }));
+		expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ address_line1: "123 Main St", address_line2: "Suite 2", city: "Benson", state: "NC", pincode: "27504" }));
 		expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("gender");
 		expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("territory");
 		expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("customer_group");
