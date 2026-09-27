@@ -144,6 +144,11 @@ class TestSaveDraftInvoiceConcurrency(unittest.TestCase):
 		patcher = patch("xpos.api.invoices.resolve_pos_profile")
 		patcher.start()
 		self.addCleanup(patcher.stop)
+		# The site tax adapter (Mule City) has its own tests; a mocked draft
+		# cannot be read by it.
+		patcher = patch("mulecity_erpnext.pos_workspace.apply_customer_taxes")
+		patcher.start()
+		self.addCleanup(patcher.stop)
 
 	def _pos_profile(self):
 		pos = MagicMock()

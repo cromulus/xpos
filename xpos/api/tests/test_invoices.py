@@ -28,6 +28,11 @@ class TestCreateInvoice(unittest.TestCase):
 		self.stub("get_currency_precision", return_value=2)
 		# The caller's right to sell has its own tests below.
 		self.stub("resolve_pos_profile")
+		# The site tax adapter (Mule City) has its own tests; these unit tests
+		# use a mocked invoice, which the adapter cannot read.
+		patcher = patch("mulecity_erpnext.pos_workspace.apply_customer_taxes")
+		patcher.start()
+		self.addCleanup(patcher.stop)
 
 	def stub(self, name, **kwargs):
 		"""Patch `name` in the xpos.api.invoices namespace for the current test."""
