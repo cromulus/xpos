@@ -16,6 +16,8 @@ class TestInvoiceRetry(unittest.TestCase):
 					"xpos.api.invoices.find_invoice_by_local_id", return_value=("Sales Invoice", "INV-1")
 				) as find,
 				patch("xpos.api.invoices._build_invoice_response", return_value={"name": "INV-1"}),
+				# The register gate (fix/mule-cart) is covered by test_invoices; not this story.
+				patch("xpos.api.invoices.resolve_pos_profile"),
 			):
 				api.get_cached_doc.return_value = SimpleNamespace(warehouse="Profile Store")
 				result = create_invoice(
