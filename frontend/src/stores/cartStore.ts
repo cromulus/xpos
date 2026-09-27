@@ -324,7 +324,11 @@ export const useCartStore = defineStore("cart", () => {
 	const grandTotal = computed(() => {
 		const posStore = usePosStore();
 		if (serverPreview.value && serverPreview.value.key === previewKey.value) {
-			return serverPreview.value.amount_due;
+			// The same settlements the cart's own total takes off below.
+			let due = serverPreview.value.amount_due;
+			if (!isReturnMode.value && redeemLoyaltyPoints.value && loyaltyAmount.value > 0) due -= loyaltyAmount.value;
+			if (!isReturnMode.value && writeOffAmount.value > 0) due -= writeOffAmount.value;
+			return due;
 		}
 		let total = subtotal.value + taxAmount.value;
 
@@ -1181,12 +1185,23 @@ export const useCartStore = defineStore("cart", () => {
 		}
 	}
 
-	/** The cart as save would receive it, minus the tender (what the preview prices). */
+	/**
+	 * The cart as save would receive it, minus the tender (what the preview prices).
+	 * Write-off and loyalty are settled against the total, not part of it, so they
+	 * stay out: entering them in the payment dialog keeps the preview.
+	 */
 	function previewPayload(): Partial<InvoiceData> {
-		const { local_id, payments, change_amount, pos_change_legs, name, modified, ...cart } = getInvoiceData(
-			posStore.profileName,
-			"",
-		);
+		const {
+			local_id,
+			payments,
+			change_amount,
+			pos_change_legs,
+			write_off_amount,
+			redeem_loyalty_points,
+			loyalty_points,
+			loyalty_amount,
+			...cart
+		} = getInvoiceData(posStore.profileName, posStore.posOpeningShift?.name || "");
 		return cart;
 	}
 
@@ -1212,6 +1227,8 @@ export const useCartStore = defineStore("cart", () => {
 					data: JSON.stringify(previewPayload()),
 				});
 				serverPreview.value = { ...result, key };
+				// The cart or buyer changed while the server was pricing it: press Pay again.
+				if (key !== previewKey.value || muleTaxPending.value || muleTaxError.value) return;
 			} catch (error) {
 				serverPreview.value = null;
 				serverPreviewError.value = extractErrorMessage(error);
@@ -1546,6 +1563,36 @@ export const useCartStore = defineStore("cart", () => {
 	}
 
 	function getReceiptSnapshot(invoiceName: string, cashier = ""): ReceiptSnapshot {
+		const snapshot = cartReceiptSnapshot(invoiceName, cashier);
+		const preview = serverPreview.value;
+		if (!serverLinesDiffer.value || !preview) return snapshot;
+		// Print the ticket the server posts (e.g. the $0 stored-grain line), not the cart.
+		return {
+			...snapshot,
+			items: preview.items.map((line) => ({
+				item_code: line.item_code,
+				item_name: line.stored_grain && line.description ? line.description : line.item_name,
+				qty: line.qty,
+				rate: line.rate,
+				amount: line.amount,
+				uom: line.uom,
+				discount_amount: 0,
+				price_list_rate: line.rate,
+			})),
+			taxes: preview.taxes.map((t) => ({
+				description: t.description,
+				rate: t.rate,
+				amount: t.tax_amount,
+				included_in_print_rate: false,
+			})),
+			subtotal: preview.net_total,
+			total_discount: 0,
+			net_total: preview.net_total,
+			total_qty: preview.items.reduce((sum, line) => sum + line.qty, 0),
+		};
+	}
+
+	function cartReceiptSnapshot(invoiceName: string, cashier: string): ReceiptSnapshot {
 		const snapshotItems = items.value.map((item: CartItem) => {
 			const gross = item.qty * item.rate;
 			let discount = 0;

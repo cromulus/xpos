@@ -14,7 +14,6 @@ vi.mock("@/stores/posStore", () => ({
 		taxes: [{ charge_type: "On Net Total", rate: 6.75, description: "Tax" }],
 		taxInclusiveMode: false,
 		disableRoundedTotal: true,
-		profileName: "Mule City Retail",
 		profile: { name: "Mule City Retail", warehouse: "Main - MCSF", currency: "USD" },
 		currency: "USD",
 		tenderModeFor: vi.fn(() => undefined),
@@ -35,7 +34,14 @@ const PREVIEW = {
 	amount_due: 48.04,
 };
 
-function depositorCart() {
+/** The server answers the preview with *preview*. (No profile in the mocked POS
+ * store, so the buyer's Mule tax lookup, covered elsewhere, stays out of the way.) */
+function server(preview: () => Promise<unknown>) {
+	vi.mocked(call).mockImplementation(((method: string) =>
+		method === "xpos.api.invoices.preview_invoice" ? preview() : Promise.resolve({})) as typeof call);
+}
+
+async function depositorCart() {
 	const cart = useCartStore();
 	cart.customer = { name: "Brinson Farms" };
 	cart.items.push({ item_code: "CORN", item_name: "CORN", qty: 800, rate: 0.15, uom: "Pound", discount_percentage: 0, discount_amount: 0 });
@@ -49,14 +55,14 @@ describe("server-priced ticket before payment", () => {
 	});
 
 	it("charges the server's total and shows its $0 stored-grain line", async () => {
-		const cart = depositorCart();
+		const cart = await depositorCart();
 		expect(cart.grandTotal).toBeCloseTo(128.1, 2);
-		vi.mocked(call).mockResolvedValueOnce(PREVIEW);
+		server(() => Promise.resolve(PREVIEW));
 
 		await cart.openPaymentDialog();
 
-		expect(vi.mocked(call).mock.calls[0][0]).toBe("xpos.api.invoices.preview_invoice");
-		const sent = JSON.parse((vi.mocked(call).mock.calls[0][1] as { data: string }).data);
+		const [, args] = vi.mocked(call).mock.calls.find(([method]) => method === "xpos.api.invoices.preview_invoice")!;
+		const sent = JSON.parse((args as { data: string }).data);
 		expect(sent.payments).toBeUndefined();
 		expect(sent.local_id).toBeUndefined();
 		expect(cart.showPaymentDialog).toBe(true);
@@ -65,8 +71,8 @@ describe("server-priced ticket before payment", () => {
 	});
 
 	it("drops the preview as soon as the cart changes", async () => {
-		const cart = depositorCart();
-		vi.mocked(call).mockResolvedValueOnce(PREVIEW);
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
 		await cart.openPaymentDialog();
 
 		cart.items[0].qty = 100;
@@ -76,8 +82,8 @@ describe("server-priced ticket before payment", () => {
 	});
 
 	it("does not open payment when the server refuses the ticket", async () => {
-		const cart = depositorCart();
-		vi.mocked(call).mockRejectedValueOnce(new Error("Row 1: this grain can only go to its owner."));
+		const cart = await depositorCart();
+		server(() => Promise.reject(new Error("Row 1: this grain can only go to its owner.")));
 
 		await cart.openPaymentDialog();
 
@@ -87,14 +93,47 @@ describe("server-priced ticket before payment", () => {
 	});
 
 	it("a cart the server leaves alone shows no extra lines", async () => {
-		const cart = depositorCart();
-		vi.mocked(call).mockResolvedValueOnce({
+		const cart = await depositorCart();
+		server(() => Promise.resolve({
 			...PREVIEW,
 			items: [{ item_code: "CORN", item_name: "CORN", qty: 800, uom: "Pound", rate: 0.15, amount: 120 }],
 			amount_due: 128.1,
-		});
+		}));
 		await cart.openPaymentDialog();
 		expect(cart.serverLinesDiffer).toBe(false);
 		expect(cart.grandTotal).toBe(128.1);
+	});
+
+	it("does not open payment if the cart changed while the server was pricing it", async () => {
+		const cart = await depositorCart();
+		let answer: (value: unknown) => void = () => {};
+		server(() => new Promise((resolve) => (answer = resolve)));
+		const opening = cart.openPaymentDialog();
+		cart.items[0].qty = 900;
+		answer(PREVIEW);
+		await opening;
+		expect(cart.showPaymentDialog).toBe(false);
+		expect(cart.grandTotal).toBeCloseTo(144.11, 2);
+	});
+
+	it("a write-off entered at payment comes off the server's total", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
+		await cart.openPaymentDialog();
+		cart.writeOffAmount = 0.04;
+		expect(cart.grandTotal).toBeCloseTo(48.0, 2);
+	});
+
+	it("the instant receipt prints the server's ticket", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
+		await cart.openPaymentDialog();
+		const receipt = cart.getReceiptSnapshot("ACC-SINV-1");
+		expect(receipt.items.map((i) => [i.item_name, i.qty, i.amount])).toEqual([
+			["CORN", 300, 45],
+			["From Brinson Farms's stored corn", 500, 0],
+		]);
+		expect(receipt.grand_total).toBe(48.04);
+		expect(receipt.subtotal).toBe(45);
 	});
 });
