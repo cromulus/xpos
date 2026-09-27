@@ -302,6 +302,42 @@ def _mule_order_fields(row):
 	return {field: row.get(field) for field in ("sales_order", "so_detail", *_BOUND_ROW_FIELDS[3:]) if row.get(field) is not None}
 
 
+class TicketChangedError(frappe.ValidationError):
+	"""The ticket no longer totals what the register showed and charged."""
+
+
+def check_expected_total(invoice_doc, data: dict) -> None:
+	"""Refuse a sale whose ticket totals something other than the register showed.
+
+	Before payment the register prices the cart on the server (``preview_invoice``)
+	and charges that total. Server rules can change the ticket in between, e.g. a
+	grain depositor's stored grain used by another ticket. Without this check the
+	difference would post silently: as change never handed back, a card credit,
+	or (with credit sale on) a balance left owing. The customer's payment is
+	compared with the total by ERPNext; this compares the total itself, so it
+	holds for credit sales too. Nothing posts; the register previews again.
+	"""
+	expected = data.get("expected_total")
+	if expected in (None, "") or cint(invoice_doc.get("is_return")):
+		return
+	posted = flt(invoice_doc.get("rounded_total") or invoice_doc.get("grand_total"))
+	precision = get_currency_precision(invoice_currency_of(invoice_doc))
+	if flt(posted, precision) != flt(expected, precision):
+		currency = invoice_currency_of(invoice_doc)
+		frappe.throw(
+			_(
+				"The ticket changed after it was checked: it now totals {0}, not the {1} shown. "
+				"Nothing was saved. Press Pay again to see the new ticket; if a card was "
+				"already run for {1}, adjust it."
+			).format(
+				frappe.utils.fmt_money(posted, currency=currency),
+				frappe.utils.fmt_money(flt(expected), currency=currency),
+			),
+			title=_("Ticket changed"),
+			exc=TicketChangedError,
+		)
+
+
 def check_may_sell(pos_profile: str | None) -> None:
 	"""Refuse a caller who may not sell at this register.
 
@@ -721,6 +757,7 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 
 	enforce_stock_availability(invoice_doc)
 
+	check_expected_total(invoice_doc, data)
 	_validate_unpaid_balance_permissions(invoice_doc, pos, data)
 
 	from xpos.x_pos.integrations import fbr

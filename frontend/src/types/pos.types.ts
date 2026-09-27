@@ -418,6 +418,8 @@ export interface InvoiceChangeLeg {
 
 export interface InvoiceData {
 	local_id?: string;
+	/** The server-priced total the register showed and charged; the server refuses a different ticket. */
+	expected_total?: number;
 	name?: string;
 	modified?: string;
 	doctype?: string;

@@ -547,3 +547,34 @@ class TestValidateReturnInvoice(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestExpectedTotal(unittest.TestCase):
+	"""The register charges the server-priced total it showed; a ticket that now
+	totals something else is refused instead of posting change, credit or a balance."""
+
+	def setUp(self):
+		for name, value in (("invoice_currency_of", "USD"), ("get_currency_precision", 2)):
+			patcher = patch(f"xpos.api.invoices.{name}", return_value=value)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+
+	def ticket(self, total, **fields):
+		return SimpleNamespace(get=lambda key, default=None: {"grand_total": total, **fields}.get(key, default))
+
+	def test_the_total_that_was_shown_posts(self):
+		invoices.check_expected_total(self.ticket(48.04), {"expected_total": 48.04})
+
+	def test_a_changed_ticket_is_refused(self):
+		with self.assertRaises(invoices.TicketChangedError):
+			invoices.check_expected_total(self.ticket(128.10), {"expected_total": 48.04})
+
+	def test_a_rounded_total_is_what_is_compared(self):
+		with self.assertRaises(invoices.TicketChangedError):
+			invoices.check_expected_total(self.ticket(48.04, rounded_total=48.0), {"expected_total": 48.04})
+
+	def test_without_a_preview_nothing_is_compared(self):
+		invoices.check_expected_total(self.ticket(128.10), {})
+
+	def test_returns_are_not_compared(self):
+		invoices.check_expected_total(self.ticket(-30.0, is_return=1), {"expected_total": -32.03})

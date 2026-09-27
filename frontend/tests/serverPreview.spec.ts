@@ -6,6 +6,7 @@
  * so the cart's own sum ($128.10) overcharged a $48.04 ticket.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 
 vi.mock("@/services/api", () => ({ call: vi.fn(), default: { call: vi.fn() } }));
@@ -75,9 +76,16 @@ describe("server-priced ticket before payment", () => {
 		server(() => Promise.resolve(PREVIEW));
 		await cart.openPaymentDialog();
 
-		cart.items[0].qty = 100;
+		expect(cart.previewExpectedTotal).toBe(48.04);
 
-		expect(cart.grandTotal).toBeCloseTo(16.01, 2);
+		cart.items[0].qty = 100;
+		await nextTick();
+
+		// Never charged on a stale check: payment closes and Pay checks again.
+		expect(cart.showPaymentDialog).toBe(false);
+		expect(cart.serverPreview).toBeNull();
+		expect(cart.previewExpectedTotal).toBeNull();
+		expect(cart.serverPreviewError).toContain("Press Pay again");
 		expect(cart.serverLinesDiffer).toBe(false);
 	});
 
@@ -135,5 +143,23 @@ describe("server-priced ticket before payment", () => {
 		]);
 		expect(receipt.grand_total).toBe(48.04);
 		expect(receipt.subtotal).toBe(45);
+	});
+
+	it("clearing the cart forgets the preview", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
+		await cart.openPaymentDialog();
+		cart.clearCart();
+		expect(cart.serverPreview).toBeNull();
+	});
+
+	it("a refused sale (ticket changed) closes payment and says why", async () => {
+		const cart = await depositorCart();
+		server(() => Promise.resolve(PREVIEW));
+		await cart.openPaymentDialog();
+		cart.ticketChanged("The ticket changed after it was checked. Press Pay again.");
+		expect(cart.showPaymentDialog).toBe(false);
+		expect(cart.previewExpectedTotal).toBeNull();
+		expect(cart.serverPreviewError).toContain("Press Pay again");
 	});
 });

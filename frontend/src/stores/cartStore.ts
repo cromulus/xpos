@@ -124,6 +124,8 @@ export const useCartStore = defineStore("cart", () => {
 	// payment the server builds the ticket save would post and the register charges
 	// that. It is kept only while the cart is unchanged (same key).
 	const serverPreview = ref<ServerPreview | null>(null);
+	// Declared before anything reads the cart's invoice data (the preview key does).
+	let invoiceLocalId = "";
 	const serverPreviewPending = ref(false);
 	const serverPreviewError = ref("");
 
@@ -1141,6 +1143,7 @@ export const useCartStore = defineStore("cart", () => {
 
 	function clearCart(): void {
 		invoiceLocalId = "";
+		serverPreview.value = null;
 		items.value = [];
 		selectedCartIndex.value = -1;
 		discountPercentage.value = 0;
@@ -1214,6 +1217,31 @@ export const useCartStore = defineStore("cart", () => {
 		const cart = items.value.map((i) => line(i.item_code, i.qty, i.rate)).join("|");
 		return cart !== preview.items.map((i) => line(i.item_code, i.qty, i.rate)).join("|");
 	});
+
+	/** The preview's total while it still prices this cart; sent so the server can hold us to it. */
+	const previewExpectedTotal = computed(() =>
+		serverPreview.value && serverPreview.value.key === previewKey.value && !isReturnMode.value
+			? serverPreview.value.amount_due
+			: null,
+	);
+
+	// A cart that changes after the check is never charged its own sum: drop the
+	// preview, and if payment is open close it so Pay checks again.
+	watch(previewKey, (key) => {
+		if (!serverPreview.value || serverPreview.value.key === key) return;
+		serverPreview.value = null;
+		if (showPaymentDialog.value) {
+			showPaymentDialog.value = false;
+			serverPreviewError.value = __("The cart changed after it was checked. Press Pay again.");
+		}
+	});
+
+	/** The server refused the sale (its ticket changed): forget the preview, show why. */
+	function ticketChanged(message: string): void {
+		serverPreview.value = null;
+		showPaymentDialog.value = false;
+		serverPreviewError.value = message;
+	}
 
 	async function openPaymentDialog(): Promise<void> {
 		if (muleTaxPending.value || muleTaxError.value || serverPreviewPending.value) return;
@@ -1427,7 +1455,6 @@ export const useCartStore = defineStore("cart", () => {
 		}
 	}
 
-	let invoiceLocalId = "";
 	function getInvoiceData(posProfile: string, posOpeningShift: string): InvoiceData {
 		const data: InvoiceData = {
 			local_id: invoiceLocalId || (invoiceLocalId = newInvoiceId()),
@@ -1674,6 +1701,7 @@ export const useCartStore = defineStore("cart", () => {
 		discountAmount,
 		muleTaxPending, muleTaxError, muleTaxCategory,
 		serverPreview, serverPreviewPending, serverPreviewError, serverLinesDiffer,
+		previewExpectedTotal, ticketChanged,
 		showPaymentDialog,
 		isReturnMode,
 		returnAgainst,

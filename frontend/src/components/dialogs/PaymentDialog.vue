@@ -775,7 +775,7 @@ import {
 	type TenderContext,
 } from "@/services/tenderLegs";
 import type { InvoiceChangeLeg, InvoiceData, InvoicePayment, TenderLeg } from "@/types/pos.types";
-import { isOnline, extractErrorMessage, isTabConflictError } from "@/utils";
+import { isOnline, extractErrorMessage, isTabConflictError, isTicketChangedError } from "@/utils";
 import { nowDate } from "@/utils/datetime";
 import {
 	isPaymentDialogSaveAndPrintShortcut,
@@ -1314,6 +1314,7 @@ function buildInvoicePayload(): InvoiceData {
 	cartStore.setChangeLegs(cartStore.isReturnMode ? [] : changeLegs.value.filter((leg) => leg.amount > 0));
 
 	const invoiceData = cartStore.getInvoiceData(posStore.profileName, shiftName);
+	if (cartStore.previewExpectedTotal !== null) invoiceData.expected_total = cartStore.previewExpectedTotal;
 
 	if (!cartStore.isReturnMode && remainingAmount.value > 0 && posStore.allowCreditSale) {
 		invoiceData.is_credit_sale = true;
@@ -1418,7 +1419,10 @@ async function submitPayment(withPrint: boolean = true) {
 			catch { showError(__("Sale saved. Receipt printing failed; use Reprint.")); }
 		}
 	} catch (error: unknown) {
-		if (isTabConflictError(error)) {
+		if (isTicketChangedError(error)) {
+			showError(extractErrorMessage(error));
+			cartStore.ticketChanged(extractErrorMessage(error));
+		} else if (isTabConflictError(error)) {
 			showError(__("This tab was changed on another terminal. Reload it and try again."));
 			close();
 			cartStore.openDraftDialog();
