@@ -11,6 +11,55 @@ from frappe.utils import cint, flt, getdate, nowdate
 from xpos.api.utilities import SAFE_FIELDNAME, get_invoice_type, get_item_search_settings
 
 
+def selling_price(
+	item_code: str,
+	price_list: str | None,
+	*,
+	uom: str | None = None,
+	conversion_factor: float | None = None,
+	customer: str | None = None,
+	transaction_date=None,
+	qty: float = 1,
+) -> float:
+	"""Price-list rate for one item, chosen the way ERPNext's ``get_item_details`` does.
+
+	Uses ``get_price_list_rate_for``, the Item Price step of ``get_item_details``:
+	only prices valid on the date, the customer's own price before the generic
+	one, the price for the UOM or else the stock-UOM price times the conversion
+	factor, and the template's price for a variant with none. It is read-only
+	(the full ``get_item_details`` may insert Item Prices and needs a document
+	context), and Pricing Rules are applied separately by ``pricing_rules``, so
+	a list price must not include them. A first-found ``Item Price`` row
+	ignores all of this: it can return a future price, another customer's
+	price, or a per-pound price for a line in tons.
+	"""
+	from erpnext.stock.get_item_details import get_conversion_factor, get_price_list_rate_for
+
+	if not price_list:
+		return 0.0
+	item = frappe.get_cached_value("Item", item_code, ["stock_uom", "variant_of"], as_dict=True)
+	if not item:
+		return 0.0
+	uom = uom or item.stock_uom
+	if not conversion_factor:
+		conversion_factor = (
+			1.0 if uom == item.stock_uom else get_conversion_factor(item_code, uom)["conversion_factor"]
+		)
+	ctx = {
+		"price_list": price_list,
+		"customer": customer,
+		"uom": uom,
+		"stock_uom": item.stock_uom,
+		"conversion_factor": flt(conversion_factor) or 1.0,
+		"qty": flt(qty) or 1.0,
+		"transaction_date": transaction_date or nowdate(),
+	}
+	rate = get_price_list_rate_for(ctx, item_code)
+	if rate is None and item.variant_of:
+		rate = get_price_list_rate_for(ctx, item.variant_of)
+	return flt(rate)
+
+
 def resolve_scanned_item_code(term: str, config: dict) -> str | None:
 	"""Resolve a typed or scanned value to an item code via serial or batch lookup.
 
@@ -214,14 +263,8 @@ def get_pos_items(
 
 	stock = get_stock_qty_map([item.item_code for item in items], warehouse, pos_profile)
 	for item in items:
-		item.rate = (
-			frappe.db.get_value(
-				"Item Price",
-				{"item_code": item.item_code, "price_list": price_list, "selling": 1},
-				"price_list_rate",
-			)
-			or 0
-		)
+		# Tiles are cached per register, not per customer: today's generic price.
+		item.rate = selling_price(item.item_code, price_list)
 
 		item.actual_qty = stock.get(item.item_code, 0)
 
@@ -370,16 +413,7 @@ def search_barcode(barcode: str, pos_profile: str | None = None):
 		price_list = frappe.db.get_single_value("Selling Settings", "selling_price_list")
 
 	def _get_item_rate(item_code):
-		rate = (
-			frappe.db.get_value(
-				"Item Price",
-				{"item_code": item_code, "price_list": price_list, "selling": 1},
-				"price_list_rate",
-			)
-			if price_list
-			else 0
-		)
-		return flt(rate)
+		return selling_price(item_code, price_list)
 
 	barcode_data = frappe.db.get_value(
 		"Item Barcode",
@@ -497,17 +531,9 @@ def get_item_detail(
 		"allow_negative_stock": item.allow_negative_stock,
 	}
 
-	rate = frappe.db.get_value(
-		"Item Price",
-		{
-			"item_code": item_code,
-			"price_list": price_list,
-			"selling": 1,
-		},
-		"price_list_rate",
-	)
-	result["rate"] = flt(rate)
-	result["price_list_rate"] = flt(rate)
+	rate = selling_price(item_code, price_list, customer=customer)
+	result["rate"] = rate
+	result["price_list_rate"] = rate
 	result["uom"] = item.stock_uom
 	result["conversion_factor"] = 1.0
 
@@ -598,12 +624,7 @@ def get_item_variants(
 		return {"variants": [], "attributes_meta": {}}
 
 	for v in variants:
-		rate = frappe.db.get_value(
-			"Item Price",
-			{"item_code": v["item_code"], "price_list": price_list, "selling": 1},
-			"price_list_rate",
-		)
-		v["rate"] = flt(rate)
+		v["rate"] = selling_price(v["item_code"], price_list)
 		v["actual_qty"] = (
 			get_stock_qty(v["item_code"], warehouse, pos_profile=pos_profile) if warehouse else 0
 		)
@@ -719,36 +740,18 @@ def get_stock_availability(items: str | list, warehouse: str | None = None, pos_
 
 @frappe.whitelist()
 def get_price_for_uom(
-	item_code: str, uom: str, pos_profile: str | None = None, price_list: str | None = None
+	item_code: str,
+	uom: str,
+	pos_profile: str | None = None,
+	price_list: str | None = None,
+	customer: str | None = None,
 ):
-	"""Return Item Price for a specific UOM, falling back to base rate × conversion factor."""
+	"""Return the price for a specific UOM: its own Item Price, else the stock-UOM price × factor."""
 	if not price_list and pos_profile:
 		price_list = frappe.db.get_value("POS Profile", pos_profile, "selling_price_list")
 	if not price_list:
 		price_list = frappe.db.get_single_value("Selling Settings", "selling_price_list")
-
-	rate = frappe.db.get_value(
-		"Item Price",
-		{"item_code": item_code, "price_list": price_list, "selling": 1, "uom": uom},
-		"price_list_rate",
-	)
-	if rate:
-		return {"rate": flt(rate)}
-
-	base_rate = frappe.db.get_value(
-		"Item Price",
-		{"item_code": item_code, "price_list": price_list, "selling": 1},
-		"price_list_rate",
-	)
-	conversion_factor = (
-		frappe.db.get_value(
-			"UOM Conversion Detail",
-			{"parent": item_code, "uom": uom},
-			"conversion_factor",
-		)
-		or 1.0
-	)
-	return {"rate": flt(base_rate) * flt(conversion_factor)}
+	return {"rate": selling_price(item_code, price_list, uom=uom, customer=customer)}
 
 
 def get_item_sales_ranking(company: str, metric: str) -> dict[str, int]:

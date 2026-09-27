@@ -13,7 +13,7 @@ terminal found in most retail stores.
 import frappe
 from frappe.utils import flt
 
-from xpos.api.items import get_stock_qty
+from xpos.api.items import get_stock_qty, selling_price
 
 
 def _resolve_profile(pos_profile: str | None):
@@ -42,18 +42,8 @@ def _resolve_profile(pos_profile: str | None):
 
 
 def _get_rate(item_code: str, price_list: str | None, uom: str | None = None):
-	"""Best selling rate for an item from the given price list."""
-	if not price_list:
-		return 0.0
-
-	filters = {"item_code": item_code, "price_list": price_list, "selling": 1}
-	if uom:
-		rate = frappe.db.get_value("Item Price", {**filters, "uom": uom}, "price_list_rate")
-		if rate is not None:
-			return flt(rate)
-
-	rate = frappe.db.get_value("Item Price", filters, "price_list_rate")
-	return flt(rate or 0)
+	"""Today's selling rate for an item, as ERPNext would choose it (see ``selling_price``)."""
+	return selling_price(item_code, price_list, uom=uom)
 
 
 def _find_item_code(barcode: str) -> str | None:
