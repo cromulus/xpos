@@ -41,6 +41,22 @@ export function markSetupComplete(): void {
 	_firstRunChecked = true;
 }
 
+const PROFILE_GATED_ROUTES: Record<string, () => boolean> = {
+	"purchase-order": () => usePosStore().allowPurchaseOrder,
+	"purchase-orders": () => usePosStore().allowPurchaseOrder,
+	"purchase-invoice": () => usePosStore().allowPurchaseOrder,
+	"purchase-invoices": () => usePosStore().allowPurchaseOrder,
+	"stock-receiving": () => usePosStore().allowPurchaseReceipt,
+	expenses: () => usePosStore().allowPosExpense,
+	"bank-drops": () => usePosStore().allowCashDeposit,
+};
+
+/** The profile flag for a gated route, or undefined when the route isn't gated. */
+function profileFlagFor(name: unknown): boolean | undefined {
+	const flag = typeof name === "string" ? PROFILE_GATED_ROUTES[name] : undefined;
+	return flag ? flag() : undefined;
+}
+
 router.beforeEach(async (to, _from, next) => {
 	const firstRun = await checkFirstRun();
 	if (firstRun && to.meta.isSetupPage !== true) {
@@ -84,6 +100,13 @@ router.beforeEach(async (to, _from, next) => {
 		return;
 	}
 	if (to.name === "cashier" && (!posStore.enableCashierSettlement || !posStore.isCashier)) {
+		next({ name: "pos" });
+		return;
+	}
+	// Purchasing and cash-out screens only when the POS Profile allows them (the
+	// same flags the sidebar and the server use), so keyboard shortcuts and
+	// typed URLs don't open screens whose every action would be refused.
+	if (posStore.posProfile && profileFlagFor(to.name) === false) {
 		next({ name: "pos" });
 		return;
 	}

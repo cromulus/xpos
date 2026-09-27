@@ -162,6 +162,10 @@ export const usePosStore = defineStore("pos", () => {
 
 	const allowCashDeposit = computed(() => !!posProfile.value?.allow_cash_deposit);
 
+	const allowPurchaseOrder = computed(() => !!posProfile.value?.allow_purchase_order);
+
+	const allowPurchaseReceipt = computed(() => !!posProfile.value?.allow_purchase_receipt);
+
 	const fetchCoupon = computed(() => !!posProfile.value?.auto_fetch_coupons_gifts);
 
 	const showTemplateItems = computed(() => !!posProfile.value?.show_template_items);
@@ -572,6 +576,8 @@ export const usePosStore = defineStore("pos", () => {
 		enableCashMovement,
 		allowPosExpense,
 		allowCashDeposit,
+		allowPurchaseOrder,
+		allowPurchaseReceipt,
 		fetchCoupon,
 		showTemplateItems,
 		hideVariantsItems,
