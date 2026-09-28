@@ -300,6 +300,7 @@
 						{{ posStore.currencySymbol }}
 					</Button>
 					<NumberInput
+						ref="discountNumberInput"
 						v-model="discountInput"
 						:min="0"
 						:max="discountType === 'percentage' ? 100 : undefined"
@@ -311,6 +312,13 @@
 						@change="applyDiscount"
 					/>
 				</div>
+				<p
+					v-if="capMessage"
+					class="text-xs font-medium text-amber-700 dark:text-amber-400"
+					data-testid="additional-discount-cap-message"
+				>
+					{{ capMessage }}
+				</p>
 			</div>
 		</transition>
 
@@ -406,6 +414,9 @@ const isLoadingDelivery = ref(false);
 const availableDeliveryCharges = ref<DeliveryCharge[]>([]);
 const discountType = ref("percentage");
 const discountInput = ref(0);
+const discountNumberInput = ref<InstanceType<typeof NumberInput> | null>(null);
+// Shown while the typed additional discount is held at the counter's cap.
+const capMessage = ref("");
 const couponInput = ref("");
 const couponError = ref("");
 const isApplyingCoupon = ref(false);
@@ -433,6 +444,7 @@ const hasAnyDiscount = computed(
 function clearAllDiscounts() {
 	cartStore.clearAllDiscounts();
 	discountInput.value = 0;
+	capMessage.value = "";
 	showDiscount.value = false;
 	showCoupon.value = false;
 }
@@ -478,6 +490,20 @@ function handleCheckout() {
 function applyDiscount() {
 	cartStore.setDiscount(discountType.value as "percentage" | "amount", discountInput.value || 0);
 }
+
+// Stop the additional discount at the counter's cap as it is typed, and say why.
+// Line discounts count toward the same cap (the cart store works out what is left).
+watch([discountInput, discountType], () => {
+	const limit = cartStore.maxAdditionalDiscount(discountType.value as "percentage" | "amount");
+	const typed = discountInput.value || 0;
+	if (limit !== null && typed > limit) {
+		capMessage.value = __("Max {0}% at the counter", [posStore.maxDiscountAllowed]);
+		if (discountNumberInput.value) discountNumberInput.value.setValue(limit);
+		else discountInput.value = limit;
+	} else if (typed < (limit ?? Infinity)) {
+		capMessage.value = "";
+	}
+});
 
 async function loadDeliveryCharges(): Promise<DeliveryCharge[]> {
 	if (!posStore.profileName || !posStore.companyName) {
@@ -555,6 +581,7 @@ watch(
 		if (!empty) return;
 		discountInput.value = 0;
 		discountType.value = "percentage";
+		capMessage.value = "";
 		couponInput.value = "";
 		couponError.value = "";
 		showDiscount.value = false;

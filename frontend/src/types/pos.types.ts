@@ -211,6 +211,8 @@ export interface CartItem extends POSItem {
 	pos_offer_applied?: boolean;
 	uid?: string;
 	pos_pricing_rules?: string[];
+	/** Per-unit rate after Pricing Rules; kept when a counter discount replaces the rule's. */
+	pos_rule_rate?: number;
 	pos_rate_overridden?: boolean;
 	pos_is_free_item?: boolean;
 	pos_free_item_rule?: string;
