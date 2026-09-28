@@ -81,22 +81,18 @@
 						</Card>
 					</div>
 
-					<div v-if="(summary as any).tax_summary && (summary as any).tax_summary.length > 0">
+					<div v-if="summary.tax_summary?.length">
 						<h3 class="text-sm font-semibold text-foreground mb-2">
 							{{ __("Tax Breakdown") }}
 						</h3>
 						<div class="space-y-1">
 							<div
-								v-for="tax in (summary as any).tax_summary"
-								:key="tax.account_head || tax.description"
+								v-for="tax in summary.tax_summary"
+								:key="`${tax.account_head}-${tax.rate}`"
 								class="flex items-center justify-between text-sm bg-muted rounded-lg px-3 py-2"
 							>
-								<span class="text-muted-foreground">{{
-									tax.description || tax.account_head
-								}}</span>
-								<span class="font-medium text-foreground">{{
-									money(tax.tax_amount ?? 0)
-								}}</span>
+								<span class="text-muted-foreground">{{ tax.account_head }}</span>
+								<span class="font-medium text-foreground">{{ money(tax.amount ?? 0) }}</span>
 							</div>
 						</div>
 					</div>
@@ -234,7 +230,7 @@ import { useMoney } from "@/composables/useMoney";
 import { showSuccess, showError } from "@/services/api";
 import { hasPermission } from "@/services/userRights";
 import { formatFor, precisionFor, roundFor } from "@/composables/useCurrency";
-import type { ShiftModeTotal } from "@/types/pos.types";
+import type { POSClosingShiftTax, ShiftModeTotal } from "@/types/pos.types";
 import {
 	Dialog,
 	DialogScrollContent,
@@ -256,6 +252,8 @@ interface ClosingSummary {
 	payment_summary?: Record<string, ShiftModeTotal>;
 	opening_balances?: Record<string, ShiftModeTotal>;
 	expected_amounts?: Record<string, ShiftModeTotal>;
+	// get_shift_summary returns each tax row's total under `amount`.
+	tax_summary?: POSClosingShiftTax[];
 	[key: string]: unknown;
 }
 
