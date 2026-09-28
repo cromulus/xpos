@@ -35,6 +35,21 @@ tracked in MuleCity-lt2x. Tagged release for the reproducible staging deployment
   unit tests, and read-only candidate queries against staging. Full backend
   suite and deployed browser acceptance remain release gates.
 
+## Unreleased: ticket discount cap (`fix/discount-cap`)
+
+Based on `mule-v2.10.1-mc5`. MuleCity-mxwy.2: for a POS Role without
+`allow_change_price`, `create_invoice`/`preview_invoice` refuse a ticket whose
+line discounts (percentage or amount) and additional discount (percentage or
+amount) together take off more than the POS Profile's
+`max_discount_percentage_allowed`, measured against each line's rate after
+Pricing Rules (ERPNext's engine, as the cart runs it), so a Pricing Rule's own
+discount, such as a custom-mix rate, is not a counter discount. Returns and
+free items are left alone. Before, only a line's discount percentage was
+checked. Also: the server's stock guard follows the profile's "Block sale
+beyond available qty"; a stored 0 used to read as 1. Pairs with mulecity-full
+`feat/counter-discount-cap` (the 25% cap, the counter's discount rights, and
+blocking sales beyond stock on the Mule City profile).
+
 ## mule-v2.10.1-mc5 (2026-09-27)
 
 mc4 plus the fixes from the Sunday staging rehearsal:

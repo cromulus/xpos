@@ -338,6 +338,93 @@ def check_expected_total(invoice_doc, data: dict) -> None:
 		)
 
 
+def _capped_lines(invoice_doc) -> list:
+	"""The lines a discount cap applies to: free items carry no price."""
+	return [row for row in invoice_doc.get("items") if not cint(row.get("is_free_item"))]
+
+
+def pricing_rule_rates(invoice_doc, pos) -> list[float]:
+	"""Each capped line's rate after the site's Pricing Rules, before any counter discount.
+
+	A Pricing Rule's discount (Mule City's custom-mix rates, say) is the price the
+	business set, not a discount given at the counter; the cart sends it as a
+	plain line discount. So the cap starts from the rate ERPNext's pricing engine
+	gives each line, run as the cart runs it (xpos.api.pricing_rules). With the
+	profile ignoring Pricing Rules, or if the engine fails, the list rate is used.
+	"""
+	from erpnext.stock.get_item_details import get_conversion_factor
+
+	from xpos.api.pricing_rules import apply_item_rules, build_invoice_context, enrich_lines, pricing_rules_ignored
+
+	lines = _capped_lines(invoice_doc)
+	list_rates = [flt(row.price_list_rate) for row in lines]
+	if not lines or pricing_rules_ignored(pos.name):
+		return list_rates
+	try:
+		cart = [
+			{
+				"item_code": row.item_code,
+				"qty": row.qty,
+				"uom": row.uom,
+				"conversion_factor": get_conversion_factor(row.item_code, row.uom).get("conversion_factor") or 1,
+				"price_list_rate": row.price_list_rate,
+				"rate": row.price_list_rate,
+				"warehouse": row.warehouse,
+			}
+			for row in lines
+		]
+		enrich_lines(cart)
+		ctx = frappe._dict(
+			company=invoice_doc.company,
+			customer=invoice_doc.customer,
+			price_list=invoice_doc.selling_price_list,
+			currency=invoice_doc.currency,
+			posting_date=invoice_doc.posting_date,
+			pos_profile=pos.name,
+		)
+		priced = apply_item_rules(build_invoice_context(ctx, cart))["priced_rows"]
+		return [flt(row.rate) for row in priced]
+	except Exception:
+		frappe.log_error(title="XPOS: discount cap could not apply pricing rules")
+		return list_rates
+
+
+def check_discount_cap(invoice_doc, max_discount: float, rule_rates: list[float] | None = None) -> None:
+	"""Refuse a ticket discounted at the counter by more than the POS Profile allows.
+
+	The cart hides discounts beyond ``max_discount_percentage_allowed``, but only
+	a line's discount percentage was checked here: a line discount amount, the
+	additional discount or a header discount amount could take off any sum.
+	This compares what the ticket charges before tax with its lines at
+	``rule_rates`` (each line's rate after Pricing Rules, see
+	``pricing_rule_rates``; the price list rate when not given), so line and
+	additional discounts count together and a Pricing Rule's own discount does
+	not. Callers skip it for a POS Role that may change the price (it could set
+	any rate). Free items carry no price and are left out.
+	"""
+	if max_discount <= 0:
+		return
+	lines = _capped_lines(invoice_doc)
+	if rule_rates is None:
+		rule_rates = [flt(row.price_list_rate) for row in lines]
+	before = sum(abs(flt(row.qty)) * flt(rate) for row, rate in zip(lines, rule_rates))
+	if before <= 0:
+		return
+	charged = sum(abs(flt(row.qty)) * flt(row.rate) for row in lines)
+	if flt(invoice_doc.get("additional_discount_percentage")):
+		charged *= 1 - flt(invoice_doc.additional_discount_percentage) / 100
+	else:
+		charged -= abs(flt(invoice_doc.get("discount_amount")))
+	discount = flt((1 - charged / before) * 100, 2)
+	if discount > flt(max_discount, 2):
+		frappe.throw(
+			_("The discounts on this ticket come to {0}% off; at most {1}% is allowed.").format(
+				discount, flt(max_discount, 2)
+			),
+			title=_("Discount too large"),
+		)
+
+
 def check_may_sell(pos_profile: str | None) -> None:
 	"""Refuse a caller who may not sell at this register.
 
@@ -580,6 +667,12 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 				item.delivery_date = item_data["delivery_date"]
 			except Exception:
 				pass
+
+	# A return refunds what the sale charged; _validate_return_invoice holds it to that.
+	if not allow_rate_change and not is_return:
+		max_discount = flt(pos.get("max_discount_percentage_allowed", 0))
+		if max_discount > 0:
+			check_discount_cap(invoice_doc, max_discount, pricing_rule_rates(invoice_doc, pos))
 
 	existing_account_heads = set()
 	if pos.taxes_and_charges:

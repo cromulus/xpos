@@ -258,3 +258,27 @@ class TestConsolidationStockGuard(unittest.TestCase):
 
 			with self.assertRaises(NegativeStockRaised):
 				self.log.assert_no_negative_stock(docs)
+
+
+class TestBlockSaleFollowsTheProfile(unittest.TestCase):
+	"""The profile's "Block sale beyond available qty" decides the server guard.
+
+	A stored 0 used to read as 1 (``value or 1``), so switching it off in the
+	profile never reached the server; only a missing value defaults to blocking.
+	"""
+
+	def should_block(self, stored, allow_negative=0):
+		with patch.object(stock_module, "frappe") as mock_frappe:
+			mock_frappe.db.get_single_value.return_value = allow_negative
+			mock_frappe.db.get_value.return_value = stored
+			return stock_module._should_block("Mule City Retail")
+
+	def test_the_profiles_setting_is_followed(self):
+		self.assertTrue(self.should_block(1))
+		self.assertFalse(self.should_block(0))
+
+	def test_an_unset_value_blocks(self):
+		self.assertTrue(self.should_block(None))
+
+	def test_negative_stock_allowed_never_blocks(self):
+		self.assertFalse(self.should_block(1, allow_negative=1))

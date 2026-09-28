@@ -144,9 +144,9 @@ def _should_block(pos_profile):
 
 	block_sale = 1
 	if pos_profile:
-		block_sale = cint(
-			frappe.db.get_value("POS Profile", pos_profile, "block_sale_beyond_available_qty") or 1
-		)
+		# A stored 0 means "don't block"; only a missing value falls back to blocking.
+		stored = frappe.db.get_value("POS Profile", pos_profile, "block_sale_beyond_available_qty")
+		block_sale = 1 if stored is None else cint(stored)
 
 	return bool(block_sale)
 
