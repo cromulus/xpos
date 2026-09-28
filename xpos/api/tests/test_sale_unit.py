@@ -79,3 +79,56 @@ class TestSaleUnit(IntegrationTestCase):
 		"""One serial number is one stock unit, so a sack of 25 serials is not one line."""
 		feed = _item(f"XPOS-SER-{self.run}", self.kg, self.sack, 25, has_serial_no=1)
 		self.assertEqual(sale_uoms([feed])[feed], (self.kg, 1.0))
+
+
+class TestSwitchingACartLineUnit(IntegrationTestCase):
+	"""Mule City (MuleCity-mxwy.8): a 35 lb bag at $23.47, stocked by the Bag,
+	sells by the pound at bag price ÷ weight. The cart asks ``get_sale_unit``
+	for the new unit's price, the one the invoice price lock posts."""
+
+	def setUp(self):
+		self.bag, self.lb = _uom("XPOS Test Bag"), _uom("XPOS Test Pound")
+		self.run = frappe.generate_hash(length=6)
+		self.profile = frappe.db.get_value("POS Profile", {"disabled": 0}, "name")
+		if not self.profile:
+			self.skipTest("needs a POS Profile")
+		self.price_list = frappe.db.get_value("POS Profile", self.profile, "selling_price_list") or PRICE_LIST
+		self.feed = frappe.get_doc(
+			{
+				"doctype": "Item",
+				"item_code": f"XPOS-LB-{self.run}",
+				"item_name": "35 lb feed",
+				"item_group": frappe.db.get_value("Item Group", {"is_group": 0}, "name"),
+				"stock_uom": self.bag,
+				"is_stock_item": 1,
+				"uoms": [{"uom": self.lb, "conversion_factor": round(1 / 35, 9)}],
+			}
+		).insert().name
+		frappe.get_doc(
+			{"doctype": "Item Price", "item_code": self.feed, "price_list": self.price_list,
+			 "uom": self.bag, "price_list_rate": 23.47}
+		).insert()
+
+	def test_the_pound_is_the_bag_price_times_its_factor(self):
+		from xpos.api.items import get_sale_unit
+
+		unit = get_sale_unit(self.feed, self.profile, self.lb)
+		self.assertEqual(unit["uom"], self.lb)
+		self.assertEqual(unit["conversion_factor"], round(1 / 35, 9))
+		self.assertAlmostEqual(unit["rate"], 23.47 * round(1 / 35, 9), places=9)
+		self.assertEqual(round(unit["rate"] * 35, 2), 23.47)
+		self.assertEqual(get_sale_unit(self.feed, self.profile, self.bag)["rate"], 23.47)
+
+	def test_a_unit_the_item_does_not_have_is_refused(self):
+		from xpos.api.items import get_sale_unit
+
+		with self.assertRaises(frappe.ValidationError):
+			get_sale_unit(self.feed, self.profile, _uom("XPOS Test Ton"))
+
+	def test_the_cart_rounds_rates_like_the_invoice_line(self):
+		"""The settings the SPA loads carry the invoice line's rate precision."""
+		from xpos.api.settings import _item_rate_precision
+
+		field = frappe.get_meta("Sales Invoice Item").get_field("rate")
+		self.assertGreaterEqual(_item_rate_precision(), frappe.utils.cint(field.precision))
+		self.assertGreaterEqual(_item_rate_precision(), frappe.utils.cint(frappe.db.get_default("float_precision")))

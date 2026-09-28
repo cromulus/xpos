@@ -382,10 +382,9 @@ function focusUOMButton(event: KeyboardEvent, direction: number) {
 	buttons[next]?.focus();
 }
 
+// The cart store re-prices the line for the new unit (server price, stock check).
 function selectUOM(u: ItemUOM) {
-	const baseRate = props.item.rate / (props.item.conversion_factor || 1);
-	const newRate = roundRate(baseRate * u.conversion_factor);
-	emit("update-uom", props.index, u.uom, newRate, u.conversion_factor);
+	emit("update-uom", props.index, u);
 	showUOMSelector.value = false;
 }
 
