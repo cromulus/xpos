@@ -262,5 +262,6 @@ purchase bags/pounds/date and historical price. Product details expose BOM and
 known nutrient analysis; missing analysis stays unknown. Existing animal-less
 mixes remain usable; the app requires an intended animal only for a new mix.
 
-Native app and XPOS must be released together. This branch does not incorporate
-the separate, uncommitted `feat/customer-recent-purchases` picker changes.
+Native app and XPOS must be released together. Local integration includes mc7
+(`6d98e03`), preserving its recent-purchases picker changes. Product-context
+implementation: `f0022c6`. No new release tag or deployment is part of this merge.
