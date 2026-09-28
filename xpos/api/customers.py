@@ -386,6 +386,23 @@ def get_customer_info(customer: str):
 	}
 
 
+def _customer_kind(kind: str | None) -> str | None:
+	"""Validate the Mule City customer type against the Customer field's options.
+
+	Returns None where the site has no ``mule_customer_kind`` field, so the
+	counter still creates customers on sites without mulecity_erpnext.
+	"""
+	if not kind:
+		return None
+	field = frappe.get_meta("Customer").get_field("mule_customer_kind")
+	if not field:
+		return None
+	options = [option for option in (field.options or "").split("\n") if option]
+	if kind not in options:
+		frappe.throw(_("Customer type must be one of: {0}").format(", ".join(options)))
+	return kind
+
+
 @frappe.whitelist()
 def create_customer(
 	customer_name: str,
@@ -407,7 +424,6 @@ def create_customer(
 	state: str = None,
 	pincode: str = None,
 	mule_customer_kind: str = None,
-	request_tax_exemption: int = 0,
 ):
 	"""
 	Create a new customer with optional address.
@@ -421,12 +437,7 @@ def create_customer(
 	):
 		frappe.throw(_("Street address and city are required to save an address"))
 
-	if mule_customer_kind and mule_customer_kind not in ("Farmer", "Reseller", "Other"):
-		frappe.throw(_("Customer type must be Farmer, Reseller, or Other"))
-	if mule_customer_kind or cint(request_tax_exemption):
-		meta = frappe.get_meta("Customer")
-		if not all(meta.has_field(field) for field in ("mule_customer_kind", "mule_tax_exemption_requested")):
-			frappe.throw(_("Mule City customer classification fields are not configured"))
+	mule_customer_kind = _customer_kind(mule_customer_kind)
 
 	if not customer_group:
 		customer_group = (
@@ -448,12 +459,10 @@ def create_customer(
 		}
 	)
 
-	# Classification and requests are informational; only approved native tax
-	# configuration can change tax treatment.
+	# Classification is informational: it grants no credit or tax exemption.
+	# A tax exemption is asked for with a Customer Tax Change Request (desk).
 	if mule_customer_kind:
 		customer.mule_customer_kind = mule_customer_kind
-	if cint(request_tax_exemption):
-		customer.mule_tax_exemption_requested = 1
 
 	if tax_id:
 		customer.tax_id = tax_id

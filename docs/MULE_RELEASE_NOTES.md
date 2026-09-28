@@ -1,5 +1,20 @@
 # Mule City XPOS release notes
 
+## Unreleased: customer type picker (`feat/customer-type-picker`)
+
+Based on `mule-v2.10.1-mc7` (`6d98e03`). Needs mulecity-full `6fb183b5`, which
+codifies the Customer fields `mule_customer_kind` and a read-only, derived
+`mule_tax_exemption_requested`.
+
+- New Customer shows **Customer type** again (Not set / Farmer / Reseller / Other).
+  `create_customer` saves `mule_customer_kind` only where the Customer has that
+  field (other sites ignore it) and checks it against the field's options.
+- **Request tax exemption** no longer sets a flag: after the customer is saved it
+  opens the desk's new Customer Tax Change Request, prefilled with the customer, in
+  a new tab (runbook O-10). `create_customer` no longer takes `request_tax_exemption`.
+  The customer's "Tax exemption requested" tick follows open requests (mulecity-full).
+- Tests: `frontend/tests/customerForm.spec.ts` (4 new), `xpos/api/tests/test_create_customer_kind.py` (5, site-backed).
+
 ## mule-v2.10.1-mc7 (2026-09-28)
 
 - Customer lookup uses the active POS profile when called from the picker,

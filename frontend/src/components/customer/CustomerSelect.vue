@@ -153,6 +153,21 @@
 						/>
 					</div>
 
+					<!-- Mule City: a label only; the server ignores it where the Customer has no such field. -->
+					<div>
+						<label for="mule-customer-kind" class="text-xs font-medium text-muted-foreground mb-1 block">{{ __("Customer type") }}</label>
+						<select id="mule-customer-kind" v-model="newCustomer.mule_customer_kind" class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+							<option value="">{{ __("Not set") }}</option>
+							<option v-for="kind in CUSTOMER_KINDS" :key="kind" :value="kind">{{ __(kind) }}</option>
+						</select>
+					</div>
+					<!-- A tax exemption is Brandy's decision: this opens a Customer Tax Change Request on the desk. -->
+					<label class="flex items-center gap-2 text-sm">
+						<input v-model="newCustomer.request_tax_exemption" type="checkbox" />
+						{{ __("Request tax exemption") }}
+					</label>
+					<p v-if="newCustomer.request_tax_exemption" class="text-xs text-muted-foreground">{{ __("After saving, a tax change request for Brandy opens in a new tab. The customer stays taxable until she approves it.") }}</p>
+
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
@@ -308,8 +323,13 @@ const countryOptions = computed<AutocompleteOption[]>(() =>
 	countries.value.map((c) => ({ label: c, value: c })),
 );
 
+// The Customer field's options (mulecity_erpnext); create_customer validates them.
+const CUSTOMER_KINDS = ["Farmer", "Reseller", "Other"];
+
 const defaultNewCustomer = () => ({
 	customer_name: "",
+	mule_customer_kind: "",
+	request_tax_exemption: false,
 	tax_id: "",
 	mobile_no: "",
 	address_line1: "",
@@ -429,6 +449,7 @@ async function createAndSelect() {
 	try {
 		const payload: Record<string, unknown> = {
 			customer_name: newCustomer.value.customer_name,
+			mule_customer_kind: newCustomer.value.mule_customer_kind || undefined,
 			mobile_no: newCustomer.value.mobile_no || undefined,
 			email_id: newCustomer.value.email_id || undefined,
 			tax_id: newCustomer.value.tax_id || undefined,
@@ -445,15 +466,25 @@ async function createAndSelect() {
 			if (payload[key] === undefined) delete payload[key];
 		});
 
+		const requestExemption = newCustomer.value.request_tax_exemption;
 		const result = await customerStore.createCustomer(payload);
 		cartStore.setCustomer(result);
 		showSuccess(__("Customer created successfully!"));
+		if (requestExemption) openTaxChangeRequest(result.name);
 		close();
 	} catch (error: unknown) {
 		showError(__("Failed to create customer: ") + ((error as Error)?.message || error));
 	} finally {
 		isCreating.value = false;
 	}
+}
+
+// Mule City: the desk's new Customer Tax Change Request, prefilled with the
+// customer (Frappe sets URL query values on a new form). Staff pick the
+// category, give the reason and send it to Brandy there (runbook O-10).
+function openTaxChangeRequest(customer: string) {
+	const url = "/desk/customer-tax-change-request/new?customer=" + encodeURIComponent(customer);
+	if (!window.open(url, "_blank")) showError(__("Allow pop-ups to open the tax change request, or open it from the customer on the desk."));
 }
 
 // Shape and accessible labels distinguish missing data without relying on color.
