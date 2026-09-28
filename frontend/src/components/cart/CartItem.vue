@@ -205,6 +205,13 @@
 						@keydown="blockInvalidNumericKeys"
 					/>
 				</div>
+				<p
+					v-if="capMessage"
+					class="mt-1 text-[10px] font-medium text-amber-700 dark:text-amber-400"
+					data-testid="discount-cap-message"
+				>
+					{{ capMessage }}
+				</p>
 			</div>
 		</div>
 
@@ -263,6 +270,8 @@ const discountInput = ref(0);
 const itemUOMs = ref<ItemUOM[]>([]);
 
 const maxDiscount = computed(() => posStore.maxDiscountAllowed);
+// Shown while the typed discount is held at the counter's cap.
+const capMessage = ref("");
 
 const isSelected = computed(() => cartStore.selectedCartIndex === props.index);
 
@@ -406,12 +415,34 @@ function onRateChange(e: Event) {
 	emit("update-rate", props.index, roundRate(val));
 }
 
+/**
+ * The most this line's discount may be, as typed: a percentage never above the
+ * profile's maximum, and (unless the user may change the price) line and
+ * additional discounts together never above the counter's cap.
+ */
+function discountLimit(): number | null {
+	const limits: number[] = [];
+	if (discountType.value === "percentage" && maxDiscount.value > 0) limits.push(maxDiscount.value);
+	const capped = cartStore.maxLineDiscount(props.index, discountType.value);
+	if (capped !== null) limits.push(capped);
+	return limits.length ? Math.min(...limits) : null;
+}
+
+// Stop the value at the cap as it is typed, and say why.
+watch([discountInput, discountType], () => {
+	const limit = discountLimit();
+	if (limit !== null && (discountInput.value || 0) > limit) {
+		discountInput.value = limit;
+		capMessage.value = __("Max {0}% at the counter", [maxDiscount.value]);
+	} else if ((discountInput.value || 0) < (limit ?? Infinity)) {
+		capMessage.value = "";
+	}
+});
+
 function applyDiscount() {
 	let val = discountInput.value || 0;
-	if (discountType.value === "percentage") {
-		const max = maxDiscount.value || 100;
-		val = Math.min(val, max);
-	}
+	const limit = discountLimit();
+	if (limit !== null) val = Math.min(val, limit);
 	emit("update-discount", props.index, discountType.value, val);
 }
 

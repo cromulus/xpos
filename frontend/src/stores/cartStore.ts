@@ -35,6 +35,14 @@ import {
 import type { CartPricingLine, FreeItemLine } from "@/services/pricingEngine";
 import { nowDate, toDateOrNow } from "@/utils/datetime";
 import { debounce, extractErrorMessage, isNetworkError, isOnline } from "@/utils";
+import { hasPermission } from "@/services/userRights";
+import {
+	maxAdditionalDiscount as capAdditionalDiscount,
+	maxLineDiscount as capLineDiscount,
+	type CapLine,
+	type DiscountKind,
+} from "@/utils/discountCap";
+import { lineDiscountFromPerUnit, perUnitDiscount } from "@/utils/lineDiscount";
 
 let cartRowSeq = 0;
 
@@ -741,15 +749,68 @@ export const useCartStore = defineStore("cart", () => {
 		items.value[index].pos_rate_overridden = true;
 	}
 
-	function updateItemDiscount(index: number, type: "percentage" | "amount", value: number): void {
+	/**
+	 * Whether the counter's discount cap (POS Profile
+	 * ``max_discount_percentage_allowed``) holds this cart: not for a return,
+	 * and not for a POS Role that may change the price. The server applies the
+	 * same exemptions (``check_discount_cap``).
+	 */
+	const discountCapActive = computed(
+		() => !isReturnMode.value && posStore.maxDiscountAllowed > 0 && !hasPermission("allow_change_price"),
+	);
+
+	/** The capped lines (free items excluded), and each one's index in the cart. */
+	function capLines(): { lines: CapLine[]; cartIndexes: number[] } {
+		const lines: CapLine[] = [];
+		const cartIndexes: number[] = [];
+		items.value.forEach((item, index) => {
+			if (item.pos_is_free_item) return;
+			lines.push({
+				qty: item.qty,
+				rate: item.rate,
+				ruleRate: item.pos_rule_rate ?? item.rate,
+				discountPercentage: item.discount_percentage || 0,
+				discountAmount: item.discount_amount || 0,
+			});
+			cartIndexes.push(index);
+		});
+		return { lines, cartIndexes };
+	}
+
+	/** The largest discount line ``index`` may take under the cap, or null when uncapped. */
+	function maxLineDiscount(index: number, type: DiscountKind): number | null {
+		if (!discountCapActive.value) return null;
+		const { lines, cartIndexes } = capLines();
+		const capIndex = cartIndexes.indexOf(index);
+		if (capIndex < 0) return null;
+		return capLineDiscount(
+			lines,
+			capIndex,
+			type,
+			{ percentage: discountPercentage.value, amount: discountAmount.value },
+			posStore.maxDiscountAllowed,
+		);
+	}
+
+	/** The largest additional (whole-ticket) discount under the cap, or null when uncapped. */
+	function maxAdditionalDiscount(type: DiscountKind): number | null {
+		if (!discountCapActive.value) return null;
+		return capAdditionalDiscount(capLines().lines, type, posStore.maxDiscountAllowed);
+	}
+
+	/** Set a line discount, held to the cap; returns the value applied. */
+	function updateItemDiscount(index: number, type: DiscountKind, value: number): number {
+		const max = maxLineDiscount(index, type);
+		const applied = max !== null && value > max ? max : value;
 		if (type === "percentage") {
-			items.value[index].discount_percentage = value;
+			items.value[index].discount_percentage = applied;
 			items.value[index].discount_amount = 0;
 		} else {
-			items.value[index].discount_amount = value;
+			items.value[index].discount_amount = applied;
 			items.value[index].discount_percentage = 0;
 		}
 		items.value[index].pos_pricing_rules = [];
+		return applied;
 	}
 
 	/**
@@ -761,8 +822,8 @@ export const useCartStore = defineStore("cart", () => {
 	 * price for the new unit (``get_sale_unit``), the rate the invoice price lock
 	 * will post. A manually changed rate, or no connection, keeps the same price
 	 * per stock unit instead (rate ÷ old factor × new factor). A line discount in
-	 * money is per unit, so it is dropped rather than carried to a unit of another
-	 * size; the pricing rules are re-applied for the new unit.
+	 * money was given for the old unit and quantity, so it is dropped rather than
+	 * carried to a unit of another size; the pricing rules are re-applied for the new unit.
 	 */
 	async function changeItemUOM(
 		index: number,
@@ -812,6 +873,7 @@ export const useCartStore = defineStore("cart", () => {
 		item.rate = normalizeItemRate(rate);
 		if (!item.discount_percentage) item.discount_amount = 0;
 		item.pos_pricing_rules = [];
+		item.pos_rule_rate = undefined;
 		syncFreeItems();
 		return { success: true };
 	}
@@ -846,16 +908,20 @@ export const useCartStore = defineStore("cart", () => {
 		}
 	}
 
-	function setDiscount(type: "percentage" | "amount", value: number): void {
+	/** Set the additional (whole-ticket) discount, held to the cap; returns the value applied. */
+	function setDiscount(type: DiscountKind, value: number): number {
+		const max = maxAdditionalDiscount(type);
+		const applied = max !== null && value > max ? max : value;
 		if (type === "percentage") {
-			discountPercentage.value = value;
+			discountPercentage.value = applied;
 			discountAmount.value = 0;
 		} else {
-			discountAmount.value = value;
+			discountAmount.value = applied;
 			discountPercentage.value = 0;
 		}
 		ruleDiscountPercentage.value = 0;
 		ruleDiscountAmount.value = 0;
+		return applied;
 	}
 
 	function enterReturnMode(invoiceName: string, allowedItemCodes?: string[]): void {
@@ -1047,13 +1113,22 @@ export const useCartStore = defineStore("cart", () => {
 				if (!item.pos_rate_overridden && update.price_list_rate) {
 					item.rate = normalizeItemRate(update.price_list_rate);
 				}
+				// The rule's money discount is per unit; the cart keeps it for the whole line.
+				const unitDiscount = update.discount_percentage ? 0 : update.discount_amount || 0;
 				item.discount_percentage = update.discount_percentage;
-				item.discount_amount = update.discount_percentage ? 0 : update.discount_amount;
+				item.discount_amount = lineDiscountFromPerUnit(unitDiscount, item.qty);
 				item.pos_pricing_rules = update.pricing_rules;
-			} else if (item.pos_pricing_rules?.length) {
-				item.discount_percentage = 0;
-				item.discount_amount = 0;
-				item.pos_pricing_rules = [];
+				// The rule's price, kept for the discount cap after a counter discount replaces it.
+				item.pos_rule_rate = item.discount_percentage
+					? item.rate * (1 - item.discount_percentage / 100)
+					: item.rate - unitDiscount;
+			} else {
+				if (item.pos_pricing_rules?.length) {
+					item.discount_percentage = 0;
+					item.discount_amount = 0;
+					item.pos_pricing_rules = [];
+				}
+				item.pos_rule_rate = undefined;
 			}
 		}
 
@@ -1424,7 +1499,8 @@ export const useCartStore = defineStore("cart", () => {
 						stock_uom: item.stock_uom || item.uom || "",
 						image: "",
 						discount_percentage: item.discount_percentage || 0,
-						discount_amount: item.discount_amount || 0,
+						// The server's discount is per unit; the cart keeps it for the whole line.
+						discount_amount: lineDiscountFromPerUnit(item.discount_amount, item.qty || 1),
 						serial_no: item.serial_no || "",
 						batch_no: item.batch_no || "",
 						actual_qty: actualQty,
@@ -1518,7 +1594,8 @@ export const useCartStore = defineStore("cart", () => {
 				stock_uom: item.stock_uom || item.uom || "",
 				image: "",
 				discount_percentage: item.discount_percentage || 0,
-				discount_amount: item.discount_amount || 0,
+				// Posted (and queued) lines carry the discount per unit; the cart keeps it for the whole line.
+				discount_amount: lineDiscountFromPerUnit(item.discount_amount || 0, item.qty || 1),
 				serial_no: item.serial_no || "",
 				batch_no: item.batch_no || "",
 				actual_qty: (item as any).actual_qty || 0,
@@ -1545,7 +1622,13 @@ export const useCartStore = defineStore("cart", () => {
 					price_list_rate: normalizeItemRate(item.rate),
 					uom: item.uom || item.stock_uom,
 					discount_percentage: item.discount_percentage,
-					discount_amount: item.discount_amount,
+					// The server takes the money discount per unit (MuleCity-1msa).
+					discount_amount: perUnitDiscount(
+						item.discount_amount || 0,
+						item.qty,
+						normalizeItemRate(item.rate),
+						itemRatePrecision.value,
+					),
 					serial_no: item.serial_no,
 					batch_no: item.batch_no,
 					item_tax_template: item.item_tax_template,
@@ -1832,6 +1915,9 @@ export const useCartStore = defineStore("cart", () => {
 		updateItemQty,
 		updateItemRate,
 		updateItemDiscount,
+		discountCapActive,
+		maxLineDiscount,
+		maxAdditionalDiscount,
 		changeItemUOM,
 		updateItemNotes,
 		updateItemDeliveryDate,
