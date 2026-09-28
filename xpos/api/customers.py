@@ -11,14 +11,63 @@ from xpos.api.profiles import resolve_pos_profile
 from xpos.utils import row_value
 
 
+# Columns get_customers always returns; search fields add to these.
+_CUSTOMER_LIST_COLUMNS = (
+	"name",
+	"customer_name",
+	"mobile_no",
+	"email_id",
+	"customer_group",
+	"territory",
+	"default_currency",
+	"image",
+	"tax_id",
+	"customer_type",
+	"gender",
+)
+# Shown on the picker row already, so left out of the description.
+_SHOWN_ON_ROW = ("name", "customer_name", "mobile_no", "email_id")
+_SEARCHABLE_TYPES = ("Data", "Link", "Select", "Small Text", "Phone", "Read Only")
+
+
+def _customer_search_fields() -> list[str]:
+	"""Customer's configured search_fields that are real, text-like columns.
+
+	Only names the DocType's own meta vouches for reach the SQL, so a stale or
+	odd entry in the setting is skipped rather than breaking the search.
+	"""
+	meta = frappe.get_meta("Customer")
+	configured = meta.search_fields
+	if not isinstance(configured, str):
+		return []
+	fields = []
+	for fieldname in (f.strip() for f in configured.split(",")):
+		df = meta.get_field(fieldname) if fieldname else None
+		if df and df.fieldtype in _SEARCHABLE_TYPES and fieldname not in fields:
+			fields.append(fieldname)
+	return fields
+
+
+def _search_description(customer: dict, fields: list[str]) -> str:
+	"""The search-field values desk shows under a customer, in configured order."""
+	values = (customer.get(f) for f in fields if f not in _SHOWN_ON_ROW)
+	return ", ".join(str(v) for v in values if v not in (None, ""))
+
+
 @frappe.whitelist()
 def get_customers(
 	search_term: str = "", limit: int = 20, pos_profile: str = None, preload: int = 0, with_metadata: int = 0
 ):
-	"""Search customers by name, mobile, email, or tax ID.
+	"""Search customers by name, mobile, email, tax ID, or Customer's search fields.
+
+	The Customer DocType's standard ``search_fields`` (Customize Form) are searched
+	and shown too, as desk's customer dropdown does, so a site can make any code
+	that tells same-named customers apart findable and visible. A customer whose
+	ID or search-field value equals the term exactly is listed first.
 
 	If a POS Profile is provided, respects customer group restrictions.
 	"""
+	extra_fields = _customer_search_fields()
 	conditions = "c.disabled = 0"
 	values = {"limit": max(1, min(cint(limit), 100000))}
 	order_by = "c.customer_name ASC, c.name ASC"
@@ -84,9 +133,16 @@ def get_customers(
 			OR c.mobile_no LIKE %(search)s
 			OR c.email_id LIKE %(search)s
 			OR c.tax_id LIKE %(search)s
-		)"""
+			{extra_like}
+		)""".format(extra_like="".join(f" OR c.`{f}` LIKE %(search)s" for f in extra_fields))
 		values["search"] = f"%{search_term}%"
+		# Exact hits first: typing a short code must not bury that customer under
+		# every phone number or ID that merely contains it.
+		exact = " OR ".join(f"c.`{f}` = %(exact)s" for f in ("name", "customer_name", *extra_fields))
+		order_by = f"CASE WHEN {exact} THEN 0 ELSE 1 END, {order_by}"
+		values["exact"] = search_term
 
+	extra_columns = "".join(f", c.`{f}`" for f in extra_fields if f not in _CUSTOMER_LIST_COLUMNS)
 	selected_limit = values["limit"]
 	if cint(with_metadata) and limit_sql:
 		values["limit"] += 1  # One extra row distinguishes a full selection from a capped one.
@@ -104,6 +160,7 @@ def get_customers(
 			c.tax_id,
 			c.customer_type,
 			c.gender
+			{extra_columns}
 		FROM `tabCustomer` c
 		{join}
 		WHERE {conditions}
@@ -113,6 +170,8 @@ def get_customers(
 		values,
 		as_dict=True,
 	)
+	for customer in customers:
+		customer["xpos_search_description"] = _search_description(customer, extra_fields)
 
 	if cint(with_metadata):
 		complete = not limit_sql or len(customers) <= selected_limit

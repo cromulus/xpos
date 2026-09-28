@@ -77,6 +77,11 @@
 									{{ cust.customer_name }}
 								</p>
 								<div class="flex items-center gap-2 text-[11px] text-muted-foreground">
+									<!-- The customer ID and search fields (Customize Form), as desk's dropdown shows them. -->
+									<span v-if="cust.name !== cust.customer_name" class="shrink-0">{{ cust.name }}</span>
+									<span v-if="cust.name !== cust.customer_name && cust.xpos_search_description">&bull;</span>
+									<span v-if="cust.xpos_search_description" class="truncate">{{ cust.xpos_search_description }}</span>
+									<span v-if="(cust.name !== cust.customer_name || cust.xpos_search_description) && (cust.mobile_no || cust.email_id)">&bull;</span>
 									<span v-if="cust.mobile_no">{{ cust.mobile_no }}</span>
 									<span v-if="cust.email_id && cust.mobile_no">&bull;</span>
 									<span v-if="cust.email_id" class="truncate">{{ cust.email_id }}</span>
