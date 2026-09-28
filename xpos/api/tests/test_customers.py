@@ -13,8 +13,11 @@ from xpos.api import customers
 class TestGetCustomers(unittest.TestCase):
 	"""Tests for get_customers function."""
 
+	# Row enrichment has its own queries and tests (test_picker_context);
+	# these cases cover only the customer search query.
+	@patch("xpos.api.customers._enrich_picker_customers")
 	@patch("xpos.api.customers.frappe")
-	def test_get_customers_returns_customer_list(self, mock_frappe):
+	def test_get_customers_returns_customer_list(self, mock_frappe, _mock_enrich):
 		"""Test that get_customers returns list of customers."""
 		mock_frappe.db.sql.return_value = [
 			{
@@ -36,8 +39,11 @@ class TestGetCustomers(unittest.TestCase):
 		self.assertEqual(len(result), 2)
 		self.assertEqual(result[0]["customer_name"], "John Doe")
 
+	# Row enrichment has its own queries and tests (test_picker_context);
+	# these cases cover only the customer search query.
+	@patch("xpos.api.customers._enrich_picker_customers")
 	@patch("xpos.api.customers.frappe")
-	def test_get_customers_searches_by_term(self, mock_frappe):
+	def test_get_customers_searches_by_term(self, mock_frappe, _mock_enrich):
 		"""Test that get_customers filters by search term."""
 		mock_frappe.db.sql.return_value = [
 			{

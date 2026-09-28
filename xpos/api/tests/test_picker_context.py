@@ -21,6 +21,7 @@ class TestPickerContext(unittest.TestCase):
 			{"name": "C2", "has_address": 0, "has_email": 1}]]), \
 			patch.object(customers.frappe, "has_permission", return_value=True), \
 			patch.object(customers.frappe, "get_cached_value", return_value="USD"), \
+			patch.object(customers, "today", return_value="2026-09-28"), \
 			patch.object(customers.frappe, "get_list", side_effect=[
 				[{"customer": "C1", "sales": 125}], [{"customer": "C1", "sales": -25}]
 			]) as sales:
@@ -36,7 +37,8 @@ class TestPickerContext(unittest.TestCase):
 		self.assertEqual(sales.call_args_list[0].kwargs["filters"]["is_consolidated"], 0)
 		for call in sales.call_args_list:
 			self.assertEqual(call.kwargs["filters"]["company"], "Mule")
-			self.assertIn("posting_date", call.kwargs["filters"])
+			self.assertEqual(call.kwargs["filters"]["posting_date"],
+				["between", ["2025-09-28", "2026-09-28"]])
 
 	def test_sales_hidden_without_invoice_read_permission(self):
 		rows = [{"name": "C1"}]
