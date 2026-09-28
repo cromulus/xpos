@@ -96,8 +96,13 @@ class TestALineDiscountChargesWhatTheCartShowed(IntegrationTestCase):
 			# The line posts the total the cart showed, i.e. the discount the cashier typed.
 			self.assertEqual(flt(row.amount, 2), shown, row.item_code)
 			self.assertEqual(flt(qty * flt(row.price_list_rate) - flt(row.amount), 2), typed, row.item_code)
-		self.assertEqual(flt(doc.net_total, 2), flt(sum(line[-1] for line in lines), 2))
-		self.assertEqual(flt(doc.grand_total, 2), flt(doc.net_total + doc.total_taxes_and_charges, 2))
+		# The ticket is the cart's: the lines it showed, plus sales tax on that net as
+		# the cart figures it (each On Net Total rate, to the cent).
+		shown_total = flt(sum(line[-1] for line in lines), 2)
+		self.assertEqual(flt(doc.net_total, 2), shown_total)
+		self.assertTrue(all(tax.charge_type == "On Net Total" for tax in doc.taxes))
+		cart_tax = sum(flt(shown_total * flt(tax.rate) / 100, 2) for tax in doc.taxes)
+		self.assertEqual(flt(doc.grand_total, 2), flt(shown_total + cart_tax, 2))
 
 	def test_by_the_bag_at_one_three_and_four_bags(self):
 		"""$10 off 4 bags at $10 charges $30.00, not $0; $5 off 3 bags charges $25.00."""
