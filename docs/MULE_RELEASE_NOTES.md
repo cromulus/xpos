@@ -1,5 +1,15 @@
 # Mule City XPOS release notes
 
+## Unreleased: set tax exemption on the desk (`feat/tax-category-link`)
+
+Based on `mule-v2.10.1-mc5`. Front desk sets a customer's Tax Category
+directly on the desk (mulecity-full `a473f290`; the Customer history records
+who). "Set tax exemption" on New Customer (after saving) and on Edit Customer
+opens `/desk/customer/<name>#tax_category` in a new tab; Frappe scrolls the
+form to that field. Nothing is created at the counter (no Customer Tax Change
+Request). Supersedes the request-creating button on the held
+`feat/customer-type-picker`. Needs the frontend rebuilt at deploy.
+
 ## mule-v2.10.1-mc5 (2026-09-27)
 
 mc4 plus the fixes from the Sunday staging rehearsal:

@@ -141,6 +141,13 @@
 						/>
 					</div>
 
+					<!-- Mule City: the exemption itself is the Customer's Tax Category, set on the desk. -->
+					<label class="flex items-center gap-2 text-sm">
+						<input v-model="newCustomer.set_tax_exemption" type="checkbox" />
+						{{ __("Set tax exemption") }}
+					</label>
+					<p v-if="newCustomer.set_tax_exemption" class="text-xs text-muted-foreground">{{ __("After saving, the customer opens on the desk in a new tab: set the Tax Category there.") }}</p>
+
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
@@ -255,6 +262,7 @@ import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
 import { usePosStore } from "@/stores/posStore";
 import { showSuccess, showError } from "@/services/api";
+import { openCustomerTaxSection } from "@/services/customerTax";
 import {
 	cacheCountries,
 	getCachedCountries,
@@ -297,6 +305,7 @@ const countryOptions = computed<AutocompleteOption[]>(() =>
 
 const defaultNewCustomer = () => ({
 	customer_name: "",
+	set_tax_exemption: false,
 	tax_id: "",
 	mobile_no: "",
 	address_line1: "",
@@ -432,9 +441,11 @@ async function createAndSelect() {
 			if (payload[key] === undefined) delete payload[key];
 		});
 
+		const setExemption = newCustomer.value.set_tax_exemption;
 		const result = await customerStore.createCustomer(payload);
 		cartStore.setCustomer(result);
 		showSuccess(__("Customer created successfully!"));
+		if (setExemption) openCustomerTaxSection(result.name);
 		close();
 	} catch (error: unknown) {
 		showError(__("Failed to create customer: ") + ((error as Error)?.message || error));

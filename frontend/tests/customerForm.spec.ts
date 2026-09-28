@@ -52,4 +52,31 @@ describe("New Customer", () => {
 		expect(mocks.create).not.toHaveBeenCalled();
 		wrapper.unmount();
 	});
+
+	// Mule City: front desk sets the exemption as the Customer's Tax Category on the desk.
+	async function createWith(fill: (wrapper: Awaited<ReturnType<typeof form>>) => Promise<void>) {
+		const wrapper = await form();
+		wrapper.findComponent('[placeholder="Full name"]').vm.$emit("update:modelValue", "Test Buyer");
+		await fill(wrapper);
+		await flushPromises();
+		await wrapper.findAll("button-stub").find(b => b.text().includes("Create & Select"))!.trigger("click");
+		await flushPromises();
+		return wrapper;
+	}
+	it("opens the new customer's tax section on the desk when Set tax exemption is ticked", async () => {
+		const open = vi.spyOn(window, "open").mockReturnValue({} as Window);
+		const wrapper = await createWith(async w => { await w.find('input[type="checkbox"]').setValue(true); });
+		expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("set_tax_exemption");
+		expect(open).toHaveBeenCalledWith("/desk/customer/NEW-1#tax_category", "_blank");
+		expect(open.mock.calls.flat().join()).not.toContain("tax-change-request");
+		open.mockRestore();
+		wrapper.unmount();
+	});
+	it("opens nothing when Set tax exemption is not ticked", async () => {
+		const open = vi.spyOn(window, "open").mockReturnValue({} as Window);
+		const wrapper = await createWith(async () => {});
+		expect(open).not.toHaveBeenCalled();
+		open.mockRestore();
+		wrapper.unmount();
+	});
 });

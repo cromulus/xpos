@@ -51,6 +51,18 @@
 					</div>
 				</div>
 
+				<!-- Mule City: the exemption itself is the Customer's Tax Category, set on the desk. -->
+				<Button
+					v-if="cartStore.customer?.name"
+					variant="outline"
+					size="sm"
+					class="w-full"
+					data-testid="set-tax-exemption"
+					@click="openCustomerTaxSection(cartStore.customer.name)"
+				>
+					{{ __("Set tax exemption") }}
+				</Button>
+
 				<div class="grid grid-cols-2 gap-3">
 					<div>
 						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
@@ -137,6 +149,7 @@ import { ref, computed, watch, nextTick } from "vue";
 import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
 import { showSuccess, showError, call } from "@/services/api";
+import { openCustomerTaxSection } from "@/services/customerTax";
 import {
 	cacheCustomerGroups,
 	getCachedCustomerGroups,
