@@ -194,6 +194,54 @@ def get_shift_expected_amounts(opening, doctype: str, invoices: list) -> dict[st
 	return expected
 
 
+def _append_balance_details(shift, balance_details: list[dict] | None) -> None:
+	"""Add the opening float rows to a POS Opening Shift.
+
+	The client sends each row as {mode_of_payment, opening_amount}; the child table
+	(POS Opening Shift Detail) stores it in `amount`. Map it explicitly so the float is kept.
+	"""
+	for detail in balance_details or []:
+		shift.append(
+			"balance_details",
+			{
+				"mode_of_payment": detail.get("mode_of_payment"),
+				"amount": flt(detail.get("opening_amount") or detail.get("amount", 0)),
+			},
+		)
+
+
+def _get_shift_invoices(opening, doctype: str, fields: list[str]) -> list:
+	"""Return the submitted POS invoices that belong to one opening shift.
+
+	Invoices are matched by their `pos_opening_shift` link. Only when none are linked does it
+	fall back to the cashier's unlinked invoices on the same profile since the shift opened,
+	and never to invoices that already belong to another shift or to a closing: otherwise an
+	empty second shift would re-count the sales of the shift closed before it.
+	"""
+	base_filters = {"docstatus": 1, "is_pos": 1}
+	if doctype == "POS Invoice":
+		base_filters["consolidated_invoice"] = ["in", ["", None]]
+
+	invoices = frappe.get_all(
+		doctype, filters={**base_filters, "pos_opening_shift": opening.name}, fields=fields
+	)
+	if invoices:
+		return invoices
+
+	fallback_filters = {
+		**base_filters,
+		"pos_profile": opening.pos_profile,
+		"posting_date": [">=", opening.posting_date],
+		"creation": [">=", opening.period_start_date],
+		"owner": opening.user,
+		"pos_opening_shift": ["is", "not set"],
+	}
+	# Closing a shift stamps its invoices' pos_closing_entry (where the column exists).
+	if frappe.db.has_column(doctype, "pos_closing_entry"):
+		fallback_filters["pos_closing_entry"] = ["is", "not set"]
+	return frappe.get_all(doctype, filters=fallback_filters, fields=fields)
+
+
 def _get_open_shift_rows(user: str):
 	return frappe.db.get_all(
 		"POS Opening Shift",
@@ -250,7 +298,8 @@ def get_opening_data():
 			filters={"parent": ["in", profile_names]},
 			fields=["parent", "mode_of_payment", "default"],
 			limit_page_length=0,
-			order_by="parent",
+			# Keep the POS Profile's own row order (Cash first at Mule City).
+			order_by="parent asc, idx asc",
 			ignore_permissions=True,
 		)
 		data["payment_methods"] = payment_methods
@@ -278,8 +327,7 @@ def open_shift(pos_profile: str, company: str, balance_details: str | list[dict]
 		}
 	)
 
-	if balance_details:
-		new_shift.set("balance_details", balance_details)
+	_append_balance_details(new_shift, balance_details)
 
 	new_shift.insert(ignore_permissions=True)
 
@@ -329,28 +377,7 @@ def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
 	opening = frappe.get_doc("POS Opening Shift", opening_shift)
 	doctype = get_invoice_type()
 
-	filters = {
-		"pos_opening_shift": opening.name,
-		"docstatus": 1,
-		"is_pos": 1,
-	}
-	if doctype == "POS Invoice":
-		filters["consolidated_invoice"] = ["in", ["", None]]
-
-	invoices = frappe.get_all(doctype, filters=filters, fields=CLOSING_INVOICE_FIELDS)
-
-	if not invoices:
-		fallback_filters = {
-			"pos_profile": opening.pos_profile,
-			"posting_date": [">=", opening.posting_date],
-			"docstatus": 1,
-			"is_pos": 1,
-			"owner": opening.user,
-		}
-		if doctype == "POS Invoice":
-			fallback_filters["consolidated_invoice"] = ["in", ["", None]]
-
-		invoices = frappe.get_all(doctype, filters=fallback_filters, fields=CLOSING_INVOICE_FIELDS)
+	invoices = _get_shift_invoices(opening, doctype, CLOSING_INVOICE_FIELDS)
 
 	grand_total = sum(flt(row_value(inv, "grand_total", 0)) for inv in invoices)
 	net_total = sum(flt(row_value(inv, "net_total", 0)) for inv in invoices)
@@ -443,28 +470,7 @@ def get_shift_summary(opening_shift: str):
 	opening = frappe.get_doc("POS Opening Shift", opening_shift)
 	doctype = get_invoice_type()
 
-	filters = {
-		"pos_opening_shift": opening.name,
-		"docstatus": 1,
-		"is_pos": 1,
-	}
-	if doctype == "POS Invoice":
-		filters["consolidated_invoice"] = ["in", ["", None]]
-
-	invoices = frappe.get_all(doctype, filters=filters, fields=SUMMARY_INVOICE_FIELDS)
-
-	if not invoices:
-		fallback_filters = {
-			"pos_profile": opening.pos_profile,
-			"posting_date": [">=", opening.posting_date],
-			"docstatus": 1,
-			"is_pos": 1,
-			"owner": opening.user,
-		}
-		if doctype == "POS Invoice":
-			fallback_filters["consolidated_invoice"] = ["in", ["", None]]
-
-		invoices = frappe.get_all(doctype, filters=fallback_filters, fields=SUMMARY_INVOICE_FIELDS)
+	invoices = _get_shift_invoices(opening, doctype, SUMMARY_INVOICE_FIELDS)
 
 	grand_total = sum(flt(row_value(inv, "grand_total", 0)) for inv in invoices)
 	net_total = sum(flt(row_value(inv, "net_total", 0)) for inv in invoices)
@@ -644,16 +650,7 @@ def create_opening_shift(data: str | dict, local_id: str | None = None) -> dict:
 		}
 	)
 
-	# Add balance details if provided
-	balance_details = data.get("balance_details") or []
-	for detail in balance_details:
-		new_shift.append(
-			"balance_details",
-			{
-				"mode_of_payment": detail.get("mode_of_payment"),
-				"amount": flt(detail.get("opening_amount") or detail.get("amount", 0)),
-			},
-		)
+	_append_balance_details(new_shift, data.get("balance_details"))
 
 	new_shift.insert(ignore_permissions=True)
 

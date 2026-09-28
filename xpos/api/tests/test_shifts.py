@@ -536,6 +536,187 @@ class TestCloseShift(unittest.TestCase):
 		self.assertIn("pos_closing_shift", result)
 
 
+def _matches(row: dict, filters: dict) -> bool:
+	"""Evaluate the small subset of Frappe filters the shift queries use against a dict row."""
+	for field, condition in filters.items():
+		value = row.get(field)
+		if not isinstance(condition, list):
+			if value != condition:
+				return False
+			continue
+		operator, operand = condition
+		if operator == "is" and operand == "not set":
+			if value not in (None, ""):
+				return False
+		elif operator == ">=":
+			if value is None or value < operand:
+				return False
+		elif operator == "in":
+			if value not in operand:
+				return False
+		else:
+			raise AssertionError(f"unsupported filter {field}: {condition}")
+	return True
+
+
+class TestSecondShiftOnTheSameDay(unittest.TestCase):
+	"""User story (MuleCity-oygn): Leslie closes her morning shift, opens a second shift on the
+	same till and rings nothing. Close Shift for the second shift must show 0 invoices and 0.00,
+	not the three invoices already counted in the first shift's closing."""
+
+	# Three invoices from the first shift: linked to it and already in its closing.
+	FIRST_SHIFT_INVOICES = tuple(
+		{
+			"name": f"ACC-SINV-2026-3825{n}",
+			"docstatus": 1,
+			"is_pos": 1,
+			"pos_profile": "Mule City Retail",
+			"owner": "leslie@mulecity.com",
+			"posting_date": "2026-09-27",
+			"creation": f"2026-09-27 10:0{n}:00",
+			"pos_opening_shift": "POS-OS-26-0000003",
+			"pos_closing_entry": "POS-CS-26-0000001",
+			"grand_total": 14.94,
+			"net_total": 14.0,
+			"currency": "USD",
+			"is_return": 0,
+		}
+		for n in (8, 9, 1)
+	)
+
+	def _second_shift(self):
+		opening = MagicMock()
+		opening.name = "POS-OS-26-0000004"
+		opening.pos_profile = "Mule City Retail"
+		opening.company = "Mule City Specialty Feeds"
+		opening.posting_date = "2026-09-27"
+		opening.period_start_date = "2026-09-27 11:00:00"
+		opening.user = "leslie@mulecity.com"
+		opening.balance_details = [SimpleNamespace(mode_of_payment="Cash", amount=150)]
+		return opening
+
+	def _fake_get_all(self, invoices):
+		def get_all(doctype, filters=None, fields=None, **kwargs):
+			if doctype in ("Sales Invoice", "POS Invoice"):
+				return [row for row in invoices if _matches(row, filters or {})]
+			return []
+
+		return get_all
+
+	@patch("xpos.api.shifts.get_shift_payment_totals", return_value={})
+	@patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice")
+	@patch("xpos.api.shifts.frappe")
+	def test_empty_second_shift_summary_counts_no_invoices(self, mock_frappe, _doctype, _totals):
+		"""The Close Shift sheet of an empty second shift shows no invoices and no sales."""
+		mock_frappe.get_doc.return_value = self._second_shift()
+		mock_frappe.get_all.side_effect = self._fake_get_all(self.FIRST_SHIFT_INVOICES)
+		mock_frappe.db.has_column.return_value = True
+		mock_frappe.db.get_value.return_value = "Cash"
+
+		summary = shifts.get_shift_summary("POS-OS-26-0000004")
+
+		self.assertEqual(summary["total_invoices"], 0)
+		self.assertEqual(summary["grand_total"], 0)
+		self.assertEqual(summary["invoices"], [])
+		# Only the opening float is expected in the drawer.
+		self.assertEqual(summary["expected_amounts"]["Cash"]["amount"], 150)
+
+	@patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice")
+	@patch("xpos.api.shifts.frappe")
+	def test_empty_second_shift_closing_links_no_invoices(self, mock_frappe, _doctype):
+		"""Closing the empty second shift saves no pos_transactions from the first shift."""
+		closing = MagicMock()
+		closing.name = "POS-CS-26-0000002"
+		appended = []
+		closing.append.side_effect = lambda table, row: appended.append((table, row))
+		opening = self._second_shift()
+		mock_frappe.get_doc.side_effect = lambda *a, **kw: (
+			opening if a and a[0] == "POS Opening Shift" else closing
+		)
+		mock_frappe.get_all.side_effect = self._fake_get_all(self.FIRST_SHIFT_INVOICES)
+		mock_frappe.db.has_column.return_value = True
+		mock_frappe.session.user = "leslie@mulecity.com"
+
+		result = shifts.close_shift(opening_shift="POS-OS-26-0000004", closing_details="[]")
+
+		self.assertEqual(result["total_invoices"], 0)
+		self.assertEqual(result["grand_total"], 0)
+		self.assertEqual([row for table, row in appended if table == "pos_transactions"], [])
+
+	@patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice")
+	@patch("xpos.api.shifts.frappe")
+	def test_unlinked_invoice_after_the_shift_opened_is_still_counted(self, mock_frappe, _doctype):
+		"""Negative guard: an unlinked, unclosed invoice rung in this shift is still picked up."""
+		unlinked = {
+			**self.FIRST_SHIFT_INVOICES[0],
+			"name": "ACC-SINV-2026-38300",
+			"creation": "2026-09-27 11:05:00",
+			"pos_opening_shift": None,
+			"pos_closing_entry": None,
+		}
+		mock_frappe.get_all.side_effect = self._fake_get_all([*self.FIRST_SHIFT_INVOICES, unlinked])
+		mock_frappe.db.has_column.return_value = True
+
+		invoices = shifts._get_shift_invoices(self._second_shift(), "Sales Invoice", ["name"])
+
+		self.assertEqual([row["name"] for row in invoices], ["ACC-SINV-2026-38300"])
+
+	@patch("xpos.api.shifts.frappe")
+	def test_linked_invoices_are_the_shift_invoices(self, mock_frappe):
+		"""A shift with linked invoices returns exactly those, without the fallback."""
+		opening = self._second_shift()
+		opening.name = "POS-OS-26-0000003"
+		mock_frappe.get_all.side_effect = self._fake_get_all(self.FIRST_SHIFT_INVOICES)
+		mock_frappe.db.has_column.return_value = True
+
+		invoices = shifts._get_shift_invoices(opening, "Sales Invoice", ["name"])
+
+		self.assertEqual(len(invoices), 3)
+		self.assertEqual(mock_frappe.get_all.call_count, 1)
+
+
+class TestOpeningFloat(unittest.TestCase):
+	"""User story (MuleCity-88ck): Leslie types 150 in the Cash box under Opening Cash Balance
+	and clicks Open Shift. The shift keeps Cash = 150 so Close Shift expects float + sales."""
+
+	@patch("xpos.api.shifts._enrich_shift_data")
+	@patch("xpos.api.shifts.frappe")
+	def test_open_shift_keeps_the_typed_cash_float(self, mock_frappe, _enrich):
+		shift = MagicMock()
+		appended = []
+		shift.append.side_effect = lambda table, row: appended.append((table, row))
+		shift.as_dict.return_value = {"name": "POS-OS-26-0000004"}
+		mock_frappe.get_doc.return_value = shift
+		mock_frappe.session.user = "leslie@mulecity.com"
+
+		shifts.open_shift(
+			pos_profile="Mule City Retail",
+			company="Mule City Specialty Feeds",
+			balance_details='[{"mode_of_payment": "Cash", "opening_amount": 150}, '
+			'{"mode_of_payment": "Credit Card", "opening_amount": 0}]',
+		)
+
+		self.assertEqual(
+			appended,
+			[
+				("balance_details", {"mode_of_payment": "Cash", "amount": 150.0}),
+				("balance_details", {"mode_of_payment": "Credit Card", "amount": 0.0}),
+			],
+		)
+		shift.set.assert_not_called()
+
+	@patch("xpos.api.shifts.frappe")
+	def test_opening_data_lists_methods_in_pos_profile_order(self, mock_frappe):
+		"""Cash (row 1 of the POS Profile payments table) is listed before Credit Card."""
+		mock_frappe.session.user = "leslie@mulecity.com"
+		mock_frappe.db.sql.return_value = [{"name": "Mule City Retail", "company": "MCSF"}]
+		mock_frappe.get_list.return_value = []
+
+		shifts.get_opening_data()
+
+		self.assertEqual(mock_frappe.get_list.call_args.kwargs["order_by"], "parent asc, idx asc")
+
+
 class TestShiftAmountCalculations(unittest.TestCase):
 	"""Tests for shift amount calculation helpers."""
 
