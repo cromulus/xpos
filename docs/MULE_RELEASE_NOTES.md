@@ -1,5 +1,37 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc5 (2026-09-27)
+
+mc4 plus the fixes from the Sunday staging rehearsal:
+
+- `fix/shift-float-and-close` (`84f68ba`, `499589d`):
+  - MuleCity-88ck: Open Shift saves the typed cash float (the client's
+    `opening_amount` is mapped to the detail's `amount`, as
+    `create_opening_shift` already did); the opening form lists payment methods
+    in the POS Profile's order (Cash first for Mule City).
+  - MuleCity-oygn: closing or summarising a shift with no linked invoices only
+    falls back to unlinked, not-yet-closed invoices created after the shift
+    opened, so an earlier closed shift's sales are never counted again.
+  - MuleCity-u497: the Close Shift tax breakdown reads the server's `amount`.
+    Needs the frontend rebuilt at deploy.
+- `fix/customer-picker-codes` (`e7721b4`, `2de5294`), MuleCity-ilog:
+  - Customer search also searches the Customer's standard search fields
+    (Mule City puts the FilePro codes first), ranks an exact code first, and
+    the picker shows the customer ID and those values under each name, as the
+    desk does. Offline search matches the same values. Generic; upstreamable.
+  - The Mule City panel shows each mix's last-made date and times made
+    (sorted by mulecity_erpnext `find_mixes`, newest first), and "View recipe"
+    scrolls the recipe into view.
+
+Known follow-ups: MuleCity-rm58 (cancelling a closing clears the invoices'
+closing link), the Close Shift "Total Taxes" card reads a field the server
+never sends.
+
+Verified: vitest 426/426, `vue-tsc` clean, `yarn build` OK; every
+`xpos.api.tests` module passes on the pinned sidecar (ERPNext 16.36.0 /
+Frappe 16.35.0). Needs mulecity_erpnext with the `find_mixes` ordering
+(fix/ilog-customer-codes) for the mix dates.
+
 ## mule-v2.10.1-mc4 (2026-09-27)
 
 mc3 plus: the Mule City panel (Customer Mixes / Orders for Pickup) shows the
