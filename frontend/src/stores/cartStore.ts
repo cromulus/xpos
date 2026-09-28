@@ -98,18 +98,22 @@ export const useCartStore = defineStore("cart", () => {
   const muleTaxPending = ref(false);
   const muleTaxError = ref("");
   const muleTaxCategory = ref("");
+  // Why the buyer is tax-exempt (Mule City), for the counter's customer bar.
+  const muleTaxExemptReason = ref("");
   let muleTaxRequest = 0;
   watch(() => [customer.value?.name, posStore.profileName], async ([buyer, profile]) => {
     if (!buyer || !profile) return;
     const request = ++muleTaxRequest;
     muleTaxPending.value = true;
     muleTaxError.value = "";
+    muleTaxExemptReason.value = "";
     showPaymentDialog.value = false;
     try {
       const context = await call<any>("mulecity_erpnext.pos_workspace.tax_context", {customer: buyer, pos_profile: profile});
       if (request !== muleTaxRequest) return;
       posStore.taxes = context.taxes;
       muleTaxCategory.value = context.tax_category || "";
+      muleTaxExemptReason.value = context.tax_exempt_reason || "";
       // A customer's item overrides must not survive a buyer change.
       for (const item of items.value) {
         const tax = await call<any>("xpos.api.taxes.get_item_tax_template", {item_code: item.item_code, company: posStore.companyName, tax_category: muleTaxCategory.value});
@@ -1769,7 +1773,7 @@ export const useCartStore = defineStore("cart", () => {
 		customer,
 		discountPercentage,
 		discountAmount,
-		muleTaxPending, muleTaxError, muleTaxCategory,
+		muleTaxPending, muleTaxError, muleTaxCategory, muleTaxExemptReason,
 		serverPreview, serverPreviewPending, serverPreviewError, serverLinesDiffer,
 		previewExpectedTotal, ticketChanged,
 		showPaymentDialog,

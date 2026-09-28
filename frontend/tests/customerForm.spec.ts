@@ -1,5 +1,5 @@
 /** Cashier story: record an address without entering demographic/territory fields. */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { shallowMount, flushPromises } from "@vue/test-utils";
 import CustomerSelect from "@/components/customer/CustomerSelect.vue";
 const mocks = vi.hoisted(() => ({ create: vi.fn(), select: vi.fn() }));
@@ -52,31 +52,51 @@ describe("New Customer", () => {
 		expect(mocks.create).not.toHaveBeenCalled();
 		wrapper.unmount();
 	});
+});
 
-	// Mule City: front desk sets the exemption as the Customer's Tax Category on the desk.
-	async function createWith(fill: (wrapper: Awaited<ReturnType<typeof form>>) => Promise<void>) {
+/** Cashier story (Mule City): a new farm or reseller customer is exempt from the first ticket. */
+describe("New Customer tax exemption reason", () => {
+	const reasons = ["Farm", "Reseller (resale certificate)"];
+	beforeEach(() => { vi.clearAllMocks(); mocks.create.mockResolvedValue({ name: "NEW-1", customer_name: "Test Farmer" }); });
+	afterEach(() => { delete (window as any).xpos; });
+	const button = (wrapper: Awaited<ReturnType<typeof form>>, text: string) =>
+		wrapper.findAll("button-stub").find(b => b.text() === text);
+
+	it("sends the reason the cashier picks", async () => {
+		(window as any).xpos = { boot: { xpos_customer_tax_exempt_reasons: reasons } };
+		const open = vi.spyOn(window, "open").mockReturnValue({} as Window);
 		const wrapper = await form();
-		wrapper.findComponent('[placeholder="Full name"]').vm.$emit("update:modelValue", "Test Buyer");
-		await fill(wrapper);
+		expect(wrapper.text()).toContain("Tax exemption reason");
+		expect(wrapper.text()).not.toContain("Set tax exemption");
+		wrapper.findComponent('[placeholder="Full name"]').vm.$emit("update:modelValue", "Test Farmer");
+		await button(wrapper, "Farm")!.trigger("click");
 		await flushPromises();
+		expect(button(wrapper, "Farm")!.attributes("aria-pressed")).toBe("true");
 		await wrapper.findAll("button-stub").find(b => b.text().includes("Create & Select"))!.trigger("click");
 		await flushPromises();
-		return wrapper;
-	}
-	it("opens the new customer's tax section on the desk when Set tax exemption is ticked", async () => {
-		const open = vi.spyOn(window, "open").mockReturnValue({} as Window);
-		const wrapper = await createWith(async w => { await w.find('input[type="checkbox"]').setValue(true); });
-		expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("set_tax_exemption");
-		expect(open).toHaveBeenCalledWith("/desk/customer/NEW-1#tax_category", "_blank");
-		expect(open.mock.calls.flat().join()).not.toContain("tax-change-request");
+		expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ customer_name: "Test Farmer", mule_tax_exempt_reason: "Farm" }));
+		// The reason is saved with the customer: no desk tab to finish it in.
+		expect(open).not.toHaveBeenCalled();
 		open.mockRestore();
 		wrapper.unmount();
 	});
-	it("opens nothing when Set tax exemption is not ticked", async () => {
-		const open = vi.spyOn(window, "open").mockReturnValue({} as Window);
-		const wrapper = await createWith(async () => {});
-		expect(open).not.toHaveBeenCalled();
-		open.mockRestore();
+
+	it("is optional: no reason, nothing sent", async () => {
+		(window as any).xpos = { boot: { xpos_customer_tax_exempt_reasons: reasons } };
+		const wrapper = await form();
+		expect(button(wrapper, "None (taxable)")!.attributes("aria-pressed")).toBe("true");
+		wrapper.findComponent('[placeholder="Full name"]').vm.$emit("update:modelValue", "Test Buyer");
+		await flushPromises();
+		await wrapper.findAll("button-stub").find(b => b.text().includes("Create & Select"))!.trigger("click");
+		await flushPromises();
+		expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("mule_tax_exempt_reason");
+		wrapper.unmount();
+	});
+
+	it("is not shown on a site without the field", async () => {
+		const wrapper = await form();
+		expect(wrapper.text()).not.toContain("Tax exemption reason");
+		expect(button(wrapper, "Farm")).toBeUndefined();
 		wrapper.unmount();
 	});
 });

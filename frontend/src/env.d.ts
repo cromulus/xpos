@@ -47,6 +47,7 @@ declare global {
 			pos_settings?: Record<string, any>;
 			xpos_item_search?: Record<string, any>;
 			xpos_number_format?: Record<string, any>;
+			xpos_customer_tax_exempt_reasons?: string[];
 			sysdefaults?: Record<string, any>;
 		};
 		_messages?: Record<string, string>;

@@ -4,6 +4,7 @@
 import frappe
 
 from xpos.api.auth import can_manage_role_permissions, get_current_user_permissions
+from xpos.api.customers import customer_tax_exempt_reasons
 from xpos.api.settings import get_branding_payload, get_number_format_settings
 from xpos.api.utilities import get_item_search_settings
 
@@ -38,6 +39,8 @@ def extend_bootinfo(bootinfo):
 		bootinfo.pos_settings = frappe.get_single("POS Settings")
 		bootinfo.xpos_item_search = get_item_search_settings()
 		bootinfo.xpos_number_format = get_number_format_settings()
+		# New Customer shows a tax exemption reason picker only when this is set.
+		bootinfo.xpos_customer_tax_exempt_reasons = customer_tax_exempt_reasons()
 
 		user_rights = get_current_user_permissions()
 		bootinfo.xpos_role = user_rights.get("role")
