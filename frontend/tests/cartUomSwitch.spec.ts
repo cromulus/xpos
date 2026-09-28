@@ -187,6 +187,15 @@ describe("switching a cart line between Bag and Pound", () => {
 		expect(cart.items[1].discount_percentage).toBe(10);
 	});
 
+	it("the last bag on the shelf can still be switched to pounds", async () => {
+		// The line's own bag is released before the new unit is checked.
+		const cart = useCartStore();
+		cart.addItem(feed({ actual_qty: 1 }));
+		const result = await cart.changeItemUOM(0, { uom: "Pound", conversion_factor: POUND_FACTOR });
+		expect(result).toEqual({ success: true });
+		expect(cart.updateItemQty(0, 35).success).toBe(true);
+	});
+
 	// ------------------------------------------------------------ negative stories
 	it("refuses a switch that needs more stock than is on hand, and leaves the line", async () => {
 		serverPrices({

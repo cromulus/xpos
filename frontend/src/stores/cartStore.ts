@@ -76,6 +76,9 @@ interface ServerPreview {
 	amount_due: number;
 }
 
+/** Stock quantities closer than this count as equal (9-place UOM factors). */
+const STOCK_QTY_TOLERANCE = 1e-6;
+
 export const useCartStore = defineStore("cart", () => {
 	const posStore = usePosStore();
 	const items = ref<CartItem[]>([]);
@@ -437,7 +440,10 @@ export const useCartStore = defineStore("cart", () => {
 			return { allowed: false, message: __("{0} is out of stock", [item.item_name]) };
 		}
 
-		const requestedStockQty = requestedQty * (conversionFactor || 1);
+		// Conversion factors carry 9 places (Pound = 0.028571429 Bag), so 35 lb of
+		// a 35 lb bag is 1.000000015 bags; ERPNext rounds stock quantities, so
+		// this check must not refuse the last bag over that dust.
+		const requestedStockQty = requestedQty * (conversionFactor || 1) - STOCK_QTY_TOLERANCE;
 
 		if (batchNo) {
 			const batchQty = getBatchQty(item, batchNo);
