@@ -338,6 +338,38 @@ def check_expected_total(invoice_doc, data: dict) -> None:
 		)
 
 
+def check_discount_cap(invoice_doc, max_discount: float) -> None:
+	"""Refuse a ticket discounted by more than the POS Profile allows, in total.
+
+	The cart hides discounts beyond ``max_discount_percentage_allowed``, but only
+	a line's discount percentage was checked here: a line discount amount, the
+	additional discount or a header discount amount could take off any sum.
+	This compares what the ticket charges before tax with its lines at their
+	price list rate, so line and additional discounts count together. Callers
+	skip it for a POS Role that may change the price (it could set any rate).
+	Free items carry no price and are left out.
+	"""
+	if max_discount <= 0:
+		return
+	lines = [row for row in invoice_doc.get("items") if not cint(row.get("is_free_item"))]
+	list_total = sum(abs(flt(row.qty)) * flt(row.price_list_rate) for row in lines)
+	if list_total <= 0:
+		return
+	charged = sum(abs(flt(row.qty)) * flt(row.rate) for row in lines)
+	if flt(invoice_doc.get("additional_discount_percentage")):
+		charged *= 1 - flt(invoice_doc.additional_discount_percentage) / 100
+	else:
+		charged -= abs(flt(invoice_doc.get("discount_amount")))
+	discount = flt((1 - charged / list_total) * 100, 2)
+	if discount > flt(max_discount, 2):
+		frappe.throw(
+			_("The discounts on this ticket come to {0}% off; at most {1}% is allowed.").format(
+				discount, flt(max_discount, 2)
+			),
+			title=_("Discount too large"),
+		)
+
+
 def check_may_sell(pos_profile: str | None) -> None:
 	"""Refuse a caller who may not sell at this register.
 
@@ -580,6 +612,10 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 				item.delivery_date = item_data["delivery_date"]
 			except Exception:
 				pass
+
+	# A return refunds what the sale charged; _validate_return_invoice holds it to that.
+	if not allow_rate_change and not is_return:
+		check_discount_cap(invoice_doc, flt(pos.get("max_discount_percentage_allowed", 0)))
 
 	existing_account_heads = set()
 	if pos.taxes_and_charges:
