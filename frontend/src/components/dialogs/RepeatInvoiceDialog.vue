@@ -11,7 +11,7 @@
 			<DialogHeader class="shrink-0 px-5 pt-5 pb-3 border-b border-border">
 				<div class="flex items-center gap-2">
 					<Repeat class="w-5 h-5 text-blue-500" />
-					<DialogTitle class="text-base">{{ __("Repeat Invoice") }}</DialogTitle>
+					<DialogTitle class="text-base">{{ __("Recent purchases") }}</DialogTitle>
 					<Badge variant="outline" class="text-[10px] font-mono">Ctrl+G</Badge>
 				</div>
 				<DialogDescription class="text-xs">{{
@@ -52,6 +52,12 @@
 									/>
 									<span class="font-semibold text-foreground text-sm">{{ inv.name }}</span>
 								</div>
+								<ul v-if="inv.items?.length" class="mt-2 ms-6 text-sm text-foreground space-y-1">
+									<li v-for="(item, index) in inv.items" :key="index">
+										{{ qty(item.qty) }} {{ item.uom }} — {{ item.item_name || item.item_code }}
+									</li>
+								</ul>
+
 								<div class="flex items-center gap-3 mt-1 ms-6 text-xs text-muted-foreground">
 									<span>{{ inv.customer_name }}</span>
 									<span>&bull;</span>
@@ -113,6 +119,7 @@ interface SearchInvoice {
 	grand_total: number;
 	currency: string;
 	total_qty: number;
+	items?: Array<{ item_code: string; item_name: string; qty: number; uom: string }>;
 }
 
 interface RepeatItem {
@@ -215,6 +222,8 @@ function loadMore() {
 }
 
 async function selectInvoice(inv: SearchInvoice) {
+	// Looking at history must not silently discard an in-progress sale.
+	if (cartStore.itemCount > 0 && !window.confirm(__("Replace the current cart with this purchase?"))) return;
 	isLoading.value = true;
 	try {
 		const result = await call<{

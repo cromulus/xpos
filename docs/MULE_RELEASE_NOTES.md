@@ -1,5 +1,34 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc6 — customer recognition and recent purchases (2026-09-28)
+
+Workstream: `feat/customer-recent-purchases`, based on `0d2042c` (mc5),
+tracked in MuleCity-lt2x. Tagged release for the reproducible staging deployment.
+
+- Recent purchases is directly below the selected customer; history includes
+  item names, quantities and units. Replacing a nonempty cart asks first.
+- Customer lookup searches linked Contact Phone rows with punctuation ignored
+  (at least four digits). Browser cache retains linked numbers for offline lookup.
+- Picker shows one familiar FilePro code, omits generic group/territory/address
+  clutter, and shows recorded Mule customer kind when available.
+- Phone and email values stay out of picker rows. Address/email/phone icons
+  show on-file checks or missing-data minus marks, with accessible labels and
+  a small legend. Linked active addresses and contact records supply the status.
+  Unknown status in an older cache is not mislabeled missing.
+- Customer since uses the historical Mule date when available, never the ERP
+  import creation timestamp. Southern Woods is dated 2007-08-16.
+- Company-scoped trailing-12-month net sales use submitted invoices, including
+  returns, excluding consolidated Sales Invoices to avoid counting POS twice.
+  Amounts exclude tax and use company currency; invoice read permission is required.
+- Phone and sales reads are batched per result set, not per customer.
+- Staging data check: all customer mobile fields were empty but linked Contact
+  phones exist; all Mule customer-kind fields were blank. No inferred reseller,
+  farmer or delivery labels were added. Southern Woods (2980) has 210 invoices;
+  candidate history correctly returned its latest 20 with item details.
+- Validation: 428 frontend tests, frontend typecheck/build, 3 focused backend
+  unit tests, and read-only candidate queries against staging. Full backend
+  suite and deployed browser acceptance remain release gates.
+
 ## mule-v2.10.1-mc5 (2026-09-27)
 
 mc4 plus the fixes from the Sunday staging rehearsal:

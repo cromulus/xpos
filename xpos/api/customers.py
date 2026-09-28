@@ -2,10 +2,11 @@
 # For license information, please see license.txt
 
 import json
+import re
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt
+from frappe.utils import add_months, cint, flt, today
 
 from xpos.api.profiles import resolve_pos_profile
 from xpos.utils import row_value
@@ -26,7 +27,7 @@ _CUSTOMER_LIST_COLUMNS = (
 	"gender",
 )
 # Shown on the picker row already, so left out of the description.
-_SHOWN_ON_ROW = ("name", "customer_name", "mobile_no", "email_id")
+_SHOWN_ON_ROW = ("name", "customer_name", "mobile_no", "email_id", "mule_filepro_alias_codes")
 _SEARCHABLE_TYPES = ("Data", "Link", "Select", "Small Text", "Phone", "Read Only")
 
 
@@ -50,8 +51,16 @@ def _customer_search_fields() -> list[str]:
 
 def _search_description(customer: dict, fields: list[str]) -> str:
 	"""The search-field values desk shows under a customer, in configured order."""
-	values = (customer.get(f) for f in fields if f not in _SHOWN_ON_ROW)
-	return ", ".join(str(v) for v in values if v not in (None, ""))
+	# Search configuration is broader than useful counter identification.
+	seen = {str(customer.get(f) or "").casefold() for f in _SHOWN_ON_ROW}
+	values = []
+	for field in fields:
+		value = str(customer.get(field) or "").strip()
+		if field in (*_SHOWN_ON_ROW, "customer_group", "territory", "primary_address") or not value or value.casefold() in seen:
+			continue
+		seen.add(value.casefold())
+		values.append(value)
+	return ", ".join(values)
 
 
 @frappe.whitelist()
@@ -68,6 +77,10 @@ def get_customers(
 	If a POS Profile is provided, respects customer group restrictions.
 	"""
 	extra_fields = _customer_search_fields()
+	meta = frappe.get_meta("Customer")
+	# Mule's business classification is independent of ERPNext Company/Individual.
+	if meta.has_field("mule_customer_kind") and "mule_customer_kind" not in extra_fields:
+		extra_fields.append("mule_customer_kind")
 	conditions = "c.disabled = 0"
 	values = {"limit": max(1, min(cint(limit), 100000))}
 	order_by = "c.customer_name ASC, c.name ASC"
@@ -127,6 +140,20 @@ def get_customers(
 
 	if search_term:
 		search_term = search_term.strip()
+		phone_condition = ""
+		phone_digits = re.sub(r"\D", "", search_term)
+		if len(phone_digits) >= 4:
+			# Imported phones live on Contacts, not necessarily Customer.mobile_no.
+			phone_condition = """ OR
+			 REGEXP_REPLACE(IFNULL(c.mobile_no, ''), '[^0-9]', '') LIKE %(phone)s
+			 OR EXISTS (
+			 SELECT 1 FROM `tabDynamic Link` dl
+			 JOIN `tabContact Phone` cp ON cp.parent = dl.parent
+			 WHERE dl.parenttype = 'Contact' AND dl.link_doctype = 'Customer'
+			 AND dl.link_name = c.name
+			 AND REGEXP_REPLACE(cp.phone, '[^0-9]', '') LIKE %(phone)s
+			 )"""
+			values["phone"] = f"%{phone_digits}%"
 		conditions += """ AND (
 			c.name LIKE %(search)s
 			OR c.customer_name LIKE %(search)s
@@ -134,7 +161,11 @@ def get_customers(
 			OR c.email_id LIKE %(search)s
 			OR c.tax_id LIKE %(search)s
 			{extra_like}
-		)""".format(extra_like="".join(f" OR c.`{f}` LIKE %(search)s" for f in extra_fields))
+			{phone_condition}
+		)""".format(
+			extra_like="".join(f" OR c.`{f}` LIKE %(search)s" for f in extra_fields),
+			phone_condition=phone_condition,
+		)
 		values["search"] = f"%{search_term}%"
 		# Exact hits first: typing a short code must not bury that customer under
 		# every phone number or ID that merely contains it.
@@ -143,6 +174,9 @@ def get_customers(
 		values["exact"] = search_term
 
 	extra_columns = "".join(f", c.`{f}`" for f in extra_fields if f not in _CUSTOMER_LIST_COLUMNS)
+	# Preserve the historical relationship date; ERP import creation is not tenure.
+	if meta.has_field("mule_customer_since"):
+		extra_columns += ", c.mule_customer_since AS xpos_customer_since"
 	selected_limit = values["limit"]
 	if cint(with_metadata) and limit_sql:
 		values["limit"] += 1  # One extra row distinguishes a full selection from a capped one.
@@ -170,6 +204,7 @@ def get_customers(
 		values,
 		as_dict=True,
 	)
+	_enrich_picker_customers(customers, profile.company if pos_profile else None)
 	for customer in customers:
 		customer["xpos_search_description"] = _search_description(customer, extra_fields)
 
@@ -177,6 +212,63 @@ def get_customers(
 		complete = not limit_sql or len(customers) <= selected_limit
 		return {"customers": customers if complete else customers[:selected_limit], "complete": complete}
 	return customers
+
+
+def _enrich_picker_customers(customers, company):
+	"""Batch row context; never issue a query for every customer in the picker."""
+	if not customers:
+		return
+	by_name = {row["name"]: row for row in customers}
+	phones = frappe.db.sql("""
+		SELECT DISTINCT dl.link_name, cp.phone
+		FROM `tabDynamic Link` dl
+		JOIN `tabContact Phone` cp ON cp.parent = dl.parent
+		WHERE dl.parenttype = 'Contact' AND dl.link_doctype = 'Customer'
+		AND dl.link_name IN %(names)s
+		ORDER BY dl.link_name, cp.is_primary_mobile_no DESC, cp.idx, cp.phone
+	""", {"names": list(by_name)}, as_dict=True)
+	for phone in phones:
+		row = by_name[phone["link_name"]]
+		row.setdefault("xpos_phone_numbers", []).append(phone["phone"])
+		if not row.get("mobile_no"):
+			row["mobile_no"] = phone["phone"]
+	# Linked profile records are the authority for imported contact completeness.
+	profiles = frappe.db.sql("""
+		SELECT c.name,
+		EXISTS (SELECT 1 FROM `tabDynamic Link` dl
+		 JOIN `tabAddress` a ON a.name = dl.parent
+		 WHERE dl.link_doctype = 'Customer' AND dl.link_name = c.name
+		 AND dl.parenttype = 'Address' AND IFNULL(a.disabled, 0) = 0
+		 AND TRIM(IFNULL(a.address_line1, '')) != '') AS has_address,
+		EXISTS (SELECT 1 FROM `tabDynamic Link` dl
+		 JOIN `tabContact Email` ce ON ce.parent = dl.parent
+		 WHERE dl.link_doctype = 'Customer' AND dl.link_name = c.name
+		 AND dl.parenttype = 'Contact'
+		 AND TRIM(IFNULL(ce.email_id, '')) != '') AS has_email
+		FROM `tabCustomer` c WHERE c.name IN %(names)s
+	""", {"names": list(by_name)}, as_dict=True)
+	for profile in profiles:
+		row = by_name[profile["name"]]
+		row["xpos_has_address"] = bool(profile["has_address"])
+		row["xpos_has_email"] = bool(profile["has_email"] or str(row.get("email_id") or "").strip())
+		row["xpos_has_phone"] = bool(str(row.get("mobile_no") or "").strip())
+	if not company:
+		return
+	# Use permission-aware reads and company currency; returns reduce net sales.
+	# Exclude consolidated Sales Invoices to avoid counting POS tickets twice.
+	if not all(frappe.has_permission(dt, "read") for dt in ("Sales Invoice", "POS Invoice")):
+		return
+	currency = frappe.get_cached_value("Company", company, "default_currency")
+	for row in customers:
+		row.update(xpos_sales_12mo=0, xpos_sales_currency=currency)
+	for doctype in ("Sales Invoice", "POS Invoice"):
+		filters = {"customer": ["in", list(by_name)], "company": company,
+			"docstatus": 1, "posting_date": ["between", [add_months(today(), -12), today()]]}
+		if doctype == "Sales Invoice":
+			filters["is_consolidated"] = 0
+		for sale in frappe.get_list(doctype, filters=filters,
+			fields=["customer", {"SUM": "base_net_total", "as": "sales"}], group_by="customer", limit_page_length=0):
+			by_name[sale["customer"]]["xpos_sales_12mo"] += flt(sale["sales"])
 
 
 @frappe.whitelist()

@@ -35,6 +35,7 @@
 							@keydown.enter.prevent="selectHighlighted"
 						/>
 					</div>
+					<p class="text-xs text-muted-foreground">{{ __("Contact details: ✓ on file · − missing") }}</p>
 				</DialogHeader>
 
 				<div ref="listContainer" class="flex-1 min-h-0 overflow-y-auto xpos-scrollbar">
@@ -76,15 +77,26 @@
 								<p class="text-sm font-medium text-foreground truncate">
 									{{ cust.customer_name }}
 								</p>
+								<p v-if="typeof cust.xpos_sales_12mo === 'number'" class="text-xs text-foreground">
+									{{ formatCustomerSales(cust.xpos_sales_12mo, String(cust.xpos_sales_currency || 'USD')) }} · {{ __("sales in past 12 months") }}
+								</p>
 								<div class="flex items-center gap-2 text-[11px] text-muted-foreground">
 									<!-- The customer ID and search fields (Customize Form), as desk's dropdown shows them. -->
-									<span v-if="cust.name !== cust.customer_name" class="shrink-0">{{ cust.name }}</span>
+									<span v-if="cust.name !== cust.customer_name" class="shrink-0">{{ cust.mule_filepro_alias_codes || cust.name }}</span>
 									<span v-if="cust.name !== cust.customer_name && cust.xpos_search_description">&bull;</span>
 									<span v-if="cust.xpos_search_description" class="truncate">{{ cust.xpos_search_description }}</span>
-									<span v-if="(cust.name !== cust.customer_name || cust.xpos_search_description) && (cust.mobile_no || cust.email_id)">&bull;</span>
-									<span v-if="cust.mobile_no">{{ cust.mobile_no }}</span>
-									<span v-if="cust.email_id && cust.mobile_no">&bull;</span>
-									<span v-if="cust.email_id" class="truncate">{{ cust.email_id }}</span>
+
+								</div>
+								<div class="flex flex-wrap items-center gap-3 mt-1 text-xs text-muted-foreground">
+									<span v-for="detail in profileIndicators(cust)" :key="detail.label"
+										class="inline-flex items-center gap-0.5" role="img"
+										:aria-label="detail.label" :title="detail.label"
+										:class="detail.present ? 'text-primary' : 'text-muted-foreground'">
+										<component :is="detail.icon" class="w-4 h-4" aria-hidden="true" />
+										<Check v-if="detail.present" class="w-3 h-3" aria-hidden="true" />
+										<Minus v-else class="w-3 h-3" aria-hidden="true" />
+									</span>
+									<span v-if="cust.xpos_customer_since">{{ __("Customer since") }} {{ cust.xpos_customer_since }}</span>
 								</div>
 							</div>
 							<ChevronRight
@@ -272,8 +284,9 @@ import { Input } from "@/components/ui/input";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import type { AutocompleteOption } from "@/components/ui/autocomplete";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Search, ChevronRight, Users, UserPlus, ArrowLeft, Loader2 } from "lucide-vue-next";
+import { Search, ChevronRight, Users, UserPlus, ArrowLeft, Loader2, MapPin, Mail, Phone, Check, Minus } from "lucide-vue-next";
 import __ from "@/lib/translate";
+import type { Customer } from "@/types/pos.types";
 import DateTimeInput from "../ui/date-time-input/DateTimeInput.vue";
 import DateTimePicker from "../ui/datetime-picker/DateTimePicker.vue";
 
@@ -441,6 +454,19 @@ async function createAndSelect() {
 	} finally {
 		isCreating.value = false;
 	}
+}
+
+// Shape and accessible labels distinguish missing data without relying on color.
+function profileIndicators(customer: Customer) {
+	return [
+		{ icon: MapPin, present: customer.xpos_has_address, label: customer.xpos_has_address ? __("Address on file") : __("Address missing") },
+		{ icon: Mail, present: customer.xpos_has_email, label: customer.xpos_has_email ? __("Email on file") : __("Email missing") },
+		{ icon: Phone, present: customer.xpos_has_phone, label: customer.xpos_has_phone ? __("Phone on file") : __("Phone missing") },
+	].filter(detail => typeof detail.present === "boolean");
+}
+
+function formatCustomerSales(amount: number, currency: string) {
+	return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
 }
 
 function getInitials(name: string) {

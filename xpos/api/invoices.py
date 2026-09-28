@@ -1899,6 +1899,8 @@ def search_invoices_for_repeat(
 
 	Returns a paginated list of submitted invoices matching the filters.
 	"""
+	if doctype not in ("Sales Invoice", "POS Invoice"):
+		frappe.throw(_("Unsupported invoice type"))
 	page = max(cint(page), 1)
 	page_length = 20
 	start = (page - 1) * page_length
@@ -1946,6 +1948,20 @@ def search_invoices_for_repeat(
 	if has_more:
 		invoices = invoices[:page_length]
 
+	# Parent get_list above enforces read permissions. Fetch lines in one batch
+	# only for those authorized invoices, so the counter can recognize purchases.
+	items_by_invoice = defaultdict(list)
+	if invoices:
+		for item in frappe.get_all(
+			f"{doctype} Item",
+			filters={"parent": ["in", [invoice["name"] for invoice in invoices]], "parenttype": doctype},
+			fields=["parent", "item_code", "item_name", "qty", "uom"],
+			order_by="parent asc, idx asc",
+			limit_page_length=0,
+		):
+			items_by_invoice[item["parent"]].append(item)
+	for invoice in invoices:
+		invoice["items"] = items_by_invoice[invoice["name"]]
 	return {"invoices": invoices, "has_more": has_more}
 
 
