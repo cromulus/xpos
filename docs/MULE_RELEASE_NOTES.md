@@ -1,5 +1,16 @@
 # Mule City XPOS release notes
 
+## Unreleased: ticket discount cap (`fix/discount-cap`)
+
+Based on `mule-v2.10.1-mc5`. MuleCity-mxwy.2: for a POS Role without
+`allow_change_price`, `create_invoice`/`preview_invoice` refuse a ticket whose
+line discounts (percentage or amount) and additional discount (percentage or
+amount) together take off more than the POS Profile's
+`max_discount_percentage_allowed`, measured against the lines' price list
+rates. Returns and free items are left alone. Before, only a line's discount
+percentage was checked. Pairs with mulecity-full `feat/counter-discount-cap`
+(the 25% cap and the counter's discount rights).
+
 ## mule-v2.10.1-mc5 (2026-09-27)
 
 mc4 plus the fixes from the Sunday staging rehearsal:
