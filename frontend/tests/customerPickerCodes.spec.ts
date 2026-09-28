@@ -6,7 +6,7 @@ import CustomerSelect from "@/components/customer/CustomerSelect.vue";
 const customers = [
 	{ name: "MC-CUST-4112", customer_name: "DONALD BYRD", xpos_search_description: "4112, Individual" },
 	{ name: "MC-CUST-6", customer_name: "DONALD BYRD", xpos_search_description: "6, Individual", mobile_no: "919-555-0100" },
-	{ name: "MC-CUST-7", customer_name: "CURTIS ADAMS" },
+	{ name: "CURTIS ADAMS", customer_name: "CURTIS ADAMS" },
 ];
 vi.mock("@/stores/cartStore", () => ({ useCartStore: () => ({ setCustomer: vi.fn() }) }));
 vi.mock("@/stores/customerStore", () => ({ useCustomerStore: () => ({ customers, showCustomerDialog: true }) }));
@@ -23,9 +23,11 @@ describe("Customer picker", () => {
 		expect(text).toContain("4112, Individual");
 		expect(text).toContain("6, Individual");
 		expect(text).toContain("919-555-0100");
+		expect(text).toContain("MC-CUST-4112");
+		expect(text).toContain("MC-CUST-6");
 	});
 
-	it("shows no code line for a customer without one", () => {
+	it("shows no code line for a customer named by its ID with no search fields", () => {
 		const rows = shallowMount(CustomerSelect, { global: { renderStubDefaultSlot: true } })
 			.findAll("button").filter(b => b.text().includes("CURTIS ADAMS"));
 		expect(rows).toHaveLength(1);
