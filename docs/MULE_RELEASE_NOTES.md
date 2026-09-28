@@ -214,3 +214,18 @@ One line per item. Status is either "keep" or "follow-up: remove, replace with .
 
 **Fork PR branches (browser-cache-controls, durable-invoice-retries, batch-catalog-stock)**
 - Generic XPOS improvements with no Mule logic. Keep; offer upstream as PRs.
+
+## Unreleased: counter product context (MuleCity-phjf)
+
+Prepared on `feat/product-context` from mc5 (`0d2042c`), paired with the app's
+`feat/xpos-product-context-20260928` branch. Not tagged or deployed.
+
+The group picker exposes allowed child categories instead of only the profile's
+umbrella. Selecting a customer shows their open-order count and production context.
+Customer Mixes defaults to that customer, with ingredients and recorded animal,
+purchase bags/pounds/date and historical price. Product details expose BOM and
+known nutrient analysis; missing analysis stays unknown. Existing animal-less
+mixes remain usable; the app requires an intended animal only for a new mix.
+
+Native app and XPOS must be released together. This branch does not incorporate
+the separate, uncommitted `feat/customer-recent-purchases` picker changes.

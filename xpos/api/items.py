@@ -420,10 +420,15 @@ def get_item_groups(pos_profile: str | None = None):
 				limit_page_length=0,
 			)
 			all_leaf_names: set[str] = set()
+			browse_parents = []
 			for group_name in allowed_names:
 				lft_rgt = frappe.db.get_value("Item Group", group_name, ["lft", "rgt"])
 				if lft_rgt:
 					lft, rgt = lft_rgt
+					# The profile names the permitted subtree, not the only useful button.
+					browse_parents.extend(frappe.get_all("Item Group",
+						filters={"lft": [">", lft], "rgt": ["<", rgt], "is_group": 1},
+						fields=["name", "parent_item_group", "image"], order_by="lft asc", limit_page_length=0))
 					descendants = frappe.get_all(
 						"Item Group",
 						filters={"lft": [">=", lft], "rgt": ["<=", rgt], "is_group": 0},
@@ -441,7 +446,7 @@ def get_item_groups(pos_profile: str | None = None):
 				if all_leaf_names
 				else []
 			)
-			return {"groups": groups, "parent_groups": parent_groups}
+			return {"groups": groups, "parent_groups": browse_parents or parent_groups}
 
 	groups = frappe.get_all(
 		"Item Group",

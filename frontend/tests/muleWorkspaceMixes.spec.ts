@@ -15,7 +15,7 @@ afterEach(() => { mounted?.unmount(); mounted = null; });
 
 async function openMixes() {
 	HTMLDialogElement.prototype.showModal ??= function () {};
-	const request = vi.fn((method: string) => Promise.resolve(method.endsWith("find_mixes") ? { rows, has_more: false } : recipe));
+	const request = vi.fn((method: string) => Promise.resolve(method.endsWith("customer_orders") ? [] : method.endsWith("find_mixes") ? { rows, has_more: false } : recipe));
 	const wrapper = mount(MuleWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request }, attachTo: document.body });
 	mounted = wrapper;
 	await wrapper.findAll("button").find(b => b.text() === "Customer Mixes")!.trigger("click");
@@ -24,11 +24,11 @@ async function openMixes() {
 }
 
 describe("Customer Mixes", () => {
-	it("says when each mix was last made and how often", async () => {
+	it("labels library usage as usage, not proof of manufacture", async () => {
 		await openMixes();
 		const text = document.body.textContent || "";
-		expect(text).toContain("Last made 2026-05-22 · made once");
-		expect(text).toContain("Last made 2025-11-05 · made 4 times");
+		expect(text).toContain("Last used 2026-05-22 · recorded once");
+		expect(text).toContain("Last used 2025-11-05 · recorded 4 times");
 	});
 
 	it("says so when a mix has no sales on record", async () => {

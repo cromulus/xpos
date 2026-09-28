@@ -232,14 +232,19 @@ const mobileCartPanelRef = ref<HTMLDivElement | null>(null);
 const activeZone = ref<"items" | "cart">("items");
 const highlightedIndex = ref(-1);
 
+// The profile may name only an umbrella group; show its sellable child groups.
+const catalogGroups = computed(() => {
+	const groups = [...itemStore.parentGroups, ...itemStore.itemGroups];
+	return groups.filter((group, index) => group.name !== "All Item Groups" && groups.findIndex(g => g.name === group.name) === index);
+});
 const topGroups = computed(() => {
-	const groups = itemStore.parentGroups.filter((g) => g.name !== "All Item Groups");
+	const groups = catalogGroups.value.filter((g) => g.name !== "All Item Groups");
 	return groups.slice(0, 12);
 });
 
 const groupAutocompleteOptions = computed(() => {
 	const allOption = { label: __("All Groups"), value: "All Item Groups" };
-	const groupOptions = itemStore.parentGroups
+	const groupOptions = catalogGroups.value
 		.filter((g) => g.name !== "All Item Groups")
 		.map((g) => ({ label: __(g.name), value: g.name }));
 	return [allOption, ...groupOptions];

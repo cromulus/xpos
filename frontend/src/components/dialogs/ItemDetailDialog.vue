@@ -21,6 +21,7 @@
 				</div>
 
 				<template v-else-if="detail">
+					<MuleProductInfo :item-code="itemForDetail?.item_code" :profile="posStore.posProfile?.name" :customer="cartStore.customer?.name" />
 					<div v-if="detail.uoms && detail.uoms.length > 0">
 						<label class="text-sm font-semibold text-foreground mb-1.5 block"
 							>Unit of Measure
@@ -205,6 +206,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from "vue";
+import MuleProductInfo from "@/components/MuleProductInfo.vue";
 import { useItemStore } from "@/stores/itemStore";
 import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
