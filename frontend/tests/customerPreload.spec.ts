@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 const mocks = vi.hoisted(() => ({ call: vi.fn(), cache: vi.fn() }));
 vi.mock("@/services/api", () => ({ call: mocks.call }));
-vi.mock("@/stores/posStore", () => ({ usePosStore: () => ({ useOfflineMode: true }) }));
+vi.mock("@/stores/posStore", () => ({ usePosStore: () => ({ useOfflineMode: true, profileName: "Active Counter" }) }));
 vi.mock("@/utils", () => ({ isOnline: () => true }));
 vi.mock("@/services/dbBridge", () => ({
 	cacheCustomers: mocks.cache,
@@ -40,4 +40,12 @@ it("an empty refreshed selection clears the old cache", async () => {
 	mocks.call.mockResolvedValue({ customers: [], complete: true });
 	await useCustomerStore().cacheAllCustomers("Till");
 	expect(mocks.cache).toHaveBeenCalledWith([]);
+});
+
+it("uses the active POS profile when the picker does not pass one", async () => {
+ mocks.call.mockResolvedValue([]);
+ await useCustomerStore().searchCustomers("Southern Woods");
+ expect(mocks.call).toHaveBeenCalledWith("xpos.api.customers.get_customers", {
+  search_term: "Southern Woods", pos_profile: "Active Counter", limit: 100,
+ });
 });

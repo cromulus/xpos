@@ -51,7 +51,7 @@ export const useCustomerStore = defineStore("customers", () => {
 			if (isOnline()) {
 				const result = await call<Customer[]>("xpos.api.customers.get_customers", {
 					search_term: searchText,
-					pos_profile: posProfile || "",
+					pos_profile: posProfile || usePosStore().profileName || "",
 					limit: 100,
 				});
 				customers.value = result || [];
@@ -83,7 +83,7 @@ export const useCustomerStore = defineStore("customers", () => {
 		try {
 			const result = await call<{ customers: Customer[]; complete: boolean }>("xpos.api.customers.get_customers", {
 				search_term: "",
-				pos_profile: posProfile || "",
+				pos_profile: posProfile || usePosStore().profileName || "",
 				preload: 1,
 				with_metadata: 1,
 			});

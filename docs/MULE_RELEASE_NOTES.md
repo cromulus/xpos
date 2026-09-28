@@ -1,5 +1,11 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc7 (2026-09-28)
+
+- Customer lookup uses the active POS profile when called from the picker,
+  preserving group restrictions and company sales context. Hosted acceptance
+  caught the missing profile; a regression test now covers that call path.
+
 ## mule-v2.10.1-mc6 — customer recognition and recent purchases (2026-09-28)
 
 Workstream: `feat/customer-recent-purchases`, based on `0d2042c` (mc5),
