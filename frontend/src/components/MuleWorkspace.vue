@@ -23,7 +23,8 @@
       <div class="mule-results">
         <article v-for="row in rows" :key="row.name">
           <template v-if="mode === 'mixes'">
-            <div><strong>{{ row.item_name }}</strong><p>{{ row.mule_mix_owner_search || 'Owner not recorded' }}</p></div>
+            <div><strong>{{ row.item_name }}</strong><p>{{ row.mule_mix_owner_search || 'Owner not recorded' }}</p>
+              <p>{{ madeText(row) }}</p></div>
             <button type="button" :disabled="busy" @click="preview(row)">View recipe</button>
           </template>
           <template v-else>
@@ -35,7 +36,7 @@
       </div>
       <p v-if="mode === 'orders'">Review production readiness before release. Loading checks finished stock; the requested pickup date alone does not mean ready.</p>
       <p v-if="mode === 'orders' && cartHasItems" class="mule-error">Finish or park the current basket before loading an order.</p>
-      <section v-if="details && mode === 'mixes'" class="mule-recipe">
+      <section v-if="details && mode === 'mixes'" ref="recipe" class="mule-recipe">
         <h3>{{ chosen.item_name }}</h3>
         <p v-if="details.bom">Recipe batch: {{ details.quantity }} {{ details.uom }}. Finished stock: {{ details.available }} {{ details.stock_uom }}.</p>
         <p v-if="details.message">{{ details.message }}</p>
@@ -60,16 +61,22 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
 // customer is the Customer ID (used in every call); customerName is what people read.
 const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean});
 const emit = defineEmits(['pickup']);
 const dialog = ref(null), mode = ref(''), term = ref(''), mine = ref(false);
 const rows = ref([]), busy = ref(false), error = ref(''), more = ref(false), start = ref(0);
-const details = ref(null), chosen = ref(null), qty = ref(0), date = ref(''), created = ref(''), unit = ref('Pound');
+const recipe = ref(null), details = ref(null), chosen = ref(null), qty = ref(0), date = ref(''), created = ref(''), unit = ref('Pound');
 let generation = 0;
 const api = (name, args) => props.request('mulecity_erpnext.pos_workspace.' + name, {pos_profile: props.profile, ...args});
+// Mixes come newest first; this line says which one the customer is on now.
+function madeText(row) {
+  if (!row.last_used) return 'No sales recorded';
+  const times = row.usage_count === 1 ? 'once' : row.usage_count + ' times';
+  return 'Last made ' + row.last_used + ' · made ' + times;
+}
 function fail(e) { error.value = e?.message || 'Could not complete this request. Please retry.'; }
 async function open(next) { mode.value = next; term.value = ''; details.value = null; dialog.value.showModal(); await search(0); }
 async function search(offset = 0) {
@@ -86,7 +93,8 @@ async function search(offset = 0) {
 }
 async function preview(row) {
   busy.value = true; error.value = ''; created.value = '';
-  try { details.value = await api('mix_details', {item_code: row.name}); chosen.value = row; unit.value = details.value.bag_weight ? 'Bag' : 'Pound'; qty.value = details.value.bag_weight ? details.value.quantity / details.value.bag_weight : details.value.quantity || 0; }
+  try { details.value = await api('mix_details', {item_code: row.name}); chosen.value = row; unit.value = details.value.bag_weight ? 'Bag' : 'Pound'; qty.value = details.value.bag_weight ? details.value.quantity / details.value.bag_weight : details.value.quantity || 0;
+    await nextTick(); recipe.value?.scrollIntoView({behavior: 'smooth', block: 'start'}); }
   catch(e) { fail(e); } finally { busy.value = false; }
 }
 async function orderMix() {

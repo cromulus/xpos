@@ -298,7 +298,9 @@ export async function searchCachedCustomers(term: string): Promise<Customer[]> {
 				c.customer_name.toLowerCase().includes(lower) ||
 				(c.mobile_no && c.mobile_no.toLowerCase().includes(lower)) ||
 				(c.email_id && c.email_id.toLowerCase().includes(lower)) ||
-				c.name.toLowerCase().includes(lower),
+				c.name.toLowerCase().includes(lower) ||
+				(typeof c.xpos_search_description === "string" &&
+					c.xpos_search_description.toLowerCase().includes(lower)),
 		)
 		.slice(0, 20);
 }
