@@ -34,7 +34,7 @@ import {
 } from "@/services/pricingService";
 import type { CartPricingLine, FreeItemLine } from "@/services/pricingEngine";
 import { nowDate, toDateOrNow } from "@/utils/datetime";
-import { debounce, extractErrorMessage, isOnline } from "@/utils";
+import { debounce, extractErrorMessage, isNetworkError, isOnline } from "@/utils";
 
 let cartRowSeq = 0;
 
@@ -162,9 +162,15 @@ export const useCartStore = defineStore("cart", () => {
 	const isPricingCart = ref(false);
 	const pricingSource = ref<PricingSource>("server");
 
+	// The invoice line's rate precision, so a cart rate is the rate the price lock
+	// posts (a $23.47 35 lb bag is $0.670571439/lb at 9 places, not $0.671).
 	const itemRatePrecision = computed(() => {
-		const val = parseInt(String(settingsStore.currencyPrecision?.float_precision || ""), 10);
-		return Number.isFinite(val) && val >= 0 ? val : 3;
+		const precision = settingsStore.currencyPrecision;
+		for (const value of [precision?.item_rate_precision, precision?.float_precision]) {
+			const val = parseInt(String(value ?? ""), 10);
+			if (Number.isFinite(val) && val >= 0) return val;
+		}
+		return 3;
 	});
 
 	function normalizeItemRate(rate: number | string): number {
@@ -736,10 +742,68 @@ export const useCartStore = defineStore("cart", () => {
 		items.value[index].pos_pricing_rules = [];
 	}
 
-	function updateItemUOM(index: number, uom: string, rate: number, conversionFactor: number): void {
-		items.value[index].uom = uom;
-		items.value[index].rate = normalizeItemRate(rate);
-		items.value[index].conversion_factor = conversionFactor;
+	/**
+	 * Switch a cart line to another unit of its Item, e.g. a Bag line to Pound
+	 * (MuleCity-mxwy.8: any bag sells by the pound at bag price ÷ bag weight).
+	 *
+	 * The quantity stays as typed; its stock quantity follows the new factor and
+	 * is checked against stock like any other change. The rate is the server's
+	 * price for the new unit (``get_sale_unit``), the rate the invoice price lock
+	 * will post. A manually changed rate, or no connection, keeps the same price
+	 * per stock unit instead (rate ÷ old factor × new factor). A line discount in
+	 * money is per unit, so it is dropped rather than carried to a unit of another
+	 * size; the pricing rules are re-applied for the new unit.
+	 */
+	async function changeItemUOM(
+		index: number,
+		unit: { uom: string; conversion_factor: number },
+	): Promise<{ success: boolean; message?: string }> {
+		const item = items.value[index];
+		if (!item) return { success: false, message: __("Item not found") };
+		if ((item.uom || item.stock_uom) === unit.uom) return { success: true };
+
+		let factor = unit.conversion_factor || 1;
+		let rate = (item.rate / (item.conversion_factor || 1)) * factor;
+		if (!item.pos_rate_overridden) {
+			try {
+				const priced = await call<{ uom: string; conversion_factor: number; rate: number }>(
+					"xpos.api.items.get_sale_unit",
+					{
+						item_code: item.item_code,
+						pos_profile: posStore.profileName,
+						uom: unit.uom,
+						customer: customer.value?.name || "",
+					},
+				);
+				if (priced?.conversion_factor) factor = priced.conversion_factor;
+				if (priced && priced.rate) rate = priced.rate;
+			} catch (error) {
+				// Offline: keep the price per stock unit; a refusal (not a unit of
+				// the Item) stops the switch.
+				if (!isNetworkError(error)) return { success: false, message: extractErrorMessage(error) };
+			}
+		}
+		// The line may have been removed while the price was fetched.
+		if (!items.value.includes(item)) return { success: false, message: __("Item not found") };
+
+		if (!isReturnMode.value) {
+			const stockCheck = checkAvailability(
+				item,
+				item.qty,
+				factor,
+				item.batch_no || undefined,
+				stockQtyOf(item),
+			);
+			if (!stockCheck.allowed) return { success: false, message: stockCheck.message };
+		}
+
+		item.uom = unit.uom;
+		item.conversion_factor = factor;
+		item.rate = normalizeItemRate(rate);
+		if (!item.discount_percentage) item.discount_amount = 0;
+		item.pos_pricing_rules = [];
+		syncFreeItems();
+		return { success: true };
 	}
 
 	function updateItemNotes(index: number, notes: string): void {
@@ -1758,7 +1822,7 @@ export const useCartStore = defineStore("cart", () => {
 		updateItemQty,
 		updateItemRate,
 		updateItemDiscount,
-		updateItemUOM,
+		changeItemUOM,
 		updateItemNotes,
 		updateItemDeliveryDate,
 		setCustomer,

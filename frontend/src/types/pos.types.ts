@@ -1182,6 +1182,8 @@ export interface GlobalDefaults {
 export interface CurrencyPrecision {
 	currency_precision: string;
 	float_precision: string;
+	/** Decimals the invoice line keeps for its rate (>= float_precision). */
+	item_rate_precision?: number | string;
 	[key: string]: unknown;
 }
 

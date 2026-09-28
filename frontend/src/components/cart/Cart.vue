@@ -192,7 +192,7 @@
 					@update-qty="handleUpdateQty"
 					@update-rate="cartStore.updateItemRate"
 					@update-discount="cartStore.updateItemDiscount"
-					@update-uom="cartStore.updateItemUOM"
+					@update-uom="handleUpdateUOM"
 					@remove="cartStore.removeItem"
 				/>
 			</div>
@@ -276,6 +276,7 @@ import {
 } from "lucide-vue-next";
 import __ from "@/lib/translate";
 import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
+import type { ItemUOM } from "@/types/pos.types";
 
 const posStore = usePosStore();
 const cartStore = useCartStore();
@@ -364,6 +365,13 @@ function handleCustomerClick() {
 
 function handleEditCustomer() {
 	customerStore.showCustomerEditDialog = true;
+}
+
+async function handleUpdateUOM(index: number, unit: ItemUOM) {
+	const result = await cartStore.changeItemUOM(index, unit);
+	if (!result.success && result.message) {
+		showError(result.message);
+	}
 }
 
 function handleUpdateQty(index: number, qty: number) {

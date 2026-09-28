@@ -97,11 +97,25 @@ def get_erp_settings():
 	settings["currency_precision"] = {
 		"currency_precision": frappe.db.get_default("currency_precision") or "",
 		"float_precision": frappe.db.get_default("float_precision") or "",
+		"item_rate_precision": _item_rate_precision(),
 	}
 
 	settings["number_format"] = get_number_format_settings()
 
 	return settings
+
+
+def _item_rate_precision() -> int:
+	"""Decimals the invoice line keeps for its rate (the price lock's rounding).
+
+	A site may keep more than float_precision (Mule City keeps 9 for per-pound
+	feed prices); a cart rounding a $23.47 bag's pound price to 3 places would
+	show $0.671/lb and $23.49 for 35 lb while the invoice posts $23.47.
+	"""
+	from xpos.api.invoices import _get_item_rate_precision
+
+	field = frappe.get_meta("Sales Invoice Item").get_field("rate")
+	return max(_get_item_rate_precision(), cint(field.precision) if field else 0)
 
 
 def get_number_format_settings():

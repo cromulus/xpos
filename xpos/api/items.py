@@ -4,6 +4,7 @@
 import json
 
 import frappe
+from frappe import _
 from frappe.query_builder import DocType
 from frappe.query_builder.functions import Sum
 from frappe.utils import cint, flt, getdate, nowdate
@@ -119,6 +120,30 @@ def sale_unit(item_code: str, price_list: str | None, uom: str | None = None, cu
 		"conversion_factor": factor,
 		"rate": selling_price(item_code, price_list, uom=uom, conversion_factor=factor, customer=customer),
 	}
+
+
+@frappe.whitelist()
+def get_sale_unit(item_code: str, pos_profile: str, uom: str, customer: str | None = None) -> dict:
+	"""uom, conversion_factor and rate for a cart line switched to ``uom``.
+
+	The counter switches a line between the Bag and the Pound (MuleCity-mxwy.8).
+	The rate is the one the invoice price lock will charge (``selling_price``:
+	the Item Price for that unit, else the stock-unit price times the unit's
+	factor, the customer's own price first), so the cart never shows one price
+	and posts another. Only a unit on the Item is accepted: ERPNext answers 1.0
+	for any other, which would sell a Bag as one pound.
+	"""
+	stock_uom = frappe.get_cached_value("Item", item_code, "stock_uom")
+	if not stock_uom:
+		frappe.throw(_("Item {0} not found").format(item_code))
+	if uom != stock_uom and not frappe.db.exists(
+		"UOM Conversion Detail", {"parent": item_code, "parenttype": "Item", "uom": uom}
+	):
+		frappe.throw(_("{0} is not a unit of {1}").format(uom, item_code))
+	price_list = frappe.get_cached_value("POS Profile", pos_profile, "selling_price_list") or frappe.db.get_single_value(
+		"Selling Settings", "selling_price_list"
+	)
+	return sale_unit(item_code, price_list, uom=uom, customer=customer)
 
 
 def resolve_scanned_item_code(term: str, config: dict) -> str | None:
