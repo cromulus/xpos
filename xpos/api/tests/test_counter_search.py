@@ -1,6 +1,6 @@
 """Counter stories: find a feed by alias and a past sale by buyer or invoice."""
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import frappe
 from xpos.api.items import get_pos_items
 from xpos.api.invoices import search_invoices_for_repeat
@@ -87,21 +87,91 @@ class TestCustomerAddress(unittest.TestCase):
 			create_customer("Test Buyer")
 			address.assert_not_called()
 
-	def test_classification_and_exemption_request_do_not_grant_exemption(self):
-		from xpos.api.customers import create_customer
-		with patch("xpos.api.customers.frappe") as api:
-			create_customer("Test Farmer", mule_customer_kind="Farmer", request_tax_exemption=1)
-			doc = api.get_doc.return_value
-			self.assertEqual(doc.mule_customer_kind, "Farmer")
-			self.assertEqual(doc.mule_tax_exemption_requested, 1)
-			self.assertNotIn("tax_category", api.get_doc.call_args.args[0])
-			self.assertNotIn("tax_category", doc.__dict__)
-			self.assertNotIn("exempt_from_sales_tax", doc.__dict__)
 
-	def test_unknown_customer_classification_is_rejected(self):
+
+class TestNewCustomerTaxExemptReason(unittest.TestCase):
+	"""Cashier story (Mule City): a new farm or reseller customer is exempt from
+	the first ticket. The counter sends why; the Customer's own validation (in
+	mulecity_erpnext) turns the reason into the Tax Category. Sites without the
+	field keep working and never accept a reason."""
+
+	REASONS = ["Farm", "Reseller (resale certificate)"]
+
+	def test_the_reason_goes_on_the_customer_and_normal_validation_runs(self):
 		from xpos.api.customers import create_customer
-		with patch("xpos.api.customers.frappe") as api:
-			api.throw.side_effect = ValueError("invalid type")
+		with patch("xpos.api.customers.frappe") as api, patch(
+			"xpos.api.customers.customer_tax_exempt_reasons", return_value=self.REASONS
+		):
+			create_customer("Test Farmer", mule_tax_exempt_reason="Farm")
+			doc = api.get_doc.return_value
+			doc.set.assert_any_call("mule_tax_exempt_reason", "Farm")
+			# XPOS sets no Tax Category itself: the Customer's validate does.
+			self.assertNotIn("tax_category", api.get_doc.call_args.args[0])
+			doc.insert.assert_called_once_with(ignore_permissions=True)
+
+	def test_no_reason_leaves_the_customer_alone(self):
+		from xpos.api.customers import create_customer
+		with patch("xpos.api.customers.frappe") as api, patch(
+			"xpos.api.customers.customer_tax_exempt_reasons", return_value=self.REASONS
+		):
+			create_customer("Test Buyer")
+			self.assertNotIn(
+				"mule_tax_exempt_reason", [c.args[0] for c in api.get_doc.return_value.set.call_args_list]
+			)
+
+	def test_negative_an_unknown_reason_is_refused(self):
+		from xpos.api.customers import create_customer
+		with patch("xpos.api.customers.frappe") as api, patch(
+			"xpos.api.customers.customer_tax_exempt_reasons", return_value=self.REASONS
+		):
+			api.throw.side_effect = ValueError("bad reason")
 			with self.assertRaises(ValueError):
-				create_customer("Test Buyer", mule_customer_kind="Tax free")
+				create_customer("Test Buyer", mule_tax_exempt_reason="Tax free")
 			api.get_doc.assert_not_called()
+
+	def test_negative_a_site_without_the_field_refuses_a_reason(self):
+		from xpos.api.customers import create_customer
+		with patch("xpos.api.customers.frappe") as api, patch(
+			"xpos.api.customers.customer_tax_exempt_reasons", return_value=[]
+		):
+			api.throw.side_effect = ValueError("no field")
+			with self.assertRaises(ValueError):
+				create_customer("Test Farmer", mule_tax_exempt_reason="Farm")
+			api.get_doc.assert_not_called()
+
+	def test_the_old_classification_arguments_are_gone(self):
+		from xpos.api.customers import create_customer
+		with patch("xpos.api.customers.frappe"):
+			with self.assertRaises(TypeError):
+				create_customer("Test Farmer", mule_customer_kind="Farmer")
+
+
+class TestTaxExemptReasonOptions(unittest.TestCase):
+	"""The picker's choices come from the Customer field, for users who may set it."""
+
+	def meta(self, field, writable=(0, 1)):
+		meta = MagicMock()
+		meta.get_field.return_value = field
+		meta.get_permlevel_access.return_value = list(writable)
+		return meta
+
+	def field(self, permlevel=1):
+		return MagicMock(fieldtype="Select", options="\nFarm\nReseller (resale certificate)", permlevel=permlevel)
+
+	def test_options_come_from_the_field(self):
+		from xpos.api.customers import customer_tax_exempt_reasons
+		with patch("xpos.api.customers.frappe") as api:
+			api.get_meta.return_value = self.meta(self.field())
+			self.assertEqual(customer_tax_exempt_reasons(), ["Farm", "Reseller (resale certificate)"])
+
+	def test_negative_no_field_no_options(self):
+		from xpos.api.customers import customer_tax_exempt_reasons
+		with patch("xpos.api.customers.frappe") as api:
+			api.get_meta.return_value = self.meta(None)
+			self.assertEqual(customer_tax_exempt_reasons(), [])
+
+	def test_negative_a_user_who_may_not_set_it_gets_no_options(self):
+		from xpos.api.customers import customer_tax_exempt_reasons
+		with patch("xpos.api.customers.frappe") as api:
+			api.get_meta.return_value = self.meta(self.field(), writable=(0,))
+			self.assertEqual(customer_tax_exempt_reasons(), [])

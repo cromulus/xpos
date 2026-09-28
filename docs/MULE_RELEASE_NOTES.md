@@ -1,14 +1,32 @@
 # Mule City XPOS release notes
 
-## Unreleased: set tax exemption on the desk (`feat/tax-category-link`)
+## Unreleased: `feat/tax-exempt-reason` (MuleCity-mxwy.28)
 
-Based on `mule-v2.10.1-mc5`. Front desk sets a customer's Tax Category
-directly on the desk (mulecity-full `a473f290`; the Customer history records
-who). "Set tax exemption" on New Customer (after saving) and on Edit Customer
-opens `/desk/customer/<name>#tax_category` in a new tab; Frappe scrolls the
-form to that field. Nothing is created at the counter (no Customer Tax Change
-Request). Supersedes the request-creating button on the held
-`feat/customer-type-picker`. Needs the frontend rebuilt at deploy.
+Built on `feat/tax-category-link` (`24301fc`, from mc5; not on the dropped
+`feat/customer-type-picker`).
+
+- From `feat/tax-category-link`: front desk sets a customer's tax exemption
+  on the desk (mulecity-full `a473f290`; the Customer history records who).
+  **Set tax exemption** on Edit Customer opens
+  `/desk/customer/<name>#tax_category` in a new tab; Frappe scrolls the form
+  to that field. Nothing is created at the counter (no Customer Tax Change
+  Request).
+- New Customer: an optional **Tax exemption reason** picker (None (taxable) /
+  Farm / Reseller (resale certificate)) replaces that branch's "Set tax
+  exemption" checkbox: the reason is saved with the customer, so no desk tab
+  is needed. The choices come from the Customer field
+  `mule_tax_exempt_reason` (boot `xpos_customer_tax_exempt_reasons`), only
+  when the site has it and the user may write its permission level; elsewhere
+  the picker is not shown.
+- `create_customer` takes `mule_tax_exempt_reason`, checked against those
+  choices, and inserts through the Customer's normal validation, where
+  mulecity_erpnext sets the Tax Category from it. The unused
+  `mule_customer_kind` / `request_tax_exemption` arguments are removed (the
+  mc1 follow-up below).
+- The Mule City bar shows "Tax exempt: <reason>" for the chosen customer
+  (`tax_context`'s `tax_exempt_reason`; absent on older apps) and the same
+  **Set tax exemption** link. Needs the frontend rebuilt at deploy and
+  mulecity_erpnext with the field (`feat/tax-exempt-reason`).
 
 ## mule-v2.10.1-mc5 (2026-09-27)
 
@@ -207,7 +225,7 @@ One line per item. Status is either "keep" or "follow-up: remove, replace with .
 - Repeat search by customer and customer name: generic. Keep; offer upstream.
 - Removed the "Loyalty Program" cart button: follow-up: remove, replace with upstream's button behind a POS Profile or POS Role toggle. Upstream has no toggle today, so this is a hard-coded removal.
 - `create_customer` address validation: generic. Keep.
-- `create_customer` `mule_customer_kind` / `request_tax_exemption`: follow-up: remove. The UI no longer sends them (pilot delta). If needed later, replace with Customer Group and a Tax Category request on the desk.
+- `create_customer` `mule_customer_kind` / `request_tax_exemption`: follow-up: remove. The UI no longer sends them (pilot delta). If needed later, replace with Customer Group and a Tax Category request on the desk. Removed in `feat/tax-exempt-reason` (replaced by `mule_tax_exempt_reason`).
 
 **Pilot delta `4cd69c1`**
 - Removes Mule UI (customer type, exemption request). Keep.

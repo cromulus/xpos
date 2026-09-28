@@ -141,13 +141,6 @@
 						/>
 					</div>
 
-					<!-- Mule City: the exemption itself is the Customer's Tax Category, set on the desk. -->
-					<label class="flex items-center gap-2 text-sm">
-						<input v-model="newCustomer.set_tax_exemption" type="checkbox" />
-						{{ __("Set tax exemption") }}
-					</label>
-					<p v-if="newCustomer.set_tax_exemption" class="text-xs text-muted-foreground">{{ __("After saving, the customer opens on the desk in a new tab: set the Tax Category there.") }}</p>
-
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
@@ -164,6 +157,27 @@
 								type="tel"
 								:placeholder="__('Mobile No')"
 							/>
+						</div>
+					</div>
+
+					<!-- Mule City: why the customer is tax-exempt; the site's Customer validation
+					     turns it into the Tax Category. Shown only where the site has the field. -->
+					<div v-if="taxExemptReasons.length" role="group" :aria-label="__('Tax exemption reason')">
+						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
+							__("Tax exemption reason")
+						}}</label>
+						<div class="flex flex-wrap gap-2">
+							<Button
+								v-for="choice in ['', ...taxExemptReasons]"
+								:key="choice"
+								type="button"
+								size="sm"
+								:variant="newCustomer.mule_tax_exempt_reason === choice ? 'default' : 'outline'"
+								:aria-pressed="newCustomer.mule_tax_exempt_reason === choice"
+								@click="newCustomer.mule_tax_exempt_reason = choice"
+							>
+								{{ choice ? __(choice) : __("None (taxable)") }}
+							</Button>
 						</div>
 					</div>
 
@@ -262,7 +276,6 @@ import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
 import { usePosStore } from "@/stores/posStore";
 import { showSuccess, showError } from "@/services/api";
-import { openCustomerTaxSection } from "@/services/customerTax";
 import {
 	cacheCountries,
 	getCachedCountries,
@@ -305,7 +318,6 @@ const countryOptions = computed<AutocompleteOption[]>(() =>
 
 const defaultNewCustomer = () => ({
 	customer_name: "",
-	set_tax_exemption: false,
 	tax_id: "",
 	mobile_no: "",
 	address_line1: "",
@@ -316,7 +328,11 @@ const defaultNewCustomer = () => ({
 	country: "",
 	email_id: "",
 	birthday: "",
+	mule_tax_exempt_reason: "",
 });
+
+// The reasons the server will accept from this user (empty on sites without the field).
+const taxExemptReasons = computed<string[]>(() => window.xpos?.boot?.xpos_customer_tax_exempt_reasons || []);
 
 const newCustomer = ref(defaultNewCustomer());
 
@@ -435,17 +451,16 @@ async function createAndSelect() {
 			pincode: newCustomer.value.pincode || undefined,
 			city: newCustomer.value.city || undefined,
 			country: newCustomer.value.country || undefined,
+			mule_tax_exempt_reason: newCustomer.value.mule_tax_exempt_reason || undefined,
 		};
 
 		Object.keys(payload).forEach((key) => {
 			if (payload[key] === undefined) delete payload[key];
 		});
 
-		const setExemption = newCustomer.value.set_tax_exemption;
 		const result = await customerStore.createCustomer(payload);
 		cartStore.setCustomer(result);
 		showSuccess(__("Customer created successfully!"));
-		if (setExemption) openCustomerTaxSection(result.name);
 		close();
 	} catch (error: unknown) {
 		showError(__("Failed to create customer: ") + ((error as Error)?.message || error));

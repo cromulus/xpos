@@ -294,6 +294,25 @@ def get_customer_info(customer: str):
 	}
 
 
+# Mule City (mulecity_erpnext): why a customer is tax-exempt. Picking it sets
+# the customer's Tax Category in that app's Customer validate. Sites without the
+# field never see or accept it.
+TAX_EXEMPT_REASON_FIELD = "mule_tax_exempt_reason"
+
+
+def customer_tax_exempt_reasons() -> list[str]:
+	"""The reasons this user may give a new customer, from the Customer field.
+
+	Empty when the site has no such field, or when the field's permission level
+	is one this user may not write (the desk form would drop their value too).
+	"""
+	meta = frappe.get_meta("Customer")
+	df = meta.get_field(TAX_EXEMPT_REASON_FIELD)
+	if not df or df.fieldtype != "Select" or df.permlevel not in meta.get_permlevel_access("write"):
+		return []
+	return [option for option in (df.options or "").split("\n") if option.strip()]
+
+
 @frappe.whitelist()
 def create_customer(
 	customer_name: str,
@@ -314,8 +333,7 @@ def create_customer(
 	address_line2: str = None,
 	state: str = None,
 	pincode: str = None,
-	mule_customer_kind: str = None,
-	request_tax_exemption: int = 0,
+	mule_tax_exempt_reason: str = None,
 ):
 	"""
 	Create a new customer with optional address.
@@ -329,12 +347,8 @@ def create_customer(
 	):
 		frappe.throw(_("Street address and city are required to save an address"))
 
-	if mule_customer_kind and mule_customer_kind not in ("Farmer", "Reseller", "Other"):
-		frappe.throw(_("Customer type must be Farmer, Reseller, or Other"))
-	if mule_customer_kind or cint(request_tax_exemption):
-		meta = frappe.get_meta("Customer")
-		if not all(meta.has_field(field) for field in ("mule_customer_kind", "mule_tax_exemption_requested")):
-			frappe.throw(_("Mule City customer classification fields are not configured"))
+	if mule_tax_exempt_reason and mule_tax_exempt_reason not in customer_tax_exempt_reasons():
+		frappe.throw(_("{0} is not a tax exemption reason you can set here").format(mule_tax_exempt_reason))
 
 	if not customer_group:
 		customer_group = (
@@ -356,12 +370,10 @@ def create_customer(
 		}
 	)
 
-	# Classification and requests are informational; only approved native tax
-	# configuration can change tax treatment.
-	if mule_customer_kind:
-		customer.mule_customer_kind = mule_customer_kind
-	if cint(request_tax_exemption):
-		customer.mule_tax_exemption_requested = 1
+	# The insert below runs the Customer's normal validation, which sets the
+	# Tax Category from the reason.
+	if mule_tax_exempt_reason:
+		customer.set(TAX_EXEMPT_REASON_FIELD, mule_tax_exempt_reason)
 
 	if tax_id:
 		customer.tax_id = tax_id
