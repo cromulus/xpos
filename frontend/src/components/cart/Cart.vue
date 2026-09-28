@@ -121,6 +121,16 @@
 				</button>
 			</div>
 
+			<Button
+				v-if="cartStore.customer && !cartStore.isReturnMode"
+				variant="outline"
+				class="mt-3 w-full justify-start min-h-11 font-semibold"
+				data-testid="customer-recent-purchases"
+				@click="openRecentPurchases"
+			>
+				{{ __("Recent purchases") }}
+			</Button>
+
 			<div v-if="showCreditInfo" class="mt-3 grid grid-cols-2 gap-2">
 				<div
 					class="rounded-lg border p-2.5"
@@ -360,6 +370,11 @@ function handleCustomerClick() {
 	}
 	customerStore.showCustomerDialog = true;
 	customerStore.searchCustomers();
+}
+
+// Reuse the existing history dialog and its customer-scoped API.
+function openRecentPurchases() {
+	window.dispatchEvent(new CustomEvent("xpos:show-repeat-dialog"));
 }
 
 function handleEditCustomer() {

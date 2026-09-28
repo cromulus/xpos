@@ -4,6 +4,9 @@ import { shallowMount } from "@vue/test-utils";
 import CustomerSelect from "@/components/customer/CustomerSelect.vue";
 
 const customers = [
+	{ name: "MC-CUST-2980", customer_name: "Southern Woods", mule_filepro_alias_codes: "2980",
+		xpos_search_description: "Reseller", xpos_sales_12mo: 17812.11, xpos_sales_currency: "USD", mobile_no: "919-555-0199", email_id: "private@example.com",
+		xpos_has_address: true, xpos_has_email: false, xpos_has_phone: true, xpos_customer_since: "2014-03-12" },
 	{ name: "MC-CUST-4112", customer_name: "DONALD BYRD", xpos_search_description: "4112, Individual" },
 	{ name: "MC-CUST-6", customer_name: "DONALD BYRD", xpos_search_description: "6, Individual", mobile_no: "919-555-0100" },
 	{ name: "CURTIS ADAMS", customer_name: "CURTIS ADAMS" },
@@ -18,11 +21,27 @@ vi.mock("@/services/dbBridge", () => ({
 }));
 
 describe("Customer picker", () => {
+	it("shows one familiar code, business context and trailing sales", () => {
+		const row = shallowMount(CustomerSelect, { global: { renderStubDefaultSlot: true } })
+			.findAll("button").find(b => b.text().includes("Southern Woods"))!;
+		expect(row.text()).toContain("2980");
+		expect(row.text()).not.toContain("MC-CUST-2980");
+		expect(row.text()).toContain("Reseller");
+		expect(row.text()).toContain("17,812");
+		expect(row.text()).toContain("past 12 months");
+		expect(row.text()).not.toContain("919-555-0199");
+		expect(row.text()).not.toContain("private@example.com");
+		expect(row.find('[aria-label="Address on file"]').exists()).toBe(true);
+		expect(row.find('[aria-label="Email missing"]').exists()).toBe(true);
+		expect(row.find('[aria-label="Phone on file"]').exists()).toBe(true);
+		expect(row.text()).toContain("Customer since 2014-03-12");
+	});
+
 	it("shows each customer's code under the name", () => {
 		const text = shallowMount(CustomerSelect, { global: { renderStubDefaultSlot: true } }).text();
 		expect(text).toContain("4112, Individual");
 		expect(text).toContain("6, Individual");
-		expect(text).toContain("919-555-0100");
+		expect(text).not.toContain("919-555-0100");
 		expect(text).toContain("MC-CUST-4112");
 		expect(text).toContain("MC-CUST-6");
 	});

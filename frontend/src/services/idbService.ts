@@ -296,9 +296,13 @@ export async function searchCachedCustomers(term: string): Promise<Customer[]> {
 		.filter(
 			(c) =>
 				c.customer_name.toLowerCase().includes(lower) ||
+				(term.replace(/\D/g, "").length >= 4 &&
+					[c.mobile_no, ...(c.xpos_phone_numbers || [])].some(phone =>
+						phone?.replace(/\D/g, "").includes(term.replace(/\D/g, "")))) ||
 				(c.mobile_no && c.mobile_no.toLowerCase().includes(lower)) ||
 				(c.email_id && c.email_id.toLowerCase().includes(lower)) ||
 				c.name.toLowerCase().includes(lower) ||
+				(typeof c.mule_filepro_alias_codes === "string" && c.mule_filepro_alias_codes.toLowerCase().includes(lower)) ||
 				(typeof c.xpos_search_description === "string" &&
 					c.xpos_search_description.toLowerCase().includes(lower)),
 		)

@@ -36,6 +36,23 @@ describe("Repeat Invoice", () => {
 		wrapper.unmount();
 	});
 
+	it("shows recognizable purchased items and preserves a cart when replacement is declined", async () => {
+		mocks.cart.itemCount = 1;
+		const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+		mocks.call.mockResolvedValue({ invoices: [{ name: "INV-1", items: [
+			{ item_code: "MP", item_name: "Max Nutrition Prime", qty: 10, uom: "Bag" },
+		] }], has_more: false });
+		const wrapper = mountDialog();
+		await flushPromises();
+		expect(wrapper.text()).toContain("10 Bag — Max Nutrition Prime");
+		await wrapper.findAll("button").find(button => button.text().includes("INV-1"))!.trigger("click");
+		expect(confirm).toHaveBeenCalled();
+		expect(mocks.cart.loadFromInvoice).not.toHaveBeenCalled();
+		expect(mocks.call).toHaveBeenCalledTimes(1);
+		confirm.mockRestore();
+		wrapper.unmount();
+	});
+
 	it("shows an empty history instead of prompting the cashier to type", async () => {
 		const wrapper = mountDialog();
 		await flushPromises();

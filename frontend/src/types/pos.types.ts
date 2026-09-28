@@ -270,6 +270,13 @@ export interface StockAvailability {
 }
 
 export interface Customer {
+	xpos_has_address?: boolean;
+	xpos_has_email?: boolean;
+	xpos_has_phone?: boolean;
+	xpos_customer_since?: string;
+	xpos_phone_numbers?: string[];
+	xpos_sales_12mo?: number;
+	xpos_sales_currency?: string;
 	xpos_cache_rank?: number;
 	name: string;
 	customer_name: string;
