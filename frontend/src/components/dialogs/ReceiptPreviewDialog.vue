@@ -128,7 +128,7 @@
 												{{
 													item.discount_percentage
 														? percent(item.discount_percentage)
-														: money(item.discount_amount || 0)
+														: money(lineDiscountFromPerUnit(item.discount_amount || 0, item.qty))
 												}}
 											</div>
 										</td>
@@ -313,6 +313,8 @@ import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
 import { useCartStore } from "@/stores/cartStore";
+// The server posts a $ line discount per unit; the cart shows it for the whole line.
+import { lineDiscountFromPerUnit } from "@/utils/lineDiscount";
 import __ from "@/lib/translate";
 import { ref } from "vue";
 import { Invoice } from "@/types/pos.types";
