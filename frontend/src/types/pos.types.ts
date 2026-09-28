@@ -199,6 +199,10 @@ export interface POSItem {
 export interface CartItem extends POSItem {
 	qty: number;
 	discount_percentage: number;
+	/**
+	 * Money off the whole line, as the cashier types and sees it. The invoice
+	 * posts it per unit (``getInvoiceData`` divides by the quantity).
+	 */
 	discount_amount: number;
 	pos_notes?: string;
 	pos_delivery_date?: string;

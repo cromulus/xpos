@@ -105,11 +105,13 @@ describe("counter discount cap (25%)", () => {
 			expect(cart.items[0].discount_amount).toBe(25);
 		});
 
-		it("takes a $ line discount per unit, as the server posts it", () => {
+		it("holds a $ line discount as money off the whole line (MuleCity-1msa)", () => {
 			const cart = useCartStore();
 			cart.addItemWithDetails(posItem("FEED-A", 10), 4, 10, "Nos");
-			// 4 x $10: 25% is $10 off the line, i.e. $2.50 off each unit.
-			expect(cart.maxLineDiscount(0, "amount")).toBe(2.5);
+			// 4 x $10: 25% is $10 off the line, as the cashier sees it; it posts as $2.50 a unit.
+			expect(cart.maxLineDiscount(0, "amount")).toBe(10);
+			expect(cart.updateItemDiscount(0, "amount", 40)).toBe(10);
+			expect(cart.getInvoiceData("POS-PROFILE-1", "SHIFT-1").items[0].discount_amount).toBe(2.5);
 		});
 
 		it("lets a line take more than 25% while the ticket stays within it", () => {

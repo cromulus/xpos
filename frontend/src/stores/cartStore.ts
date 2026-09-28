@@ -42,6 +42,7 @@ import {
 	type CapLine,
 	type DiscountKind,
 } from "@/utils/discountCap";
+import { lineDiscountFromPerUnit, perUnitDiscount } from "@/utils/lineDiscount";
 
 let cartRowSeq = 0;
 
@@ -821,8 +822,8 @@ export const useCartStore = defineStore("cart", () => {
 	 * price for the new unit (``get_sale_unit``), the rate the invoice price lock
 	 * will post. A manually changed rate, or no connection, keeps the same price
 	 * per stock unit instead (rate ÷ old factor × new factor). A line discount in
-	 * money is per unit, so it is dropped rather than carried to a unit of another
-	 * size; the pricing rules are re-applied for the new unit.
+	 * money was given for the old unit and quantity, so it is dropped rather than
+	 * carried to a unit of another size; the pricing rules are re-applied for the new unit.
 	 */
 	async function changeItemUOM(
 		index: number,
@@ -1112,13 +1113,15 @@ export const useCartStore = defineStore("cart", () => {
 				if (!item.pos_rate_overridden && update.price_list_rate) {
 					item.rate = normalizeItemRate(update.price_list_rate);
 				}
+				// The rule's money discount is per unit; the cart keeps it for the whole line.
+				const unitDiscount = update.discount_percentage ? 0 : update.discount_amount || 0;
 				item.discount_percentage = update.discount_percentage;
-				item.discount_amount = update.discount_percentage ? 0 : update.discount_amount;
+				item.discount_amount = lineDiscountFromPerUnit(unitDiscount, item.qty);
 				item.pos_pricing_rules = update.pricing_rules;
 				// The rule's price, kept for the discount cap after a counter discount replaces it.
 				item.pos_rule_rate = item.discount_percentage
 					? item.rate * (1 - item.discount_percentage / 100)
-					: item.rate - (item.discount_amount || 0);
+					: item.rate - unitDiscount;
 			} else {
 				if (item.pos_pricing_rules?.length) {
 					item.discount_percentage = 0;
@@ -1496,7 +1499,8 @@ export const useCartStore = defineStore("cart", () => {
 						stock_uom: item.stock_uom || item.uom || "",
 						image: "",
 						discount_percentage: item.discount_percentage || 0,
-						discount_amount: item.discount_amount || 0,
+						// The server's discount is per unit; the cart keeps it for the whole line.
+						discount_amount: lineDiscountFromPerUnit(item.discount_amount, item.qty || 1),
 						serial_no: item.serial_no || "",
 						batch_no: item.batch_no || "",
 						actual_qty: actualQty,
@@ -1590,7 +1594,8 @@ export const useCartStore = defineStore("cart", () => {
 				stock_uom: item.stock_uom || item.uom || "",
 				image: "",
 				discount_percentage: item.discount_percentage || 0,
-				discount_amount: item.discount_amount || 0,
+				// Posted (and queued) lines carry the discount per unit; the cart keeps it for the whole line.
+				discount_amount: lineDiscountFromPerUnit(item.discount_amount || 0, item.qty || 1),
 				serial_no: item.serial_no || "",
 				batch_no: item.batch_no || "",
 				actual_qty: (item as any).actual_qty || 0,
@@ -1617,7 +1622,13 @@ export const useCartStore = defineStore("cart", () => {
 					price_list_rate: normalizeItemRate(item.rate),
 					uom: item.uom || item.stock_uom,
 					discount_percentage: item.discount_percentage,
-					discount_amount: item.discount_amount,
+					// The server takes the money discount per unit (MuleCity-1msa).
+					discount_amount: perUnitDiscount(
+						item.discount_amount || 0,
+						item.qty,
+						normalizeItemRate(item.rate),
+						itemRatePrecision.value,
+					),
 					serial_no: item.serial_no,
 					batch_no: item.batch_no,
 					item_tax_template: item.item_tax_template,

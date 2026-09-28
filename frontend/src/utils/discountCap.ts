@@ -9,8 +9,10 @@
  * - the ticket is measured from each line's rate after Pricing Rules
  *   (``ruleRate``), so a Pricing Rule's own discount does not count;
  * - line discounts and the additional (whole-ticket) discount count together;
- * - a line's ``discount_amount`` is taken per unit, as the server posts it
- *   (``rate = price_list_rate - discount_amount``);
+ * - a line's money discount is the discount on the whole line, as the cart
+ *   shows it; the server posts it divided by the quantity
+ *   (``rate = price_list_rate - discount_amount / qty``, utils/lineDiscount.ts),
+ *   so the line charges the same either way;
  * - free items are left out (the caller filters them), quantities count as
  *   absolute values.
  *
@@ -27,7 +29,7 @@ export interface CapLine {
 	/** The rate after Pricing Rules, before any counter discount. */
 	ruleRate: number;
 	discountPercentage: number;
-	/** Per-unit discount amount (used when no percentage is set). */
+	/** The money discount on the whole line (used when no percentage is set). */
 	discountAmount: number;
 }
 
@@ -39,10 +41,11 @@ export interface AdditionalDiscount {
 
 export type DiscountKind = "percentage" | "amount";
 
-/** What a line charges per unit after its own discount. */
-function netUnitRate(line: CapLine): number {
-	if (line.discountPercentage) return line.rate * (1 - line.discountPercentage / 100);
-	return line.rate - (line.discountAmount || 0);
+/** What a line charges after its own discount. */
+function lineCharged(line: CapLine): number {
+	const gross = Math.abs(line.qty) * line.rate;
+	if (line.discountPercentage) return gross * (1 - line.discountPercentage / 100);
+	return gross - Math.abs(line.discountAmount || 0);
 }
 
 /** The ticket before counter discounts: each line at its post-rule rate. */
@@ -52,7 +55,7 @@ function ticketBefore(lines: CapLine[]): number {
 
 /** What the lines charge after their own discounts, before the additional discount. */
 function linesCharged(lines: CapLine[]): number {
-	return lines.reduce((sum, line) => sum + Math.abs(line.qty) * netUnitRate(line), 0);
+	return lines.reduce((sum, line) => sum + lineCharged(line), 0);
 }
 
 /** Round down to 2 places, so a value at the cap never reads as over it. */
@@ -69,7 +72,7 @@ function ticketFloor(lines: CapLine[], capPercent: number): number | null {
 
 /**
  * The largest discount line ``index`` may take, in ``kind`` terms (percent, or
- * per-unit amount), with the other lines and the additional discount as they
+ * money off the whole line), with the other lines and the additional discount as they
  * are. Null when the ticket has nothing to cap.
  */
 export function maxLineDiscount(
@@ -92,9 +95,8 @@ export function maxLineDiscount(
 		? floor / (1 - additional.percentage / 100) - others
 		: floor + Math.abs(additional.amount || 0) - others;
 
-	const allowed =
-		kind === "percentage" ? (1 - lineFloor / gross) * 100 : (gross - lineFloor) / units;
-	const ceiling = kind === "percentage" ? 100 : line.rate;
+	const allowed = kind === "percentage" ? (1 - lineFloor / gross) * 100 : gross - lineFloor;
+	const ceiling = kind === "percentage" ? 100 : gross;
 	return floor2(Math.min(Math.max(allowed, 0), ceiling));
 }
 
