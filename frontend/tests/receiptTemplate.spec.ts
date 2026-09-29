@@ -193,3 +193,34 @@ describe("buildReceiptHtml - mixed-currency tender", () => {
 		expect(html).not.toContain("payment-rate-line");
 	});
 });
+
+/**
+ * Bill (2026-09-29, MuleCity-nfxn.11): "tax should be simpler: 'Sales Tax 6.75%'!"
+ * The offline receipt prints the rate beside the label, with no parentheses and
+ * no trailing zeros; a row with no rate prints its label alone.
+ */
+describe("the tax line", () => {
+	it("reads 'Sales Tax 6.75%'", () => {
+		const html = buildReceiptHtml(
+			{ ...snapshot, taxes: [{ description: "Sales Tax", rate: 6.75, amount: 1.1, included_in_print_rate: false }] },
+			context,
+		);
+		expect(html).toContain("Sales Tax 6.75%");
+		expect(html).not.toContain("(6.75%)");
+	});
+
+	it("drops trailing zeros and leaves a rate-less row alone", () => {
+		const html = buildReceiptHtml(
+			{
+				...snapshot,
+				taxes: [
+					{ description: "Sales Tax", rate: 7.0, amount: 1, included_in_print_rate: false },
+					{ description: "Captured tax", rate: 0, amount: 2, included_in_print_rate: false },
+				],
+			},
+			context,
+		);
+		expect(html).toContain("Sales Tax 7%");
+		expect(html).not.toContain("Captured tax 0%");
+	});
+});
