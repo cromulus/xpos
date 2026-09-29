@@ -111,6 +111,7 @@ export interface FreeItemLine {
 export interface TransactionPricing {
 	additional_discount_percentage: number;
 	discount_amount: number;
+	/** The rule's own apply_discount_on; "" when no rule sets one (the POS Profile decides). */
 	apply_discount_on: string;
 	from_pricing_rule: boolean;
 }
@@ -328,7 +329,7 @@ function applyTransactionRules(
 	const result: TransactionPricing = {
 		additional_discount_percentage: 0,
 		discount_amount: 0,
-		apply_discount_on: "Grand Total",
+		apply_discount_on: "",
 		from_pricing_rule: false,
 	};
 

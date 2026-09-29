@@ -1,0 +1,43 @@
+{
+ "actions": [],
+ "creation": "2026-09-29 00:00:00",
+ "description": "A cashier who may ring sales on a shared register login, by the initials they type at Pay.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "initials",
+  "cashier_name"
+ ],
+ "fields": [
+  {
+   "description": "Typed at Pay; compared without regard to case or surrounding spaces.",
+   "fieldname": "initials",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Initials",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cashier_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Cashier Name",
+   "reqd": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-29 00:00:00",
+ "modified_by": "Administrator",
+ "module": "X POS",
+ "name": "XPOS Cashier",
+ "owner": "Administrator",
+ "permissions": [],
+ "quick_entry": 1,
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

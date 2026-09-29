@@ -20,7 +20,8 @@ export const secondMode = () => (Cypress.env("secondMode") as string) || "Cash";
 export function waitUntil<T>(read: () => Cypress.Chainable<T>, ok: (value: T) => boolean, message: string, tries = 60) {
 	read().then((value) => {
 		if (ok(value)) return;
-		if (tries <= 0) throw new Error(`Timed out waiting: ${message}`);
+		// Say what was last read (e.g. a queued sale's sync error) so a failure explains itself.
+		if (tries <= 0) throw new Error(`Timed out waiting: ${message}; last read: ${JSON.stringify(value).slice(0, 2000)}`);
 		cy.wait(1000);
 		waitUntil(read, ok, message, tries - 1);
 	});
@@ -69,6 +70,31 @@ export function chooseCustomer(name: string = customer()) {
 	});
 }
 
+/**
+ * Save & Print with Enter, as the counter does. On a register that asks for cashier
+ * initials at Pay (Mule City's shared counter login, MuleCity-fb00), type listed
+ * initials first: Enter in that box moves to the amount, whose Enter completes the
+ * sale. A site without the flag shows no box and Enter goes to the dialog as before.
+ * With `tendered`, that amount is typed into the Tendered box before Enter (more
+ * than the total gives change, MuleCity-ztb9); without it the tender stays as filled.
+ */
+export function payWithEnter(initials: string = "LE", tendered?: number) {
+	cy.get("[role='dialog']").then(($dialog) => {
+		const field = $dialog.find("[data-testid='cashier-initials-input']");
+		if (field.length) cy.wrap(field).clear().type(`${initials}{enter}`);
+		if (tendered !== undefined) {
+			cy.get("[role='dialog'] input[type='text']:not([data-testid='cashier-initials-input'])")
+				.first()
+				.clear()
+				.type(`${tendered}{enter}`);
+		} else if (field.length) {
+			cy.focused().type("{enter}");
+		} else {
+			cy.wrap($dialog).type("{enter}");
+		}
+	});
+}
+
 /** One bag for `buyer`, paid in full with `mode`, Save & Print. */
 export function ringUpOneBag(mode: string, buyer: string = customer()) {
 	chooseCustomer(buyer);
@@ -77,7 +103,7 @@ export function ringUpOneBag(mode: string, buyer: string = customer()) {
 	cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
 	cy.get(`[data-testid='payment-method'][data-mode='${mode}']`).click();
 	// Selecting the tender fills the remaining amount; Enter is Save & Print.
-	cy.get("[role='dialog']").type("{enter}");
+	payWithEnter();
 	cy.get("[role='dialog']").should("not.exist");
 	cy.cartRows().should("have.length", 0);
 }
@@ -93,8 +119,8 @@ export function ringUpOneBagTendering(mode: string, tendered: number, buyer: str
 	cy.cartRows().should("have.length", 1);
 	cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
 	cy.get(`[data-testid='payment-method'][data-mode='${mode}']`).click();
-	// The Tendered box is the dialog's first input; Enter in it is Save & Print.
-	cy.get("[role='dialog'] input[type='text']").first().clear().type(`${tendered}{enter}`);
+	// Type the tender (after the cashier's initials, where asked); Enter is Save & Print.
+	payWithEnter("LE", tendered);
 	cy.get("[role='dialog']").should("not.exist");
 	cy.cartRows().should("have.length", 0);
 }

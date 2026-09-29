@@ -13,6 +13,40 @@
 - Tests: `xpos.api.tests.test_change_legs` (fork) and an offline e2e story
   paying $50 cash for one bag in `tests/e2e/bench/offline-selling.cy.ts`.
 
+## mule-v2.10.1-mc19 (2026-09-29): cashier initials at Pay (`feat/cashier-switching`, MuleCity-fb00.2)
+
+Bill (2026-09-29): the register signs in as one shared "POS" user; every sale
+and return records who rang it by the cashier's initials. Replaces the earlier
+PIN / cashier-switching design.
+
+- POS Profile: `xpos_require_cashier_initials` (off by default; off behaves
+  exactly as before) and `xpos_cashiers`, a list of "XPOS Cashier" rows
+  (`initials`, `cashier_name`).
+- Pay asks for "Cashier initials", empty and focused on every sale, and shows
+  the matched name; initials not on the list keep Pay disabled. Enter moves on
+  to the amount. The initials go in the payload as `pos_cashier`, including a
+  sale queued offline (the profile and its list are in the cached shift data).
+- `create_invoice` refuses a sale or return without listed initials and stores
+  them trimmed and uppercase on the new Sales Invoice (and POS Invoice) field
+  `pos_cashier` (read-only, no-copy, a standard filter). A sale replayed from
+  the offline queue is never refused: it is saved with what was typed and a
+  comment on the invoice says the initials were missing or not listed.
+- Receipts print the initials as "Cashier" when present (XPOS Thermal Receipt
+  and the register's own receipt), else the user's name as before.
+- POS Profile validate refuses the same initials twice (stored trimmed, uppercase).
+- The Mule City bar drops its desk shortcuts (New order, Account payment, Prepare
+  order, Edit in formula editor, Full formula library): the shared login only
+  sells; account payments are Pay's Receive on Account (Bill, 2026-09-29).
+- Offline e2e helper types the initials at Pay (`payWithEnter`); a timed-out wait
+  prints what it last read.
+- Gate (on mc18, 9839236): vitest 561, vue-tsc clean, fork CI green (run
+  36645218348); erp2 slot 4 with Mule feat/cashier-accounts 426ee812: natives
+  RESULT PASS ran=405 failures=0 skipped=1 (incl. xpos test_cashier_initials,
+  test_invoices, test_pricing_rules, test_discount_cap, test_printing,
+  test_made_to_order); offline RESULT PASS vitest 33/33, Cypress 3/3.
+- Found, fixed separately (MuleCity-ztb9, fix/offline-change-legs): an offline sale paid with change dead-letters on sync with
+  "POS Change Leg Row #1: Value missing for: Currency".
+
 ## mule-v2.10.1-mc7 (2026-09-28)
 
 - Customer lookup uses the active POS profile when called from the picker,
