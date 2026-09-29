@@ -15,6 +15,7 @@ export default defineConfig({
 			slowMo: Number(process.env.CYPRESS_SLOW_MO || 0),
 			user: process.env.XPOS_BENCH_USER || "Administrator",
 			password: process.env.XPOS_BENCH_PASSWORD || "",
+			impersonate: process.env.XPOS_BENCH_IMPERSONATE || "",
 			profile: process.env.XPOS_BENCH_PROFILE || "",
 			company: process.env.XPOS_BENCH_COMPANY || "",
 			item: process.env.XPOS_BENCH_ITEM || "",

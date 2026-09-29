@@ -13,12 +13,24 @@ Cypress.on("uncaught:exception", (err) => {
 	return true;
 });
 
-/** Log in with the bench user's password (a session cookie, as the browser has). */
+/**
+ * Log in with the bench user's password (a session cookie, as the browser has).
+ * With XPOS_BENCH_IMPERSONATE set, an administrator login then continues as that
+ * cashier (Frappe's own Impersonate, logged with a reason), so a site's real
+ * counter login can be used without its password.
+ */
 Cypress.Commands.add("benchLogin", () => {
 	cy.request("POST", "/api/method/login", {
 		usr: Cypress.env("user"),
 		pwd: Cypress.env("password"),
 	});
+	const cashier = Cypress.env("impersonate") as string;
+	if (cashier) {
+		cy.benchCall("frappe.core.doctype.user.user.impersonate", {
+			user: cashier,
+			reason: "XPOS offline-selling e2e",
+		});
+	}
 });
 
 /** Call a whitelisted method as the logged-in user and yield its message. */
