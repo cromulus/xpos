@@ -460,6 +460,10 @@ export const useCartStore = defineStore("cart", () => {
 		if (Number(item.is_stock_item) === 0) {
 			return { allowed: true };
 		}
+		// Made to order: the mill makes it for this sale, so it has no stock yet.
+		if (Number(item.is_made_to_order) === 1) {
+			return { allowed: true };
+		}
 
 		// actual_qty is in the stock unit.
 		const uomLabel = item.stock_uom || item.uom;
@@ -516,7 +520,9 @@ export const useCartStore = defineStore("cart", () => {
 			return { valid: true, messages: [] };
 		}
 
-		const stockItems = items.value.filter((i: CartItem) => Number(i.is_stock_item) !== 0);
+		const stockItems = items.value.filter(
+			(i: CartItem) => Number(i.is_stock_item) !== 0 && Number(i.is_made_to_order) !== 1,
+		);
 		if (stockItems.length === 0) {
 			return { valid: true, messages: [] };
 		}
@@ -628,6 +634,7 @@ export const useCartStore = defineStore("cart", () => {
 				batch_no: item.batch_no || "",
 				actual_qty: item.actual_qty || 0,
 				is_stock_item: item.is_stock_item,
+				is_made_to_order: item.is_made_to_order,
 				has_serial_no: item.has_serial_no,
 				has_batch_no: item.has_batch_no,
 				conversion_factor: (item as CartItem).conversion_factor || 1,
@@ -705,6 +712,7 @@ export const useCartStore = defineStore("cart", () => {
 			batch_no: batchNo || "",
 			actual_qty: item.actual_qty || 0,
 			is_stock_item: item.is_stock_item,
+			is_made_to_order: item.is_made_to_order,
 			has_serial_no: item.has_serial_no,
 			has_batch_no: item.has_batch_no,
 			conversion_factor: conversionFactor || 1,
