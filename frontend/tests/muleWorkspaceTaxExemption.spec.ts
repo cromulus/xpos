@@ -15,3 +15,24 @@ describe("The Mule City bar", () => {
 		expect(mounted.findAll("a").find(a => a.text() === "Set tax exemption")).toBeUndefined();
 	});
 });
+
+/** Bill (2026-09-29, MuleCity-nfxn.1): "Practice site" showed on production. */
+describe("The practice-site label", () => {
+	afterEach(() => { delete (window as any).xpos; });
+
+	it("shows on a practice (staging) site", () => {
+		(window as any).xpos = { boot: { mule_practice_site: true } };
+		mounted = mount(MuleWorkspace, { props: { profile: "Till", request: vi.fn() } });
+		expect(mounted.text()).toContain("Practice site");
+	});
+
+	it("never shows on production, or when the site does not say", () => {
+		(window as any).xpos = { boot: { mule_practice_site: false } };
+		mounted = mount(MuleWorkspace, { props: { profile: "Till", request: vi.fn() } });
+		expect(mounted.text()).not.toContain("Practice site");
+		mounted.unmount();
+		(window as any).xpos = { boot: {} };
+		mounted = mount(MuleWorkspace, { props: { profile: "Till", request: vi.fn() } });
+		expect(mounted.text()).not.toContain("Practice site");
+	});
+});

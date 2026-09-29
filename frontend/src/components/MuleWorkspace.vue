@@ -5,7 +5,8 @@
     <button type="button" @click="open('orders')">Orders for Pickup</button>
     <a :href="'/desk/sales-order/new?customer=' + encodeURIComponent(customer || '')" target="_blank">New order</a>
     <a href="/desk/payment-entry/new" target="_blank">Account payment</a>
-    <small>Practice site</small>
+    <!-- Only off production (mulecity_erpnext site_role.py puts the flag in boot, MuleCity-nfxn.1). -->
+    <small v-if="practiceSite">Practice site</small>
   </nav>
   <Teleport to="body">
     <dialog ref="dialog" class="mule-workspace" @close="mode = ''">
@@ -65,6 +66,8 @@ import { nextTick, ref, watch } from 'vue';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
 // customer is the Customer ID (used in every call); customerName is what people read.
 const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean});
+// A practice (staging) till says so; the real store's never does. Absent flag = not practice.
+const practiceSite = !!window.xpos?.boot?.mule_practice_site;
 const emit = defineEmits(['pickup']);
 const dialog = ref(null), mode = ref(''), term = ref(''), mine = ref(false);
 const rows = ref([]), busy = ref(false), error = ref(''), more = ref(false), start = ref(0);
