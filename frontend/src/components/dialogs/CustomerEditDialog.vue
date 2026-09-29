@@ -147,6 +147,7 @@
 </template>
 
 <script setup lang="ts">
+import { changedFields } from "@/utils/customerEdit";
 import { ref, computed, watch, nextTick } from "vue";
 import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
@@ -215,6 +216,10 @@ const defaultForm = () => ({
 });
 
 const form = ref(defaultForm());
+// What the customer had when the dialog opened: only fields the cashier changed
+// are saved, so a phone or email shown from the customer's Contact is not
+// copied onto the Customer (Mule City, nfxn.8).
+const loaded = ref(defaultForm());
 
 const canSave = computed(
 	() => !!form.value.customer_name.trim() && !!form.value.customer_group && !!form.value.territory,
@@ -246,6 +251,7 @@ async function loadCustomerData(customerName: string) {
 				customer_group: info.customer_group || "",
 				territory: info.territory || "",
 			};
+			loaded.value = { ...form.value };
 		}
 		nextTick(() => {
 			const el = customerNameInput.value?.$el as HTMLElement | undefined;
@@ -312,21 +318,7 @@ async function saveChanges() {
 	isSaving.value = true;
 
 	try {
-		const payload: Record<string, unknown> = {
-			customer_name: form.value.customer_name,
-			mobile_no: form.value.mobile_no || undefined,
-			email_id: form.value.email_id || undefined,
-			tax_id: form.value.tax_id || undefined,
-			gender: form.value.gender || undefined,
-			referral_code: form.value.referral_code || undefined,
-			birthday: form.value.birthday || undefined,
-			customer_group: form.value.customer_group || undefined,
-			territory: form.value.territory || undefined,
-		};
-
-		Object.keys(payload).forEach((key) => {
-			if (payload[key] === undefined) delete payload[key];
-		});
+		const payload = changedFields(form.value, loaded.value);
 
 		const result = await customerStore.updateCustomer(cartStore.customer.name, payload);
 

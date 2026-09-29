@@ -266,6 +266,35 @@ def _enrich_picker_customers(customers, company):
 			by_name[sale["customer"]]["xpos_sales_12mo"] += flt(sale["sales"])
 
 
+def _linked_contact_details(customer: str) -> dict:
+	"""The first phone and email on the customer's linked Contacts, primary first.
+
+	Imported customers (Mule City's FilePro sync) keep their phones and emails
+	on Contacts, not on Customer.mobile_no / email_id, the same fallback the
+	customer picker uses (_enrich_picker_customers).
+	"""
+	phone = frappe.db.sql(
+		"""
+		SELECT cp.phone FROM `tabDynamic Link` dl
+		JOIN `tabContact Phone` cp ON cp.parent = dl.parent
+		WHERE dl.parenttype = 'Contact' AND dl.link_doctype = 'Customer' AND dl.link_name = %(customer)s
+		ORDER BY cp.is_primary_mobile_no DESC, cp.idx, cp.phone LIMIT 1
+		""",
+		{"customer": customer},
+	)
+	email = frappe.db.sql(
+		"""
+		SELECT ce.email_id FROM `tabDynamic Link` dl
+		JOIN `tabContact Email` ce ON ce.parent = dl.parent
+		WHERE dl.parenttype = 'Contact' AND dl.link_doctype = 'Customer' AND dl.link_name = %(customer)s
+		AND TRIM(IFNULL(ce.email_id, '')) != ''
+		ORDER BY ce.is_primary DESC, ce.idx, ce.email_id LIMIT 1
+		""",
+		{"customer": customer},
+	)
+	return {"mobile_no": phone[0][0] if phone else "", "email_id": email[0][0] if email else ""}
+
+
 @frappe.whitelist()
 def get_customer_info(customer: str):
 	"""
@@ -356,12 +385,18 @@ def get_customer_info(customer: str):
 	from erpnext.selling.doctype.customer.customer import get_credit_limit
 
 	credit_limit = flt(get_credit_limit(customer, frappe.defaults.get_user_default("Company")))
+	contact = (
+		_linked_contact_details(customer)
+		if not (cust.mobile_no and cust.email_id)
+		else {"mobile_no": "", "email_id": ""}
+	)
 
 	return {
 		"name": cust.name,
 		"customer_name": cust.customer_name,
-		"mobile_no": cust.mobile_no,
-		"email_id": cust.email_id,
+		# Blank on imported customers; fall back to their Contacts (Mule City, nfxn.8).
+		"mobile_no": cust.mobile_no or contact["mobile_no"],
+		"email_id": cust.email_id or contact["email_id"],
 		"customer_group": cust.customer_group,
 		"territory": cust.territory,
 		"default_currency": cust.default_currency,
