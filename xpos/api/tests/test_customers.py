@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import frappe
+from frappe.tests import IntegrationTestCase
 
 from xpos.api import customers
 
@@ -296,3 +297,75 @@ class TestCustomerRowsCarryTheirTaxCategory(unittest.TestCase):
 		for column in customers._CUSTOMER_LIST_COLUMNS:
 			with self.subTest(column=column):
 				self.assertIn(f"c.`{column}`", query)
+
+
+class TestCustomerInfoFromContacts(IntegrationTestCase):
+	"""Mule City (nfxn.8): Leslie opens Edit Customer for an imported customer
+	whose phone and email are on a Contact; the form shows them."""
+
+	def _customer_with_contact(self, **customer_fields) -> str:
+		name = frappe.generate_hash(length=8)
+		customer = frappe.get_doc(
+			{"doctype": "Customer", "customer_name": f"Contact Prefill {name}", "customer_type": "Company", **customer_fields}
+		).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Contact",
+				"first_name": f"Prefill {name}",
+				"phone_nos": [{"phone": "919-555-0199", "is_primary_mobile_no": 1}],
+				"email_ids": [{"email_id": f"prefill.{name}@example.com", "is_primary": 1}],
+				"links": [{"link_doctype": "Customer", "link_name": customer.name}],
+			}
+		).insert(ignore_permissions=True)
+		return customer.name
+
+	def test_phone_and_email_come_from_the_contact(self):
+		name = self._customer_with_contact()
+		frappe.db.set_value("Customer", name, {"mobile_no": "", "email_id": ""})
+		frappe.clear_document_cache("Customer", name)
+		info = customers.get_customer_info(name)
+		self.assertEqual(info["mobile_no"], "919-555-0199")
+		self.assertTrue(info["email_id"].startswith("prefill."))
+
+	def test_the_customers_own_phone_wins(self):
+		"""Negative: a phone on the Customer itself is not replaced."""
+		name = self._customer_with_contact()
+		frappe.db.set_value("Customer", name, "mobile_no", "919-555-0100")
+		frappe.clear_document_cache("Customer", name)
+		self.assertEqual(customers.get_customer_info(name)["mobile_no"], "919-555-0100")
+
+
+class TestCounterAddresses(IntegrationTestCase):
+	"""Mule City (nfxn.6): Leslie adds and corrects a customer's delivery
+	address from Edit Customer."""
+
+	def _customer(self) -> str:
+		return frappe.get_doc(
+			{"doctype": "Customer", "customer_name": f"Address Story {frappe.generate_hash(length=6)}", "customer_type": "Company"}
+		).insert(ignore_permissions=True).name
+
+	def test_add_then_correct_an_address(self):
+		customer = self._customer()
+		made = customers.make_address(
+			{"customer": customer, "address_line1": "12 Farm Lane", "city": "Benson", "state": "NC", "pincode": "27504"}
+		)
+		self.assertEqual([a["address_line1"] for a in customers.get_customer_addresses(customer)], ["12 Farm Lane"])
+		changed = customers.update_address(customer, made["name"], {"address_line1": "14 Farm Lane", "city": "Benson"})
+		self.assertEqual(changed["address_line1"], "14 Farm Lane")
+		self.assertEqual(frappe.db.get_value("Address", made["name"], "pincode"), "27504")
+
+	def test_an_address_needs_a_street_and_a_city(self):
+		"""Negative: a partial address is refused, adding or changing."""
+		customer = self._customer()
+		with self.assertRaises(frappe.ValidationError):
+			customers.make_address({"customer": customer, "address_line1": "12 Farm Lane"})
+		made = customers.make_address({"customer": customer, "address_line1": "12 Farm Lane", "city": "Benson"})
+		with self.assertRaises(frappe.ValidationError):
+			customers.update_address(customer, made["name"], {"address_line1": "", "city": "Benson"})
+
+	def test_another_customers_address_cannot_be_changed(self):
+		"""Negative: an address is changed only through its own customer."""
+		owner, other = self._customer(), self._customer()
+		made = customers.make_address({"customer": owner, "address_line1": "1 Mill Rd", "city": "Dunn"})
+		with self.assertRaises(frappe.PermissionError):
+			customers.update_address(other, made["name"], {"address_line1": "2 Mill Rd", "city": "Dunn"})
