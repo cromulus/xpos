@@ -5,7 +5,7 @@ import { ref, computed, watch } from "vue";
 import { call } from "@/services/api";
 import { usePosStore } from "./posStore";
 import { useSettingsStore } from "./settingsStore";
-import { getCachedItemByCode, getCachedStockForItem } from "@/services/dbBridge";
+import { cacheTaxContext, getCachedItemByCode, getCachedStockForItem, getCachedTaxContext } from "@/services/dbBridge";
 import type {
 	CartItem,
 	POSItem,
@@ -117,13 +117,25 @@ export const useCartStore = defineStore("cart", () => {
     muleTaxExemptReason.value = "";
     showPaymentDialog.value = false;
     try {
-      const context = await call<any>("mulecity_erpnext.pos_workspace.tax_context", {customer: buyer, pos_profile: profile});
+      // The context comes from the server when it can be reached, and is kept per
+      // customer so a later cart for them is taxed the same while offline.
+      let context: any;
+      try {
+        context = await call<any>("mulecity_erpnext.pos_workspace.tax_context", {customer: buyer, pos_profile: profile});
+        cacheTaxContext(String(profile), String(buyer), context).catch(() => {});
+      } catch (error) {
+        const offline = !isOnline() || isNetworkError(error);
+        context = offline ? await getCachedTaxContext(String(profile), String(buyer)) : null;
+        if (!context) throw error;
+      }
+      const offlineContext = !isOnline();
       if (request !== muleTaxRequest) return;
       posStore.taxes = context.taxes;
       muleTaxCategory.value = context.tax_category || "";
       muleTaxExemptReason.value = context.tax_exempt_reason || "";
       // A customer's item overrides must not survive a buyer change.
-      for (const item of items.value) {
+      // Offline, the items keep the templates they were added with.
+      for (const item of offlineContext ? [] : items.value) {
         const tax = await call<any>("xpos.api.taxes.get_item_tax_template", {item_code: item.item_code, company: posStore.companyName, tax_category: muleTaxCategory.value});
         if (request !== muleTaxRequest) return;
         item.item_tax_template = tax.item_tax_template || undefined;

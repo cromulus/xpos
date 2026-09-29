@@ -1066,6 +1066,31 @@ export async function cacheReceiptContext(
 	await idb.cacheReceiptContext(posProfile, context);
 }
 
+/**
+ * The till's tax context for a customer at a profile (Mule City's tax_context:
+ * the profile's taxes and the customer's tax category), kept so the next cart
+ * for that customer can be taxed while the internet is down.
+ */
+export async function cacheTaxContext(posProfile: string, customer: string, context: unknown): Promise<void> {
+	const key = `tax_context::${posProfile}::${customer}`;
+	if (isElectron()) {
+		await getDb().setMeta(key, JSON.stringify(context));
+		return;
+	}
+	const idb = await import("./idbService");
+	await idb.setMeta(key, context);
+}
+
+export async function getCachedTaxContext(posProfile: string, customer: string): Promise<any | null> {
+	const key = `tax_context::${posProfile}::${customer}`;
+	if (isElectron()) {
+		const val = await getDb().getMeta(key);
+		return val ? JSON.parse(val) : null;
+	}
+	const idb = await import("./idbService");
+	return ((await idb.getMeta(key)) as any) ?? null;
+}
+
 export async function getCachedReceiptContext(
 	posProfile: string,
 ): Promise<import("@/types/pos.types").ReceiptContext | null> {
