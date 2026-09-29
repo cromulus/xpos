@@ -58,7 +58,9 @@ export function openTillOnline() {
  * default).
  */
 export function chooseCustomer(name: string = customer()) {
-	cy.get("[data-testid='cart-customer']").then(($button) => {
+	// X POS renders the cart twice (desktop and a hidden narrow layout), so the
+	// test id matches two buttons: use the one on screen.
+	cy.get("[data-testid='cart-customer']:visible").first().then(($button) => {
 		if ($button.text().includes(name)) return;
 		cy.wrap($button).click();
 		cy.get("[role='dialog'] input").first().type(name);
