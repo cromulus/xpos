@@ -111,8 +111,11 @@ async function offlineTaxContext(profile: string, buyer: string, row: { tax_cate
 	if (synced && "tax_category" in synced) {
 		const byCategory = await getCachedCategoryTaxContext(profile, (synced as any).tax_category ?? "");
 		if (byCategory) {
-			// The exemption reason is per customer; keep it only if it's for the same category.
-			const reason = own && (own.tax_category ?? null) === (byCategory.tax_category ?? null) ? own.tax_exempt_reason : null;
+			// The site sends each category's exemption reason with it (it follows the
+			// category one-to-one); an older sync without it falls back to this
+			// customer's own reason when that was for the same category.
+			const sameCategory = own && (own.tax_category ?? null) === (byCategory.tax_category ?? null);
+			const reason = byCategory.tax_exempt_reason ?? (sameCategory ? own.tax_exempt_reason : null);
 			return { ...byCategory, tax_exempt_reason: reason ?? null };
 		}
 	}

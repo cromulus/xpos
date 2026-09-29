@@ -93,7 +93,7 @@ describe("the customer's tax context while offline", () => {
 
 const PROFILE = "Mule City Retail";
 const TAXABLE = { taxes: [{ account_head: "NC Sales Tax", rate: 6.75 }], tax_category: "Mule City Taxable", taxes_and_charges: "Mule City NC Sales Tax 6.75% - MCSF" };
-const EXEMPT = { taxes: [], tax_category: "Mule City Exempt", taxes_and_charges: "Mule City Tax Exempt - MCSF" };
+const EXEMPT = { taxes: [], tax_category: "Mule City Exempt", taxes_and_charges: "Mule City Tax Exempt - MCSF", tax_exempt_reason: "Farm" };
 
 describe("a customer this till never looked up online (MuleCity-ispl)", () => {
 	beforeEach(() => {
@@ -110,6 +110,8 @@ describe("a customer this till never looked up online (MuleCity-ispl)", () => {
 		await flushPromises();
 		expect(cart.muleTaxError).toBe("");
 		expect(cart.muleTaxCategory).toBe("Mule City Exempt");
+		// The counter's exempt icon shows why, from the category's own reason.
+		expect(cart.muleTaxExemptReason).toBe("Farm");
 	});
 
 	it("finds the category on the synced row when the cart's customer lacks it", async () => {
