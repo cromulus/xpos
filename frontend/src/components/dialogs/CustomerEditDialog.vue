@@ -67,6 +67,12 @@
 				>
 					{{ __("Tax exemption") }}
 				</Button>
+
+				<CustomerAddresses
+					v-if="cartStore.customer?.name"
+					:customer="cartStore.customer.name"
+					@changed="onAddressesChanged"
+				/>
 			</div>
 
 			<DialogFooter class="shrink-0 border-t border-border px-5 py-4">
@@ -101,6 +107,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-vue-next";
 import __ from "@/lib/translate";
+import CustomerAddresses from "@/components/customer/CustomerAddresses.vue";
+import type { CustomerAddress } from "@/types/pos.types";
 
 const cartStore = useCartStore();
 const customerStore = useCustomerStore();
@@ -179,6 +187,15 @@ async function saveChanges() {
 	} finally {
 		isSaving.value = false;
 	}
+}
+
+// The cart's "can take a delivery" icon follows an address saved here.
+function onAddressesChanged(addresses: CustomerAddress[]) {
+	if (!cartStore.customer) return;
+	cartStore.setCustomer({
+		...cartStore.customer,
+		xpos_has_address: addresses.some((address) => !!address.address_line1?.trim()),
+	});
 }
 
 function close() {

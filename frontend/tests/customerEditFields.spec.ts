@@ -24,6 +24,7 @@ const stubs = {
 	Button: { template: "<button><slot /></button>" },
 	Input: { props: ["modelValue"], template: "<input :value='modelValue' />" },
 	Loader2: true,
+	CustomerAddresses: true,
 };
 
 describe("Edit Customer at the counter", () => {

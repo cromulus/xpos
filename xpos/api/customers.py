@@ -655,6 +655,8 @@ def make_address(args: str | dict):
 	customer = args.get("customer")
 	if not customer:
 		frappe.throw(_("Customer is required to create an address"))
+	if not (args.get("address_line1") or "").strip() or not (args.get("city") or "").strip():
+		frappe.throw(_("Street address and city are required to save an address"))
 
 	address = frappe.get_doc(
 		{
@@ -688,6 +690,36 @@ def make_address(args: str | dict):
 		"address_line1": address.address_line1,
 		"city": address.city,
 	}
+
+
+# The parts of an address the counter edits (Mule City, nfxn.6).
+_ADDRESS_FIELDS = ("address_line1", "address_line2", "city", "state", "pincode", "country")
+
+
+@frappe.whitelist()  # nosemgrep: overusing-args — args is a JSON-encoded dict from the client, standard Frappe pattern
+def update_address(customer: str, name: str, args: str | dict):
+	"""Change one of ``customer``'s addresses (Mule City, nfxn.6).
+
+	Only an address linked to that customer, and only its street, city, state,
+	postcode and country; a street and a city are required.
+	"""
+	if isinstance(args, str):
+		args = json.loads(args)
+	if not frappe.has_permission("Customer", "write", customer):
+		frappe.throw(_("Not permitted to change {0}'s addresses").format(customer), frappe.PermissionError)
+	if not frappe.db.exists(
+		"Dynamic Link",
+		{"parenttype": "Address", "parent": name, "link_doctype": "Customer", "link_name": customer},
+	):
+		frappe.throw(_("Address {0} is not one of {1}'s addresses").format(name, customer), frappe.PermissionError)
+	if not (args.get("address_line1") or "").strip() or not (args.get("city") or "").strip():
+		frappe.throw(_("Street address and city are required to save an address"))
+	address = frappe.get_doc("Address", name)
+	for field in _ADDRESS_FIELDS:
+		if field in args:
+			address.set(field, args[field] or ("" if field != "country" else address.country))
+	address.save(ignore_permissions=True)
+	return {field: address.get(field) for field in ("name", "address_title", *_ADDRESS_FIELDS)}
 
 
 @frappe.whitelist()
