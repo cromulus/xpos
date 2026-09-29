@@ -1,6 +1,6 @@
 # Mule City XPOS release notes
 
-## Unreleased (next mc tag): cashier initials at Pay (`feat/cashier-switching`, MuleCity-fb00.2)
+## mule-v2.10.1-mc16 (2026-09-29): cashier initials at Pay (`feat/cashier-switching`, MuleCity-fb00.2)
 
 Bill (2026-09-29): the register signs in as one shared "POS" user; every sale
 and return records who rang it by the cashier's initials. Replaces the earlier
@@ -20,8 +20,18 @@ PIN / cashier-switching design.
   comment on the invoice says the initials were missing or not listed.
 - Receipts print the initials as "Cashier" when present (XPOS Thermal Receipt
   and the register's own receipt), else the user's name as before.
-- Validation: vitest and vue-tsc. The Python module
-  `xpos/api/tests/test_cashier_initials.py` still needs a bench run.
+- POS Profile validate refuses the same initials twice (stored trimmed, uppercase).
+- The Mule City bar drops its desk shortcuts (New order, Account payment, Prepare
+  order, Edit in formula editor, Full formula library): the shared login only
+  sells; account payments are Pay's Receive on Account (Bill, 2026-09-29).
+- Offline e2e helper types the initials at Pay (`payWithEnter`); a timed-out wait
+  prints what it last read.
+- Gate: vitest 538, vue-tsc clean, fork CI green (run 36641103206); erp2 slot 4
+  with Mule feat/cashier-accounts 3c7623ff natives RESULT PASS ran=216 (incl.
+  xpos test_cashier_initials, test_made_to_order); offline mode RESULT PASS
+  vitest 33/33, Cypress 3/3.
+- Found, not fixed: an offline sale paid with change dead-letters on sync with
+  "POS Change Leg Row #1: Value missing for: Currency".
 
 ## mule-v2.10.1-mc7 (2026-09-28)
 
