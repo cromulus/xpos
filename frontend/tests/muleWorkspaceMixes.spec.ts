@@ -11,7 +11,7 @@ const rows = [
 const recipe = { item: "CF-4112-A846", bom: "BOM-1", quantity: 500, uom: "Pound", ingredients: [{ item_name: "CORN", qty: 400, uom: "Pound" }], available: 0, stock_uom: "Pound", bag_weight: 50 };
 
 let mounted: ReturnType<typeof mount> | null = null;
-afterEach(() => { mounted?.unmount(); mounted = null; });
+afterEach(() => { mounted?.unmount(); mounted = null; vi.restoreAllMocks(); });
 
 async function openMixes() {
 	HTMLDialogElement.prototype.showModal ??= function () {};
@@ -46,4 +46,28 @@ describe("Customer Mixes", () => {
 		expect(document.body.querySelector(".mule-recipe")?.textContent).toContain("CORN");
 		expect(scroll).toHaveBeenCalled();
 	});
+	it("opens a native revision without creating a scratchpad or changing the basket", async () => {
+		const opened = vi.spyOn(window, "open").mockReturnValue(null);
+		Element.prototype.scrollIntoView = vi.fn();
+		const { wrapper, request } = await openMixes();
+		await wrapper.setProps({ cartHasItems: true });
+		([...document.body.querySelectorAll("button")].find(b => b.textContent === "View recipe") as HTMLButtonElement).click();
+		await flushPromises();
+		request.mockClear();
+		([...document.body.querySelectorAll("button")].find(b => b.textContent === "Edit in formula editor") as HTMLButtonElement).click();
+		expect(opened).toHaveBeenCalledWith("/desk/new-formula?bom=BOM-1&customer=MC-CUST-4112", "_blank", "noopener");
+		expect(request).not.toHaveBeenCalled();
+		expect(wrapper.emitted("pickup")).toBeUndefined();
+	});
+
+	it("offers a new native mix with the selected customer", async () => {
+		const { wrapper } = await openMixes();
+		const link = wrapper.findAll("a").find(a => a.text() === "New mix")!;
+		expect(link.attributes("href")).toBe("/desk/new-formula?customer=MC-CUST-4112");
+		const library = [...document.body.querySelectorAll("a")].find(a => a.textContent === "Full formula library")!;
+		expect(library.getAttribute("href")).toBe("/desk/item?mule_product_class=customer_formula");
+		await wrapper.setProps({ customer: undefined });
+		expect(link.attributes("href")).toBe("/desk/new-formula?customer=");
+	});
+
 });

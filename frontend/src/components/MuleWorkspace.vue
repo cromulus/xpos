@@ -2,6 +2,7 @@
   <nav class="mule-counter-tools" aria-label="Mule City customer work">
     <strong>Mule City</strong>
     <button type="button" @click="open('mixes')">Customer Mixes</button>
+    <a :href="'/desk/new-formula?customer=' + encodeURIComponent(customer || '')" target="_blank" rel="noopener">New mix</a>
     <button type="button" @click="open('orders')">Orders for Pickup</button>
     <a :href="'/desk/sales-order/new?customer=' + encodeURIComponent(customer || '')" target="_blank">New order</a>
     <a href="/desk/payment-entry/new" target="_blank">Account payment</a>
@@ -56,7 +57,7 @@
       </section>
       <footer><button v-if="start" type="button" :disabled="busy" @click="search(start - 20)">Previous</button>
         <button v-if="more" type="button" :disabled="busy" @click="search(start + 20)">More mixes</button>
-        <a href="/desk/customer-formula-link" target="_blank">Full formula library</a></footer>
+        <a href="/desk/item?mule_product_class=customer_formula" target="_blank">Full formula library</a></footer>
     </dialog>
   </Teleport>
 </template>
@@ -106,12 +107,13 @@ async function orderMix() {
     created.value = '/desk/sales-order/' + encodeURIComponent(name); window.open(created.value, '_blank');
   } catch(e) { fail(e); } finally { busy.value = false; }
 }
-async function editMix() {
-  busy.value = true; error.value = '';
-  try { const name = await props.request('mulecity_erpnext.mule_feed_formula.api.create_scratchpad_from_mix', {bom: details.value.bom, customer: props.customer});
-    created.value = '/desk/formula-scratchpad/' + encodeURIComponent(name); window.open(created.value, '_blank');
-  } catch(e) { fail(e); } finally { busy.value = false; }
+function editMix() {
+  // Open the native BOM workflow without creating records or changing the basket.
+  created.value = '/desk/new-formula?bom=' + encodeURIComponent(details.value.bom)
+    + '&customer=' + encodeURIComponent(props.customer || '');
+  window.open(created.value, '_blank', 'noopener');
 }
+
 async function pickup(row) {
   if (props.cartHasItems) return;
   busy.value = true; error.value = '';
