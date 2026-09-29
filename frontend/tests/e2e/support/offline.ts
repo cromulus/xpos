@@ -82,6 +82,23 @@ export function ringUpOneBag(mode: string, buyer: string = customer()) {
 	cy.cartRows().should("have.length", 0);
 }
 
+/**
+ * One bag for `buyer`, paid with `tendered` of `mode` typed into the Tendered
+ * box (more than the total, so the register owes change), Save & Print.
+ * ``ringUpOneBag`` is the exact-amount sibling.
+ */
+export function ringUpOneBagTendering(mode: string, tendered: number, buyer: string = customer()) {
+	chooseCustomer(buyer);
+	cy.contains(item()).first().click();
+	cy.cartRows().should("have.length", 1);
+	cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
+	cy.get(`[data-testid='payment-method'][data-mode='${mode}']`).click();
+	// The Tendered box is the dialog's first input; Enter in it is Save & Print.
+	cy.get("[role='dialog'] input[type='text']").first().clear().type(`${tendered}{enter}`);
+	cy.get("[role='dialog']").should("not.exist");
+	cy.cartRows().should("have.length", 0);
+}
+
 /** `buyer`'s submitted Sales Invoices, newest first. */
 export function customerInvoices(buyer: string = customer(), fields: string[] = ["name", "grand_total"]) {
 	return cy.benchCall("frappe.client.get_list", {

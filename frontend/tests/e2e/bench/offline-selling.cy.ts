@@ -13,6 +13,13 @@
  * typed, so the story queues that sale directly, as a till with an older
  * build could have.
  *
+ * Change (MuleCity-ztb9): the customer hands Leslie a $50 bill for one bag
+ * while the internet is down. The till queues the sale with the change it
+ * owes, and when the internet returns the Sales Invoice posts showing the $50
+ * paid and the change handed back. Before the fix the server refused every
+ * such sale ("POS Change Leg Row #1: Value missing for: Currency") and it sat
+ * in "need attention", never posted.
+ *
  * Runs against a real bench (tests/e2e/bench/README.md), never the stub.
  */
 
@@ -23,6 +30,7 @@ import {
 	openTillOnline,
 	restoreNetworkAfterEach,
 	ringUpOneBag,
+	ringUpOneBagTendering,
 	secondMode,
 	waitUntil,
 } from "../support/offline";
@@ -108,6 +116,62 @@ describe("selling while the store's internet is down", () => {
 			cy.contains(/need attention/i).should("be.visible");
 			customerInvoices().then((after: Array<{ name: string }>) => {
 				expect(after.filter((i) => !known.has(i.name)), "only the good sale posted").to.have.length(1);
+			});
+		});
+	});
+
+	it("a customer pays $50 cash offline for one bag, and the synced invoice shows the $50 paid and the change", () => {
+		const TENDERED = 50;
+		const cents = (amount: unknown) => Math.round(Number(amount) * 100);
+		customerInvoices().then((before: Array<{ name: string }>) => {
+			const known = new Set(before.map((i) => i.name));
+			openTillOnline();
+			cy.wait(3000);
+			cy.networkOff();
+
+			ringUpOneBagTendering("Cash", TENDERED);
+
+			cy.pendingInvoices().then((rows) => {
+				expect(rows, "one queued sale").to.have.length(1);
+				const [sale] = rows;
+				const total = cents(sale.grand_total);
+				const change = cents(TENDERED) - total;
+				expect(change, "the $50 covers the bag with change to give").to.be.greaterThan(0);
+				// What the server needs for the change: a Cash row in the till's currency.
+				const legs = sale.data.pos_change_legs as Array<Record<string, unknown>>;
+				expect(legs, "one change row").to.have.length(1);
+				expect(legs[0].mode_of_payment).to.equal("Cash");
+				expect(legs[0].currency, "the change row's currency").to.be.a("string").and.not.be.empty;
+				expect(cents(legs[0].amount)).to.equal(change);
+
+				cy.networkOn();
+				waitUntil(
+					() => cy.pendingInvoices(),
+					(pending) => {
+						// A refused sale never syncs: fail now, with the server's reason.
+						const refused = pending.find((r) => r.status === "dead_letter");
+						if (refused) throw new Error(`the offline sale was refused: ${refused.error}`);
+						return pending.length === 0;
+					},
+					"the offline sale with change to sync",
+				);
+				customerInvoices(undefined, ["name", "grand_total", "paid_amount", "change_amount"]).then(
+					(after: Array<{ name: string; grand_total: number; paid_amount: number; change_amount: number }>) => {
+						const posted = after.filter((i) => !known.has(i.name));
+						expect(posted, "one new Sales Invoice").to.have.length(1);
+						expect(cents(posted[0].grand_total)).to.equal(total);
+						expect(cents(posted[0].paid_amount), "the $50 paid").to.equal(cents(TENDERED));
+						expect(cents(posted[0].change_amount), "the change handed back").to.equal(change);
+						cy.benchCall("frappe.client.get", { doctype: "Sales Invoice", name: posted[0].name }).then(
+							(invoice: { pos_change_legs: Array<{ mode_of_payment: string; currency: string; amount: number }> }) => {
+								expect(invoice.pos_change_legs, "the change row posted").to.have.length(1);
+								expect(invoice.pos_change_legs[0].mode_of_payment).to.equal("Cash");
+								expect(invoice.pos_change_legs[0].currency).to.equal(legs[0].currency);
+								expect(cents(invoice.pos_change_legs[0].amount)).to.equal(change);
+							},
+						);
+					},
+				);
 			});
 		});
 	});

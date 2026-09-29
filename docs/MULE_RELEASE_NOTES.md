@@ -1,5 +1,18 @@
 # Mule City XPOS release notes
 
+## Unreleased: fix/offline-change-legs (MuleCity-ztb9)
+
+- A cash sale paid with change posts again, online and offline. Every such sale
+  was refused with "POS Change Leg Row #1: Value missing for: Currency": the
+  change row's Currency fetched the Mode of Payment's tender currency on save,
+  and Mule City's Cash has none, so it blanked the currency the server set.
+  The field now fetches only when empty (`fetch_if_empty`), so migrate is needed.
+- Queued sales were in the right shape and need no change. Offline sales that
+  already went to "need attention" are not retried by reconnecting; retry them
+  from the pending list once this is deployed.
+- Tests: `xpos.api.tests.test_change_legs` (fork) and an offline e2e story
+  paying $50 cash for one bag in `tests/e2e/bench/offline-selling.cy.ts`.
+
 ## mule-v2.10.1-mc7 (2026-09-28)
 
 - Customer lookup uses the active POS profile when called from the picker,
