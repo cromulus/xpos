@@ -46,7 +46,9 @@ Cypress.Commands.add("benchCall", (method: string, args: Record<string, unknown>
 				body: args,
 			}),
 		)
-		.its("body.message");
+		// Frappe leaves "message" out of the body when a method returns None
+		// (check_open_shift on a till with no open shift): that is null, not an error.
+		.then((response) => response.body.message ?? null);
 });
 
 /**

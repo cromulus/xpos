@@ -15,6 +15,13 @@
 import { customerInvoices, ensureOpenShift, openTillOnline, restoreNetworkAfterEach, ringUpOneBag, waitUntil } from "../support/offline";
 
 const exemptCategory = () => (Cypress.env("exemptCategory") as string) || "Mule City Exempt";
+// A site may require why a customer is exempt (Mule City: the reason sets the
+// category), named by the Customer field it lives in.
+const exemptFields = (): Record<string, string> => {
+	const field = Cypress.env("exemptReasonField") as string;
+	const reason = Cypress.env("exemptReason") as string;
+	return field && reason ? { [field]: reason } : {};
+};
 
 describe("taxes while the store's internet is down", () => {
 	beforeEach(() => {
@@ -26,7 +33,13 @@ describe("taxes while the store's internet is down", () => {
 	it("rings up a farm customer this till never saw online, untaxed, and the synced invoice is untaxed", () => {
 		const name = `Offline Farm ${Date.now()}`;
 		cy.benchCall("frappe.client.insert", {
-			doc: { doctype: "Customer", customer_name: name, customer_type: "Individual", tax_category: exemptCategory() },
+			doc: {
+				doctype: "Customer",
+				customer_name: name,
+				customer_type: "Individual",
+				tax_category: exemptCategory(),
+				...exemptFields(),
+			},
 		}).then((created: { name: string }) => {
 			// Warm-up while online: customers (with their category) and every category's taxes.
 			openTillOnline();

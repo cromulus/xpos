@@ -22,6 +22,8 @@ export default defineConfig({
 			customer: process.env.XPOS_BENCH_CUSTOMER || "",
 			secondMode: process.env.XPOS_BENCH_SECOND_MODE || "",
 			exemptCategory: process.env.XPOS_BENCH_EXEMPT_CATEGORY || "",
+			exemptReasonField: process.env.XPOS_BENCH_EXEMPT_REASON_FIELD || "",
+			exemptReason: process.env.XPOS_BENCH_EXEMPT_REASON || "",
 		},
 		supportFile: "tests/e2e/support/bench.ts",
 		specPattern: "tests/e2e/bench/**/*.cy.ts",
