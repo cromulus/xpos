@@ -88,14 +88,7 @@
 
 								</div>
 								<div class="flex flex-wrap items-center gap-3 mt-1 text-xs text-muted-foreground">
-									<span v-for="detail in profileIndicators(cust)" :key="detail.label"
-										class="inline-flex items-center gap-0.5" role="img"
-										:aria-label="detail.label" :title="detail.label"
-										:class="detail.present ? 'text-primary' : 'text-muted-foreground'">
-										<component :is="detail.icon" class="w-4 h-4" aria-hidden="true" />
-										<Check v-if="detail.present" class="w-3 h-3" aria-hidden="true" />
-										<Minus v-else class="w-3 h-3" aria-hidden="true" />
-									</span>
+									<CustomerStatusIcons :customer="cust" />
 									<span v-if="cust.xpos_customer_since">{{ __("Customer since") }} {{ cust.xpos_customer_since }}</span>
 								</div>
 							</div>
@@ -172,26 +165,6 @@
 						</div>
 					</div>
 
-					<!-- Mule City: why the customer is tax-exempt; the site's Customer validation
-					     turns it into the Tax Category. Shown only where the site has the field. -->
-					<div v-if="taxExemptReasons.length" role="group" :aria-label="__('Tax exemption reason')">
-						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-							__("Tax exemption reason")
-						}}</label>
-						<div class="flex flex-wrap gap-2">
-							<Button
-								v-for="choice in ['', ...taxExemptReasons]"
-								:key="choice"
-								type="button"
-								size="sm"
-								:variant="newCustomer.mule_tax_exempt_reason === choice ? 'default' : 'outline'"
-								:aria-pressed="newCustomer.mule_tax_exempt_reason === choice"
-								@click="newCustomer.mule_tax_exempt_reason = choice"
-							>
-								{{ choice ? __(choice) : __("None (taxable)") }}
-							</Button>
-						</div>
-					</div>
 
 					<div class="grid grid-cols-2 gap-3">
 						<div>
@@ -305,7 +278,8 @@ import { Input } from "@/components/ui/input";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import type { AutocompleteOption } from "@/components/ui/autocomplete";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Search, ChevronRight, Users, UserPlus, ArrowLeft, Loader2, MapPin, Mail, Phone, Check, Minus } from "lucide-vue-next";
+import { Search, ChevronRight, Users, UserPlus, ArrowLeft, Loader2 } from "lucide-vue-next";
+import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import __ from "@/lib/translate";
 import type { Customer } from "@/types/pos.types";
 import DateTimeInput from "../ui/date-time-input/DateTimeInput.vue";
@@ -341,11 +315,7 @@ const defaultNewCustomer = () => ({
 	country: "",
 	email_id: "",
 	birthday: "",
-	mule_tax_exempt_reason: "",
 });
-
-// The reasons the server will accept from this user (empty on sites without the field).
-const taxExemptReasons = computed<string[]>(() => window.xpos?.boot?.xpos_customer_tax_exempt_reasons || []);
 
 const newCustomer = ref(defaultNewCustomer());
 
@@ -464,7 +434,6 @@ async function createAndSelect() {
 			pincode: newCustomer.value.pincode || undefined,
 			city: newCustomer.value.city || undefined,
 			country: newCustomer.value.country || undefined,
-			mule_tax_exempt_reason: newCustomer.value.mule_tax_exempt_reason || undefined,
 		};
 
 		Object.keys(payload).forEach((key) => {
@@ -480,15 +449,6 @@ async function createAndSelect() {
 	} finally {
 		isCreating.value = false;
 	}
-}
-
-// Shape and accessible labels distinguish missing data without relying on color.
-function profileIndicators(customer: Customer) {
-	return [
-		{ icon: MapPin, present: customer.xpos_has_address, label: customer.xpos_has_address ? __("Address on file") : __("Address missing") },
-		{ icon: Mail, present: customer.xpos_has_email, label: customer.xpos_has_email ? __("Email on file") : __("Email missing") },
-		{ icon: Phone, present: customer.xpos_has_phone, label: customer.xpos_has_phone ? __("Phone on file") : __("Phone missing") },
-	].filter(detail => typeof detail.present === "boolean");
 }
 
 function formatCustomerSales(amount: number, currency: string) {

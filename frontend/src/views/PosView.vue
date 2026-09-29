@@ -1,6 +1,6 @@
 <template>
 	<div class="flex flex-col h-full overflow-hidden">
-    <MuleWorkspace :customer="cartStore.customer?.name" :customer-name="cartStore.customerName" :tax-exempt-reason="cartStore.muleTaxExemptReason" :profile="posStore.profileName" :request="call"
+    <MuleWorkspace :customer="cartStore.customer?.name" :customer-name="cartStore.customerName" :profile="posStore.profileName" :request="call"
       :cart-has-items="!cartStore.isEmpty" @pickup="cartStore.loadFromInvoice" />
     <p v-if="cartStore.muleTaxError" role="alert" class="p-2 text-red-700">{{ cartStore.muleTaxError }}</p>
 		<div

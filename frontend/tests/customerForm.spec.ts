@@ -54,49 +54,22 @@ describe("New Customer", () => {
 	});
 });
 
-/** Cashier story (Mule City): a new farm or reseller customer is exempt from the first ticket. */
-describe("New Customer tax exemption reason", () => {
-	const reasons = ["Farm", "Reseller (resale certificate)"];
+/** Bill (2026-09-29): "Tax exemption: it's in customer edit, that's it." A new
+ * customer is created taxable; the exemption is set afterwards in Edit Customer. */
+describe("New Customer and tax exemption", () => {
 	beforeEach(() => { vi.clearAllMocks(); mocks.create.mockResolvedValue({ name: "NEW-1", customer_name: "Test Farmer" }); });
 	afterEach(() => { delete (window as any).xpos; });
-	const button = (wrapper: Awaited<ReturnType<typeof form>>, text: string) =>
-		wrapper.findAll("button-stub").find(b => b.text() === text);
 
-	it("sends the reason the cashier picks", async () => {
-		(window as any).xpos = { boot: { xpos_customer_tax_exempt_reasons: reasons } };
-		const open = vi.spyOn(window, "open").mockReturnValue({} as Window);
+	it("offers no exemption choice and sends none, even where the site has the field", async () => {
+		(window as any).xpos = { boot: { xpos_customer_tax_exempt_reasons: ["Farm", "Reseller (resale certificate)"] } };
 		const wrapper = await form();
-		expect(wrapper.text()).toContain("Tax exemption reason");
-		expect(wrapper.text()).not.toContain("Set tax exemption");
+		expect(wrapper.text()).not.toContain("Tax exemption");
+		expect(wrapper.findAll("button-stub").find(b => b.text() === "Farm")).toBeUndefined();
 		wrapper.findComponent('[placeholder="Full name"]').vm.$emit("update:modelValue", "Test Farmer");
-		await button(wrapper, "Farm")!.trigger("click");
-		await flushPromises();
-		expect(button(wrapper, "Farm")!.attributes("aria-pressed")).toBe("true");
-		await wrapper.findAll("button-stub").find(b => b.text().includes("Create & Select"))!.trigger("click");
-		await flushPromises();
-		expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ customer_name: "Test Farmer", mule_tax_exempt_reason: "Farm" }));
-		// The reason is saved with the customer: no desk tab to finish it in.
-		expect(open).not.toHaveBeenCalled();
-		open.mockRestore();
-		wrapper.unmount();
-	});
-
-	it("is optional: no reason, nothing sent", async () => {
-		(window as any).xpos = { boot: { xpos_customer_tax_exempt_reasons: reasons } };
-		const wrapper = await form();
-		expect(button(wrapper, "None (taxable)")!.attributes("aria-pressed")).toBe("true");
-		wrapper.findComponent('[placeholder="Full name"]').vm.$emit("update:modelValue", "Test Buyer");
 		await flushPromises();
 		await wrapper.findAll("button-stub").find(b => b.text().includes("Create & Select"))!.trigger("click");
 		await flushPromises();
 		expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("mule_tax_exempt_reason");
-		wrapper.unmount();
-	});
-
-	it("is not shown on a site without the field", async () => {
-		const wrapper = await form();
-		expect(wrapper.text()).not.toContain("Tax exemption reason");
-		expect(button(wrapper, "Farm")).toBeUndefined();
 		wrapper.unmount();
 	});
 });

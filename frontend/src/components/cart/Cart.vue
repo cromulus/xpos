@@ -93,6 +93,12 @@
 									<span class="truncate">{{ cartStore.customer.email_id }}</span>
 								</template>
 							</div>
+							<!-- Can take a delivery, contact on file, tax exempt: at a glance (Bill 2026-09-29). -->
+							<CustomerStatusIcons
+								class="mt-1"
+								:customer="cartStore.customer"
+								:tax-exempt-reason="cartStore.muleTaxExemptReason"
+							/>
 							<p
 								v-if="!cartStore.customer.mobile_no && !cartStore.customer.email_id"
 								class="text-[11px] text-muted-foreground"
@@ -304,6 +310,7 @@ import {
 import __ from "@/lib/translate";
 import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
 import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
+import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import { isOnline } from "@/utils";
 import { showsCreditInfo } from "@/utils/creditPanel";
 import type { ItemUOM } from "@/types/pos.types";

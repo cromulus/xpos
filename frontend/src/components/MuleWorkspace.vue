@@ -5,11 +5,6 @@
     <button type="button" @click="open('orders')">Orders for Pickup</button>
     <a :href="'/desk/sales-order/new?customer=' + encodeURIComponent(customer || '')" target="_blank">New order</a>
     <a href="/desk/payment-entry/new" target="_blank">Account payment</a>
-    <!-- Why the chosen customer is tax-exempt; the desk form is where it is set (runbook O-10). -->
-    <span v-if="customer" class="mule-tax-exemption">
-      <span v-if="taxExemptReason">Tax exempt: <strong>{{ taxExemptReason }}</strong></span>
-      <a :href="customerTaxUrl(customer)" target="_blank" rel="noopener">Set tax exemption</a>
-    </span>
     <small>Practice site</small>
   </nav>
   <Teleport to="body">
@@ -67,11 +62,9 @@
 
 <script setup>
 import { nextTick, ref, watch } from 'vue';
-import { customerTaxUrl } from '@/services/customerTax';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
 // customer is the Customer ID (used in every call); customerName is what people read.
-// taxExemptReason: why the customer is tax-exempt (Farm / Reseller), blank when taxable.
-const props = defineProps({customer: String, customerName: String, taxExemptReason: String, profile: String, request: Function, cartHasItems: Boolean});
+const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean});
 const emit = defineEmits(['pickup']);
 const dialog = ref(null), mode = ref(''), term = ref(''), mine = ref(false);
 const rows = ref([]), busy = ref(false), error = ref(''), more = ref(false), start = ref(0);
@@ -128,7 +121,7 @@ watch(() => props.customer, () => { if (mode.value) search(0); });
 <style scoped>
 /* A compact counter toolbar and readable recipe sheet, using host typography. */
 .mule-counter-tools { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid hsl(var(--border)); background:hsl(var(--secondary)); color:hsl(var(--foreground)); flex-shrink:0; }
-.mule-counter-tools strong { margin-right:8px; } .mule-tax-exemption { display:inline-flex; gap:8px; align-items:center; } .mule-tax-exemption strong { margin-right:0; } .mule-counter-tools small { margin-left:auto; }
+.mule-counter-tools strong { margin-right:8px; } .mule-counter-tools small { margin-left:auto; }
 .mule-counter-tools button, .mule-workspace button { border:1px solid hsl(var(--border)); border-radius:5px; padding:7px 12px; background:hsl(var(--card)); color:hsl(var(--foreground)); cursor:pointer; font:inherit; }
 button:disabled { opacity:.5; cursor:not-allowed; } button:focus-visible, a:focus-visible, input:focus-visible { outline:3px solid hsl(var(--ring)); outline-offset:2px; }
 .mule-counter-tools a, .mule-workspace a { color:hsl(var(--primary)); text-decoration:underline; }

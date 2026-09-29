@@ -22,7 +22,7 @@ vi.mock("@/services/dbBridge", () => ({
 
 describe("Customer picker", () => {
 	it("shows one familiar code, business context and trailing sales", () => {
-		const row = shallowMount(CustomerSelect, { global: { renderStubDefaultSlot: true } })
+		const row = shallowMount(CustomerSelect, { global: { renderStubDefaultSlot: true, stubs: { CustomerStatusIcons: false } } })
 			.findAll("button").find(b => b.text().includes("Southern Woods"))!;
 		expect(row.text()).toContain("2980");
 		expect(row.text()).not.toContain("MC-CUST-2980");
@@ -31,7 +31,7 @@ describe("Customer picker", () => {
 		expect(row.text()).toContain("past 12 months");
 		expect(row.text()).not.toContain("919-555-0199");
 		expect(row.text()).not.toContain("private@example.com");
-		expect(row.find('[aria-label="Address on file"]').exists()).toBe(true);
+		expect(row.find('[aria-label="Address on file: can take delivery"]').exists()).toBe(true);
 		expect(row.find('[aria-label="Email missing"]').exists()).toBe(true);
 		expect(row.find('[aria-label="Phone on file"]').exists()).toBe(true);
 		expect(row.text()).toContain("Customer since 2014-03-12");

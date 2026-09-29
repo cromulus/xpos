@@ -51,17 +51,25 @@
 					</div>
 				</div>
 
-				<!-- Mule City: the exemption itself is the Customer's Tax Category, set on the desk. -->
-				<Button
-					v-if="cartStore.customer?.name"
-					variant="outline"
-					size="sm"
-					class="w-full"
-					data-testid="set-tax-exemption"
-					@click="openCustomerTaxSection(cartStore.customer.name)"
-				>
-					{{ __("Set tax exemption") }}
-				</Button>
+				<!-- Mule City (Bill 2026-09-29): the tax exemption is set here and only here.
+				     The reason sets the Customer's Tax Category (the site's Customer validation);
+				     the Customer's change history records who. Shown only to someone who may set it. -->
+				<div v-if="taxExemptReasons.length" role="group" :aria-label="__('Tax exemption')" data-testid="tax-exemption">
+					<label class="text-xs font-medium text-muted-foreground mb-1 block">{{ __("Tax exemption") }}</label>
+					<div class="flex flex-wrap gap-2">
+						<Button
+							v-for="choice in ['', ...taxExemptReasons]"
+							:key="choice"
+							type="button"
+							size="sm"
+							:variant="form.mule_tax_exempt_reason === choice ? 'default' : 'outline'"
+							:aria-pressed="form.mule_tax_exempt_reason === choice"
+							@click="form.mule_tax_exempt_reason = choice"
+						>
+							{{ choice ? __(choice) : __("None (taxable)") }}
+						</Button>
+					</div>
+				</div>
 
 				<div class="grid grid-cols-2 gap-3">
 					<div>
@@ -149,7 +157,6 @@ import { ref, computed, watch, nextTick } from "vue";
 import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
 import { showSuccess, showError, call } from "@/services/api";
-import { openCustomerTaxSection } from "@/services/customerTax";
 import {
 	cacheCustomerGroups,
 	getCachedCustomerGroups,
@@ -210,9 +217,13 @@ const defaultForm = () => ({
 	birthday: "",
 	customer_group: "",
 	territory: "",
+	mule_tax_exempt_reason: "",
 });
 
 const form = ref(defaultForm());
+// The exemption reasons this user may set (empty on sites without the field, or
+// for someone the desk would not let set it).
+const taxExemptReasons = computed<string[]>(() => window.xpos?.boot?.xpos_customer_tax_exempt_reasons || []);
 
 const canSave = computed(
 	() => !!form.value.customer_name.trim() && !!form.value.customer_group && !!form.value.territory,
@@ -243,6 +254,8 @@ async function loadCustomerData(customerName: string) {
 				birthday: ((info as Record<string, unknown>).birthday as string) || "",
 				customer_group: info.customer_group || "",
 				territory: info.territory || "",
+				// The till already knows why the customer is exempt (the tax lookup).
+				mule_tax_exempt_reason: cartStore.muleTaxExemptReason || "",
 			};
 		}
 		nextTick(() => {
@@ -325,16 +338,23 @@ async function saveChanges() {
 		Object.keys(payload).forEach((key) => {
 			if (payload[key] === undefined) delete payload[key];
 		});
+		// Sent only when it changed ("" makes the customer taxable again).
+		const exemptionChanged =
+			taxExemptReasons.value.length > 0 &&
+			form.value.mule_tax_exempt_reason !== (cartStore.muleTaxExemptReason || "");
+		if (exemptionChanged) payload.mule_tax_exempt_reason = form.value.mule_tax_exempt_reason;
 
 		const result = await customerStore.updateCustomer(cartStore.customer.name, payload);
 
 		cartStore.setCustomer({
+			...cartStore.customer,
 			name: cartStore.customer.name,
 			customer_name: result.customer_name || form.value.customer_name,
-			image: cartStore.customer.image,
 			mobile_no: result.mobile_no || form.value.mobile_no,
 			email_id: result.email_id || form.value.email_id,
 		});
+		// A new exemption changes this cart's taxes: look them up again.
+		if (exemptionChanged) cartStore.recheckTax();
 
 		showSuccess(__("Customer updated successfully!"));
 		close();

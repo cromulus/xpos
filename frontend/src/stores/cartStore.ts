@@ -99,6 +99,10 @@ export const useCartStore = defineStore("cart", () => {
 		email_id?: string;
 		customer_group?: string;
 		territory?: string;
+		// What the status icons show (from the customer search row).
+		xpos_has_address?: boolean;
+		xpos_has_email?: boolean;
+		xpos_has_phone?: boolean;
 	} | null>(null);
 	const discountPercentage = ref(0);
 	const discountAmount = ref(0);
@@ -109,7 +113,12 @@ export const useCartStore = defineStore("cart", () => {
   // Why the buyer is tax-exempt (Mule City), for the counter's customer bar.
   const muleTaxExemptReason = ref("");
   let muleTaxRequest = 0;
-  watch(() => [customer.value?.name, posStore.profileName], async ([buyer, profile]) => {
+  // Bumped to look the same customer's taxes up again (their exemption changed).
+  const muleTaxRecheck = ref(0);
+  function recheckTax(): void {
+    muleTaxRecheck.value++;
+  }
+  watch(() => [customer.value?.name, posStore.profileName, muleTaxRecheck.value], async ([buyer, profile]) => {
     if (!buyer || !profile) return;
     const request = ++muleTaxRequest;
     muleTaxPending.value = true;
@@ -907,6 +916,9 @@ export const useCartStore = defineStore("cart", () => {
 			email_id?: string;
 			customer_group?: string;
 			territory?: string;
+			xpos_has_address?: boolean;
+			xpos_has_email?: boolean;
+			xpos_has_phone?: boolean;
 		} | null,
 	): void {
 		customer.value = cust;
@@ -1868,7 +1880,7 @@ export const useCartStore = defineStore("cart", () => {
 		customer,
 		discountPercentage,
 		discountAmount,
-		muleTaxPending, muleTaxError, muleTaxCategory, muleTaxExemptReason,
+		muleTaxPending, muleTaxError, muleTaxCategory, muleTaxExemptReason, recheckTax,
 		serverPreview, serverPreviewPending, serverPreviewError, serverLinesDiffer,
 		previewExpectedTotal, ticketChanged,
 		showPaymentDialog,
