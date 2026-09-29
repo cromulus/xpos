@@ -1,0 +1,49 @@
+# Mule City: every change to the X POS screens runs its unit tests and type
+# check before it can be tagged (MuleCity-ispl, 2026-09-29). Frontend only:
+# no secrets, no bench, nothing deployed. The Python API tests and the
+# Cypress bench suite need a Frappe site and run on the Mule bench instead.
+name: Frontend checks
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - "feat/**"
+      - "fix/**"
+      - "ci/**"
+      - "mule-**"
+    tags:
+      - "mule-*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-checks-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vitest-and-types:
+    name: Vitest + vue-tsc
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install
+        run: yarn install --frozen-lockfile
+
+      - name: Unit tests (vitest)
+        run: yarn test:run
+
+      - name: Type check (vue-tsc and the e2e specs)
+        run: yarn typecheck
