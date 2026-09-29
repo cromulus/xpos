@@ -1,6 +1,6 @@
 # Mule City XPOS release notes
 
-## mule-v2.10.1-mc16 (2026-09-29): cashier initials at Pay (`feat/cashier-switching`, MuleCity-fb00.2)
+## mule-v2.10.1-mc17 (2026-09-29): cashier initials at Pay (`feat/cashier-switching`, MuleCity-fb00.2)
 
 Bill (2026-09-29): the register signs in as one shared "POS" user; every sale
 and return records who rang it by the cashier's initials. Replaces the earlier
