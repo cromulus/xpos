@@ -71,14 +71,20 @@ export function chooseCustomer(name: string = customer()) {
 }
 
 /**
- * On a register that asks for cashier initials at Pay (Mule City's shared counter
- * login, MuleCity-fb00), type listed initials before choosing the tender; a site
- * without the flag shows no field and this does nothing.
+ * Save & Print with Enter, as the counter does. On a register that asks for cashier
+ * initials at Pay (Mule City's shared counter login, MuleCity-fb00), type listed
+ * initials first: Enter in that box moves to the amount, whose Enter completes the
+ * sale. A site without the flag shows no box and Enter goes to the dialog as before.
  */
-export function typeCashierInitials(initials: string = "LE") {
+export function payWithEnter(initials: string = "LE") {
 	cy.get("[role='dialog']").then(($dialog) => {
 		const field = $dialog.find("[data-testid='cashier-initials-input']");
-		if (field.length) cy.wrap(field).clear().type(initials);
+		if (!field.length) {
+			cy.wrap($dialog).type("{enter}");
+			return;
+		}
+		cy.wrap(field).clear().type(`${initials}{enter}`);
+		cy.focused().type("{enter}");
 	});
 }
 
@@ -88,10 +94,9 @@ export function ringUpOneBag(mode: string, buyer: string = customer()) {
 	cy.contains(item()).first().click();
 	cy.cartRows().should("have.length", 1);
 	cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
-	typeCashierInitials();
 	cy.get(`[data-testid='payment-method'][data-mode='${mode}']`).click();
 	// Selecting the tender fills the remaining amount; Enter is Save & Print.
-	cy.get("[role='dialog']").type("{enter}");
+	payWithEnter();
 	cy.get("[role='dialog']").should("not.exist");
 	cy.cartRows().should("have.length", 0);
 }
