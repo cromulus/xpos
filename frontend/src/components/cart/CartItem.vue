@@ -32,6 +32,14 @@
 				>
 					{{ __("Free") }}
 				</span>
+				<!-- The mill still has to make it: Pay orders it for pickup (Mule City). -->
+				<span
+					v-if="cartStore.isOrderLine(item.uid)"
+					data-testid="cart-order-badge"
+					class="ms-1 px-1 py-px rounded text-[9px] font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300"
+				>
+					{{ cartStore.pickupDate ? __("Order: pickup {0}", [cartStore.pickupDate]) : __("Order") }}
+				</span>
 			</p>
 
 			<div class="flex items-center gap-1 mt-0.5 flex-wrap">

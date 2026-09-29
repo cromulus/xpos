@@ -197,6 +197,8 @@ export interface POSItem {
 	barcode?: string;
 	item_tax_template?: string;
 	is_stock_item?: boolean;
+	/** Made to order (a site hook names it): sold before any stock exists. */
+	is_made_to_order?: number | boolean;
 	has_variants?: boolean;
 	variant_of?: string;
 	is_template?: boolean;

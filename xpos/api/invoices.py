@@ -318,6 +318,26 @@ def _sales_order_line(row):
 	return line
 
 
+def _set_order_advances(invoice_doc) -> None:
+	"""A ticket billing a Sales Order uses what was paid on that order (Mule City, MuleCity-fxh).
+
+	A customer may pay for an order when it is placed and pick it up later.
+	ERPNext takes a Payment Entry against the order as an advance, but it never
+	allocates advances to a POS invoice by itself (``allocate_advances_automatically``
+	is skipped for ``is_pos``). So the order's own advances are set here, capped
+	at this ticket's total the native way (``set_advances``), and the register
+	collects only the rest. The Mule app links them to the ticket on submit
+	(``counter_mix_orders.reconcile_pos_advances``). Unallocated payments that
+	aren't for these orders are left alone.
+	"""
+	company_currency = frappe.get_cached_value("Company", invoice_doc.company, "default_currency")
+	if not invoice_doc.get("conversion_rate") and invoice_doc.currency == company_currency:
+		invoice_doc.conversion_rate = 1
+	invoice_doc.only_include_allocated_payments = 1
+	invoice_doc.calculate_taxes_and_totals()
+	invoice_doc.set_advances()
+
+
 def _mule_order_fields(row):
 	"""Carry only source links and accepted-quote evidence across invoice transports."""
 	from mulecity_erpnext.mule_feed_formula.transaction_validation import _BOUND_ROW_FIELDS
@@ -342,7 +362,10 @@ def check_expected_total(invoice_doc, data: dict) -> None:
 	expected = data.get("expected_total")
 	if expected in (None, "") or cint(invoice_doc.get("is_return")):
 		return
-	posted = flt(invoice_doc.get("rounded_total") or invoice_doc.get("grand_total"))
+	# What the register collected: the total less anything paid on the order before.
+	posted = flt(invoice_doc.get("rounded_total") or invoice_doc.get("grand_total")) - flt(
+		invoice_doc.get("total_advance")
+	)
 	precision = get_currency_precision(invoice_currency_of(invoice_doc))
 	if flt(posted, precision) != flt(expected, precision):
 		currency = invoice_currency_of(invoice_doc)
@@ -792,6 +815,8 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 	from mulecity_erpnext.pos_workspace import apply_customer_taxes
 	apply_customer_taxes(invoice_doc)
 	_apply_invoice_delivery_charge_fields(invoice_doc, data)
+	if not is_return and any(row.get("so_detail") for row in invoice_doc.items):
+		_set_order_advances(invoice_doc)
 
 	loyalty_paid = 0
 	if invoice_doc.redeem_loyalty_points and invoice_doc.loyalty_points:
@@ -1957,6 +1982,8 @@ def _build_invoice_response(invoice_doc: dict) -> dict:
 		"paid_amount": invoice_doc.paid_amount,
 		"change_amount": invoice_doc.change_amount,
 		"outstanding_amount": getattr(invoice_doc, "outstanding_amount", 0),
+		# Paid on the order before this ticket (a prepaid pickup, Mule City).
+		"total_advance": getattr(invoice_doc, "total_advance", 0) or 0,
 		"customer": invoice_doc.customer,
 		"customer_name": invoice_doc.customer_name,
 		"posting_date": str(invoice_doc.posting_date),
