@@ -47,3 +47,19 @@ describe("Customer Mixes", () => {
 		expect(scroll).toHaveBeenCalled();
 	});
 });
+
+describe("The register's shared login only sells (Bill, 2026-09-29, MuleCity-fb00)", () => {
+	it("offers no desk shortcuts: no new order, account payment, prepare order, formula editor or library", async () => {
+		Element.prototype.scrollIntoView = vi.fn();
+		const { request } = await openMixes();
+		[...document.body.querySelectorAll("button")].find(b => b.textContent === "View recipe")!.click();
+		await flushPromises();
+		const text = document.body.textContent || "";
+		expect(text).toContain("CORN");
+		for (const gone of ["New order", "Account payment", "Prepare order", "Edit in formula editor", "Full formula library"]) {
+			expect(text).not.toContain(gone);
+		}
+		expect(document.querySelectorAll('a[href^="/desk/sales-order/new"], a[href^="/desk/payment-entry"]').length).toBe(0);
+		expect(request.mock.calls.map(c => c[0])).not.toContain("mulecity_erpnext.pos_workspace.create_mix_order");
+	});
+});

@@ -171,6 +171,9 @@ doc_events = {
 		"before_cancel": "xpos.x_pos.api.invoice.before_cancel",
 		"on_cancel": "xpos.x_pos.api.invoice.on_cancel",
 	},
+	"POS Profile": {
+		"validate": "xpos.x_pos.api.pos_profile.validate",
+	},
 	"Customer": {
 		"validate": "xpos.x_pos.api.customer.validate",
 		"after_insert": "xpos.x_pos.api.customer.after_insert",

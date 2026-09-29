@@ -204,3 +204,32 @@ class TestNormalizeInitials(unittest.TestCase):
 	def test_trims_and_uppercases(self):
 		self.assertEqual(invoices.normalize_initials("  le "), "LE")
 		self.assertEqual(invoices.normalize_initials(None), "")
+
+
+class TestCashierListHasNoDuplicates(unittest.TestCase):
+	"""An owner setting up the cashier list cannot give two people the same
+	initials: Pay could not tell whose sale it was (Bill, 2026-09-29)."""
+
+	def profile(self, *initials):
+		from types import SimpleNamespace
+
+		rows = [SimpleNamespace(initials=i) for i in initials]
+		doc = MagicMock()
+		doc.name = "Mule City Counter"
+		doc.get.side_effect = lambda key, default=None: rows if key == "xpos_cashiers" else default
+		return doc, rows
+
+	def test_distinct_initials_are_saved_trimmed_and_uppercase(self):
+		from xpos.x_pos.api import pos_profile
+
+		doc, rows = self.profile("le", " MA ")
+		pos_profile.validate_cashier_initials(doc)
+		self.assertEqual([r.initials for r in rows], ["LE", "MA"])
+
+	def test_negative_the_same_initials_twice_are_refused(self):
+		from xpos.x_pos.api import pos_profile
+
+		doc, _rows = self.profile("LE", "le ")
+		with patch.object(pos_profile.frappe, "throw", side_effect=raising_throw):
+			with self.assertRaisesRegex(Exception, "more than once"):
+				pos_profile.validate_cashier_initials(doc)
