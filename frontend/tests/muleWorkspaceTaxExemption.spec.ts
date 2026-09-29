@@ -1,6 +1,6 @@
-/** Bill (2026-09-29): the tax exemption is set in Edit Customer only, and why a
- * customer is exempt shows with the customer's status icons on the cart. The
- * Mule City bar above the sale no longer carries either. */
+/** Bill (2026-09-29): the tax exemption is set only from Edit Customer (its
+ * button opens the desk), and why a customer is exempt shows with the
+ * customer's status icons on the cart. The Mule City bar carries neither. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import MuleWorkspace from "@/components/MuleWorkspace.vue";

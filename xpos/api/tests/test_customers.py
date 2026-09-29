@@ -199,52 +199,6 @@ class TestUpdateCustomer(unittest.TestCase):
 		mock_customer.save.assert_called_once()
 
 
-class TestUpdateCustomerTaxExemption(unittest.TestCase):
-	"""Mule City (Bill 2026-09-29): the tax exemption is set in the customer edit
-	dialog, and only by someone who may set it on the desk."""
-
-	def _customer(self):
-		doc = MagicMock()
-		doc.name = "CUST-001"
-		return doc
-
-	@patch("xpos.api.customers.customer_tax_exempt_reasons", return_value=["Farm", "Reseller (resale certificate)"])
-	@patch("xpos.api.customers.frappe")
-	def test_sets_the_reason(self, mock_frappe, _reasons):
-		doc = self._customer()
-		mock_frappe.get_doc.return_value = doc
-		customers.update_customer("CUST-001", {"mule_tax_exempt_reason": "Farm"})
-		doc.set.assert_any_call("mule_tax_exempt_reason", "Farm")
-		doc.save.assert_called_once()
-
-	@patch("xpos.api.customers.customer_tax_exempt_reasons", return_value=["Farm"])
-	@patch("xpos.api.customers.frappe")
-	def test_blank_makes_the_customer_taxable(self, mock_frappe, _reasons):
-		doc = self._customer()
-		mock_frappe.get_doc.return_value = doc
-		customers.update_customer("CUST-001", {"mule_tax_exempt_reason": ""})
-		doc.set.assert_any_call("mule_tax_exempt_reason", None)
-
-	@patch("xpos.api.customers.customer_tax_exempt_reasons", return_value=[])
-	@patch("xpos.api.customers.frappe")
-	def test_refused_for_someone_who_may_not_set_it(self, mock_frappe, _reasons):
-		mock_frappe.throw.side_effect = frappe.PermissionError
-		mock_frappe.PermissionError = frappe.PermissionError
-		mock_frappe.get_doc.return_value = self._customer()
-		with self.assertRaises(frappe.PermissionError):
-			customers.update_customer("CUST-001", {"mule_tax_exempt_reason": "Farm"})
-
-	@patch("xpos.api.customers.customer_tax_exempt_reasons", return_value=["Farm"])
-	@patch("xpos.api.customers.frappe")
-	def test_an_unknown_reason_is_refused(self, mock_frappe, _reasons):
-		mock_frappe.throw.side_effect = frappe.ValidationError
-		doc = self._customer()
-		mock_frappe.get_doc.return_value = doc
-		with self.assertRaises(frappe.ValidationError):
-			customers.update_customer("CUST-001", {"mule_tax_exempt_reason": "Church"})
-		doc.save.assert_not_called()
-
-
 class TestGetCustomerBalance(unittest.TestCase):
 	"""Tests for get_customer_balance function."""
 

@@ -543,18 +543,6 @@ def update_customer(customer: str, data: str | dict):
 			except Exception:
 				pass
 
-	# Mule City: why the customer is tax-exempt, set in the customer edit dialog
-	# (blank = taxable). Only a user who may write the field on the desk may set
-	# it here; the Customer's change history records who did.
-	if TAX_EXEMPT_REASON_FIELD in data:
-		reason = data.get(TAX_EXEMPT_REASON_FIELD) or None
-		allowed = customer_tax_exempt_reasons()
-		if not allowed:
-			frappe.throw(_("You may not change this customer's tax exemption."), frappe.PermissionError)
-		if reason and reason not in allowed:
-			frappe.throw(_("{0} is not a tax exemption reason you can set here").format(reason))
-		doc.set(TAX_EXEMPT_REASON_FIELD, reason)
-
 	doc.save(ignore_permissions=True)
 
 	return {
@@ -562,7 +550,6 @@ def update_customer(customer: str, data: str | dict):
 		"customer_name": doc.customer_name,
 		"mobile_no": doc.mobile_no,
 		"email_id": doc.email_id,
-		TAX_EXEMPT_REASON_FIELD: doc.get(TAX_EXEMPT_REASON_FIELD) if doc.meta.has_field(TAX_EXEMPT_REASON_FIELD) else None,
 	}
 
 
