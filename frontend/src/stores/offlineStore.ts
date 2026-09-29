@@ -36,6 +36,17 @@ export const useOfflineStore = defineStore("offline", () => {
 		const msg = error instanceof Error ? error.message : String(error ?? "");
 		return /insufficient stock|not enough stock/i.test(msg);
 	}
+
+	/**
+	 * The server looked at the sale and said no (a discount over the cap, a
+	 * missing field, no permission): the same sale will be refused every time,
+	 * so it goes straight to the dead-letter list for a manager instead of
+	 * retrying. Network failures and server errors carry no such type and retry.
+	 */
+	function isRefusedByServer(error: unknown): boolean {
+		const excType = (error as { excType?: string })?.excType || "";
+		return /ValidationError$|^MandatoryError$|^PermissionError$/.test(excType);
+	}
 	const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 	let syncIntervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -261,7 +272,8 @@ export const useOfflineStore = defineStore("offline", () => {
 				} catch (error: unknown) {
 					invoice.error = error instanceof Error ? error.message : String(error);
 
-					if (isStockRejection(error)) {
+					const stockRejection = isStockRejection(error);
+					if (stockRejection || isRefusedByServer(error)) {
 						rejected++;
 						invoice.status = "dead_letter";
 						syncErrors.value.push(
@@ -273,7 +285,7 @@ export const useOfflineStore = defineStore("offline", () => {
 								error: invoice.error,
 							});
 
-						await reconcileStockFromServer(itemCodesOf(invoice));
+						if (stockRejection) await reconcileStockFromServer(itemCodesOf(invoice));
 						continue;
 					}
 
@@ -309,7 +321,7 @@ export const useOfflineStore = defineStore("offline", () => {
 			if (rejected > 0) {
 				showError(
 					__(
-						"{0} offline invoice(s) were rejected for insufficient stock and will not retry. Review them in the pending list.",
+						"{0} offline invoice(s) were refused by the server and will not retry. Review them in the pending list.",
 						[String(rejected)],
 					),
 				);

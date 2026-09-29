@@ -10,6 +10,7 @@ import { usePosStore } from "./stores/posStore";
 import { initializeNamespaces } from "./utils";
 import { dayjs } from "@/utils/datetime";
 import translate from "./lib/translate";
+import { requestPersistentStorage } from "@/utils/persistentStorage";
 
 if (!isElectron() && import.meta.env.PROD) {
 	if ("serviceWorker" in navigator) {
@@ -66,6 +67,7 @@ async function initializeBrowserStorage(): Promise<void> {
 	try {
 		const { ensureDatabaseReady } = await import("@/services/idbService");
 		await ensureDatabaseReady();
+		await requestPersistentStorage();
 	} catch (error) {
 		console.warn("[XPOS] Browser storage initialization failed", error);
 	}
