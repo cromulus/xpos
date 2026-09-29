@@ -64,10 +64,15 @@ function openXposOnline() {
 }
 
 function chooseCustomer() {
-	cy.contains("button", /Walk-in Customer|Select Customer|Customer/i).first().click();
-	cy.get("[role='dialog'] input").first().type(customer());
-	cy.contains("[role='dialog'] *", customer(), { timeout: 15000 }).first().click();
-	cy.get("[role='dialog']").should("not.exist");
+	// The cart's customer button ("Click to change customer"); skip if the
+	// customer is already the cart's (a new ticket starts on the profile's default).
+	cy.contains("button", "Click to change customer").then(($button) => {
+		if ($button.text().includes(customer())) return;
+		cy.wrap($button).click();
+		cy.get("[role='dialog'] input").first().type(customer());
+		cy.contains("[role='dialog'] *", customer(), { timeout: 15000 }).first().click();
+		cy.get("[role='dialog']").should("not.exist");
+	});
 }
 
 /** One bag, paid in full with `mode`, Save & Print. Returns the till's total. */
@@ -89,6 +94,17 @@ describe("selling while the store's internet is down", () => {
 	beforeEach(() => {
 		cy.benchLogin();
 		ensureOpenShift();
+	});
+
+	// The network cut is the browser's, not the page's: always put it back, or a
+	// failed story leaves the next one offline before it can even load.
+	afterEach(() => {
+		cy.wrap(null).then(() =>
+			Cypress.automation("remote:debugger:protocol", {
+				command: "Network.emulateNetworkConditions",
+				params: { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
+			}),
+		);
 	});
 
 	it("sells two tickets offline, prints the offline receipts, and both post when the internet returns", () => {
@@ -153,7 +169,8 @@ describe("selling while the store's internet is down", () => {
 				"the good sale to sync and the refused one to wait",
 			);
 			cy.pendingInvoices().then(([refused]) => {
-				expect(refused.error).to.match(/at most 25/);
+				// XPOS's own line cap or the fork's ticket cap, whichever sees it first.
+				expect(refused.error).to.match(/at most 25|maximum allowed 25/);
 			});
 			cy.contains(/need attention/i).should("be.visible");
 			customerInvoices().then((after: Array<{ name: string }>) => {
