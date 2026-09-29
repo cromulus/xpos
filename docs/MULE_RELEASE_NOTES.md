@@ -1,6 +1,6 @@
 # Mule City XPOS release notes
 
-## mule-v2.10.1-mc17 (2026-09-29): cashier initials at Pay (`feat/cashier-switching`, MuleCity-fb00.2)
+## mule-v2.10.1-mc19 (2026-09-29): cashier initials at Pay (`feat/cashier-switching`, MuleCity-fb00.2)
 
 Bill (2026-09-29): the register signs in as one shared "POS" user; every sale
 and return records who rang it by the cashier's initials. Replaces the earlier
@@ -26,11 +26,12 @@ PIN / cashier-switching design.
   sells; account payments are Pay's Receive on Account (Bill, 2026-09-29).
 - Offline e2e helper types the initials at Pay (`payWithEnter`); a timed-out wait
   prints what it last read.
-- Gate: vitest 538, vue-tsc clean, fork CI green (run 36641103206); erp2 slot 4
-  with Mule feat/cashier-accounts 3c7623ff natives RESULT PASS ran=216 (incl.
-  xpos test_cashier_initials, test_made_to_order); offline mode RESULT PASS
-  vitest 33/33, Cypress 3/3.
-- Found, not fixed: an offline sale paid with change dead-letters on sync with
+- Gate (on mc18, 9839236): vitest 561, vue-tsc clean, fork CI green (run
+  36645218348); erp2 slot 4 with Mule feat/cashier-accounts 426ee812: natives
+  RESULT PASS ran=405 failures=0 skipped=1 (incl. xpos test_cashier_initials,
+  test_invoices, test_pricing_rules, test_discount_cap, test_printing,
+  test_made_to_order); offline RESULT PASS vitest 33/33, Cypress 3/3.
+- Found, fixed separately (MuleCity-ztb9, fix/offline-change-legs): an offline sale paid with change dead-letters on sync with
   "POS Change Leg Row #1: Value missing for: Currency".
 
 ## mule-v2.10.1-mc7 (2026-09-28)
