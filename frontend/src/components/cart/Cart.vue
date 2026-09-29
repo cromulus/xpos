@@ -127,6 +127,15 @@
 				<AlertTriangle class="w-3.5 h-3.5 shrink-0" />
 				{{ __("This sale exceeds the credit limit by {0}", [money(projectedBalance - customerCreditLimit)]) }}
 			</p>
+			<!-- A custom mix the mill still has to make is ordered for pickup (Mule City, MuleCity-3j1m). -->
+			<label
+				v-if="cartStore.hasOrderLines"
+				class="mt-1 flex items-center gap-2 text-xs font-semibold"
+				data-testid="cart-pickup-date"
+			>
+				{{ __("Mix pickup date") }}
+				<input v-model="cartStore.pickupDate" type="date" required class="border border-input rounded px-1 py-0.5 bg-card" />
+			</label>
 			<ReceiveOnAccountDialog
 				:customer="customerStore.showReceiveOnAccount ? cartStore.customer?.name || null : null"
 				:customer-label="cartStore.customerName"

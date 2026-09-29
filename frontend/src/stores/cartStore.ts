@@ -84,6 +84,21 @@ interface ServerPreview {
 	amount_due: number;
 }
 
+/**
+ * What the Mule site's ``counter_mix_orders.counter_quote`` returns for a cart
+ * holding made-to-order mixes, keyed to the cart it priced (Mule City,
+ * MuleCity-3j1m): today's ticket and the orders, priced separately.
+ */
+interface CounterQuote {
+	key: string;
+	ticket_due: number;
+	orders_total: number;
+	orders: { item_code: string; qty: number; uom?: string; grand_total: number }[];
+}
+
+/** A cart's custom mixes are paid now (an advance on the order) or at pickup. */
+export type MixPayMode = "now" | "pickup";
+
 /** Stock quantities closer than this count as equal (9-place UOM factors). */
 const STOCK_QTY_TOLERANCE = 1e-6;
 
@@ -155,6 +170,10 @@ export const useCartStore = defineStore("cart", () => {
 	// payment the server builds the ticket save would post and the register charges
 	// that. It is kept only while the cart is unchanged (same key).
 	const serverPreview = ref<ServerPreview | null>(null);
+	// Custom mixes ordered at the counter (Mule City, MuleCity-3j1m).
+	const pickupDate = ref("");
+	const mixPayMode = ref<MixPayMode>("now");
+	const counterQuote = ref<CounterQuote | null>(null);
 	// Declared before anything reads the cart's invoice data (the preview key does).
 	let invoiceLocalId = "";
 	const serverPreviewPending = ref(false);
@@ -362,6 +381,10 @@ export const useCartStore = defineStore("cart", () => {
 
 	const grandTotal = computed(() => {
 		const posStore = usePosStore();
+		// A cart with custom mix orders: today's ticket, plus the orders when paid now.
+		if (counterQuote.value && counterQuote.value.key === previewKey.value) {
+			return counterQuote.value.ticket_due + (mixPayMode.value === "now" ? counterQuote.value.orders_total : 0);
+		}
 		if (serverPreview.value && serverPreview.value.key === previewKey.value) {
 			// The same settlements the cart's own total takes off below.
 			let due = serverPreview.value.amount_due;
@@ -504,6 +527,29 @@ export const useCartStore = defineStore("cart", () => {
 	function getBatchQty(item: POSItem, batchNo: string): number | undefined {
 		const batches = item.batches as { batch_no: string; qty: number }[] | undefined;
 		return batches?.find((b) => b.batch_no === batchNo)?.qty;
+	}
+
+	/**
+	 * Lines the mill still has to make: a made-to-order mix whose quantity is more
+	 * than the made bags on hand. Pay turns the rest into an order (the server
+	 * decides the exact split, leaving out bags reserved for other orders).
+	 */
+	const orderLineUids = computed(
+		() =>
+			new Set(
+				items.value
+					.filter(
+						(item: CartItem) =>
+							Number(item.is_made_to_order) === 1 &&
+							!(item as any).so_detail &&
+							item.qty * (item.conversion_factor || 1) > Math.max(item.actual_qty ?? 0, 0) + STOCK_QTY_TOLERANCE,
+					)
+					.map((item: CartItem) => item.uid),
+			),
+	);
+	const hasOrderLines = computed(() => !isReturnMode.value && orderLineUids.value.size > 0);
+	function isOrderLine(uid: string | undefined): boolean {
+		return !!uid && orderLineUids.value.has(uid);
 	}
 
 	function canAddItem(item: POSItem): { allowed: boolean; message?: string } {
@@ -1320,6 +1366,9 @@ export const useCartStore = defineStore("cart", () => {
 	function clearCart(): void {
 		invoiceLocalId = "";
 		serverPreview.value = null;
+		counterQuote.value = null;
+		pickupDate.value = "";
+		mixPayMode.value = "now";
 		items.value = [];
 		selectedCartIndex.value = -1;
 		discountPercentage.value = 0;
@@ -1404,6 +1453,7 @@ export const useCartStore = defineStore("cart", () => {
 	// A cart that changes after the check is never charged its own sum: drop the
 	// preview, and if payment is open close it so Pay checks again.
 	watch(previewKey, (key) => {
+		if (counterQuote.value && counterQuote.value.key !== key) counterQuote.value = null;
 		if (!serverPreview.value || serverPreview.value.key === key) return;
 		serverPreview.value = null;
 		if (showPaymentDialog.value) {
@@ -1421,6 +1471,10 @@ export const useCartStore = defineStore("cart", () => {
 
 	async function openPaymentDialog(): Promise<void> {
 		if (muleTaxPending.value || muleTaxError.value || serverPreviewPending.value) return;
+		if (hasOrderLines.value) {
+			await openMixOrderPayment();
+			return;
+		}
 		// Offline the server can't be asked; the offline queue posts what the server decides.
 		if (!isReturnMode.value && isOnline()) {
 			const key = previewKey.value;
@@ -1440,6 +1494,40 @@ export const useCartStore = defineStore("cart", () => {
 			} finally {
 				serverPreviewPending.value = false;
 			}
+		}
+		showPaymentDialog.value = true;
+	}
+
+	/**
+	 * Pay for a cart with custom mixes to order (Mule City, MuleCity-3j1m): the site
+	 * prices today's ticket and the orders separately, placing the orders only
+	 * inside a rolled-back savepoint (short ingredients are refused here). Orders
+	 * need the server, so an offline till refuses them.
+	 */
+	async function openMixOrderPayment(): Promise<void> {
+		serverPreviewError.value = "";
+		if (!isOnline()) {
+			serverPreviewError.value = __("Custom mixes can't be ordered offline. Go online, or take the order at the desk.");
+			return;
+		}
+		if (!pickupDate.value) {
+			serverPreviewError.value = __("Choose a pickup date for the custom mix order.");
+			return;
+		}
+		const key = previewKey.value;
+		serverPreviewPending.value = true;
+		try {
+			const result = await call<Omit<CounterQuote, "key">>("mulecity_erpnext.counter_mix_orders.counter_quote", {
+				data: JSON.stringify(previewPayload()),
+			});
+			counterQuote.value = { ...result, key };
+			if (key !== previewKey.value) return;
+		} catch (error) {
+			counterQuote.value = null;
+			serverPreviewError.value = extractErrorMessage(error);
+			return;
+		} finally {
+			serverPreviewPending.value = false;
 		}
 		showPaymentDialog.value = true;
 	}
@@ -1715,6 +1803,7 @@ export const useCartStore = defineStore("cart", () => {
 			data.pos_change_legs = changeLegs.value;
 		}
 
+		if (hasOrderLines.value) (data as any).pickup_date = pickupDate.value;
 		if (orderNotes.value) data.pos_notes = orderNotes.value;
 		if (deliveryDate.value) data.pos_delivery_date = deliveryDate.value;
 		if (salesPerson.value) data.sales_person = salesPerson.value;
@@ -1982,5 +2071,10 @@ export const useCartStore = defineStore("cart", () => {
 		closeDraftDialog,
 		setDeliveryCharge,
 		itemRatePrecision,
+		pickupDate,
+		mixPayMode,
+		counterQuote,
+		hasOrderLines,
+		isOrderLine,
 	};
 });
