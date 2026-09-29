@@ -305,6 +305,7 @@ import __ from "@/lib/translate";
 import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
 import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
 import { isOnline } from "@/utils";
+import { showsCreditInfo } from "@/utils/creditPanel";
 import type { ItemUOM } from "@/types/pos.types";
 
 const posStore = usePosStore();
@@ -376,11 +377,14 @@ const projectedBalance = computed(() => (customerBalance.value ?? 0) + Math.max(
 const isOverCreditLimit = computed(
 	() => customerCreditLimit.value > 0 && projectedBalance.value > customerCreditLimit.value,
 );
-const showCreditInfo = computed(
-	() =>
-		posStore.showCustomerBalance &&
-		!cartStore.isReturnMode &&
-		((customerBalance.value ?? 0) > 0 || customerCreditLimit.value > 0),
+const showCreditInfo = computed(() =>
+	showsCreditInfo({
+		showCustomerBalance: posStore.showCustomerBalance,
+		isReturnMode: cartStore.isReturnMode,
+		isDefaultCustomer: !!posStore.defaultCustomer && cartStore.customer?.name === posStore.defaultCustomer,
+		balance: customerBalance.value ?? 0,
+		creditLimit: customerCreditLimit.value,
+	}),
 );
 
 // A payment toward what the customer owes, when the profile and role allow it
