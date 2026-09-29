@@ -296,6 +296,28 @@ def find_invoice_by_local_id(local_id: str | None, warehouse: str | None = None)
 	return None
 
 
+def _sales_order_line(row):
+	"""The submitted Sales Order Item a cart line bills, or None.
+
+	Read server-side, so the client can't pick the rate: the line must name a
+	submitted order's row for the same item.
+	"""
+	so_detail = row.get("so_detail")
+	if not so_detail:
+		return None
+	line = frappe.db.get_value(
+		"Sales Order Item",
+		so_detail,
+		["parent", "item_code", "rate", "price_list_rate", "discount_percentage", "discount_amount", "docstatus"],
+		as_dict=True,
+	)
+	if not line or line.docstatus != 1 or line.item_code != row.get("item_code"):
+		return None
+	if row.get("sales_order") and row.get("sales_order") != line.parent:
+		return None
+	return line
+
+
 def _mule_order_fields(row):
 	"""Carry only source links and accepted-quote evidence across invoice transports."""
 	from mulecity_erpnext.mule_feed_formula.transaction_validation import _BOUND_ROW_FIELDS
@@ -351,12 +373,20 @@ def pricing_rule_rates(invoice_doc, pos) -> list[float]:
 	plain line discount. So the cap starts from the rate ERPNext's pricing engine
 	gives each line, run as the cart runs it (xpos.api.pricing_rules). With the
 	profile ignoring Pricing Rules, or if the engine fails, the list rate is used.
+	A line billed from a Sales Order starts from the order's own rate: its
+	discount was agreed on the order, not given at the counter (MuleCity-jfdy).
 	"""
+	lines = _capped_lines(invoice_doc)
+	rates = _engine_rates(invoice_doc, pos, lines)
+	return [flt(row.rate) if row.get("so_detail") else rate for row, rate in zip(lines, rates)]
+
+
+def _engine_rates(invoice_doc, pos, lines) -> list[float]:
+	"""The pricing engine's rate for each line, or its list rate."""
 	from erpnext.stock.get_item_details import get_conversion_factor
 
 	from xpos.api.pricing_rules import apply_item_rules, build_invoice_context, enrich_lines, pricing_rules_ignored
 
-	lines = _capped_lines(invoice_doc)
 	list_rates = [flt(row.price_list_rate) for row in lines]
 	if not lines or pricing_rules_ignored(pos.name):
 		return list_rates
@@ -578,8 +608,15 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 		item_rate = flt(item_data.get("rate", 0), rate_precision)
 		item_qty = flt(item_data.get("qty", 1), 3)
 		is_free_item = cint(item_data.get("is_free_item"))
+		# A line billed from a Sales Order keeps the order's price (Mule City,
+		# MuleCity-jfdy): the customer was quoted it, and may have prepaid it.
+		order_line = None if is_return else _sales_order_line(item_data)
+		if order_line:
+			# Drop the till's own price and discount for this line; the order's
+			# rates are set on the row below.
+			item_data = {**item_data, "discount_percentage": 0, "discount_amount": 0}
 
-		if not allow_rate_change and not is_free_item:
+		if not allow_rate_change and not is_free_item and not order_line:
 			price_list = pos.get("selling_price_list")
 			if price_list:
 				# The price this customer pays today in this UOM, as ERPNext chooses it.
@@ -629,7 +666,8 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 		disc_amt = flt(item_data.get("discount_amount", 0), discount_precision)
 
 		max_discount = flt(pos.get("max_discount_percentage_allowed", 0))
-		if max_discount > 0 and disc_pct > max_discount and not is_free_item:
+		# An order's own discount was agreed at the desk, not typed at the till.
+		if max_discount > 0 and disc_pct > max_discount and not is_free_item and not order_line:
 			frappe.throw(
 				_("Item {0}: Discount {1}% exceeds maximum allowed {2}%").format(
 					item_data.get("item_code"), disc_pct, max_discount
@@ -650,6 +688,11 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 			item.rate = flt(item_rate - disc_amt, rate_precision)
 		else:
 			item.rate = item_rate
+		if order_line:
+			item.price_list_rate = flt(order_line.price_list_rate, rate_precision)
+			item.discount_percentage = flt(order_line.discount_percentage)
+			item.discount_amount = flt(order_line.discount_amount, discount_precision)
+			item.rate = flt(order_line.rate, rate_precision)
 		if item_data.get("serial_no"):
 			item.serial_no = item_data.get("serial_no")
 		if item_data.get("batch_no"):
