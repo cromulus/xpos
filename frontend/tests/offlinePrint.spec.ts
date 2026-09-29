@@ -14,7 +14,7 @@ vi.mock("@/services/dbBridge", () => ({
 	getCachedReceiptContext,
 	getCachedCurrencyMeta: vi.fn().mockResolvedValue([]),
 }));
-vi.mock("@/services/api", () => ({ call: vi.fn(), showError }));
+vi.mock("@/services/api", () => ({ call: vi.fn(), showError, showInfo: vi.fn() }));
 vi.mock("@/stores/posStore", () => ({ usePosStore: () => posStore }));
 
 import { printHtml, usePrintInvoice } from "@/composables/usePrintInvoice";

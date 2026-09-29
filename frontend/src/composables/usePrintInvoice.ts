@@ -1,9 +1,10 @@
 import { usePosStore } from "@/stores/posStore";
-import { call, showError } from "@/services/api";
+import { call, showError, showInfo } from "@/services/api";
 import { getCachedReceiptContext } from "@/services/dbBridge";
 import { buildReceiptHtml } from "@/services/receiptTemplate";
 import type { ReceiptSnapshot } from "@/types/pos.types";
 import { __ } from "@/lib/translate";
+import { extractErrorMessage, isNetworkError, isOnline } from "@/utils";
 
 export interface PrintInvoiceOptions {
 	format?: string;
@@ -51,36 +52,133 @@ export function usePrintInvoice() {
 		return xpos.boot?.pos_settings?.invoice_type === "POS Invoice" ? "POS Invoice" : "Sales Invoice";
 	}
 
+	/**
+	 * The network printer ERPNext prints to (a "Network Printer Settings" name), or "" when
+	 * the site has none. Mule City's boot_session puts it in boot as
+	 * `mule_default_network_printer`; XPOS boot is Frappe's session boot, so it arrives here.
+	 */
+	function networkPrinter(): string {
+		return xpos.boot?.mule_default_network_printer || "";
+	}
+
+	/** Count this print, so later prints of the same receipt show as reprints. Best-effort. */
+	function markPrinted(doctype: string, name: string) {
+		call("xpos.api.print_formats.mark_invoice_printed", { doctype, name }).catch(() => {
+			/* non-fatal: reprint control is best-effort */
+		});
+	}
+
+	/** Open Frappe's print view in a new window and print it on this computer's printer. */
+	function printInBrowser(doctype: string, name: string, printFormat: string, noLetterhead: number) {
+		const baseUrl = window.location.origin;
+		const printUrl = `${baseUrl}/printview?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(
+			name,
+		)}&format=${encodeURIComponent(printFormat)}&no_letterhead=${noLetterhead}`;
+		const printWindow = window.open(printUrl, "_blank");
+
+		if (printWindow) {
+			printWindow.onload = () => {
+				printWindow.onafterprint = () => {
+					printWindow.close();
+				};
+				setTimeout(() => {
+					printWindow.print();
+				}, 500);
+				markPrinted(doctype, name);
+			};
+		} else {
+			window.open(printUrl, "_blank");
+		}
+	}
+
+	/**
+	 * Whether a failed call never got an answer from ERPNext: the till lost its connection,
+	 * or something in between (e.g. the proxy, with ERPNext down) answered with a page that
+	 * is not an API response.
+	 */
+	function erpnextUnreachable(error: unknown): boolean {
+		return isNetworkError(error) || error instanceof SyntaxError;
+	}
+
+	/**
+	 * Ask ERPNext to print the invoice on the network printer.
+	 * Returns "printed", or "local" when the ticket should print here instead.
+	 * Throws for any other failure; the ticket did not print and must not print here.
+	 */
+	async function printOnNetworkPrinter(
+		printer: string,
+		doctype: string,
+		name: string,
+		printFormat: string,
+		noLetterhead: number,
+	): Promise<"printed" | "local"> {
+		let result: { status?: string } | undefined;
+		try {
+			result = await call<{ status?: string }>("xpos.api.printing.print_on_network_printer", {
+				doctype,
+				name,
+				printer_setting: printer,
+				print_format: printFormat,
+				no_letterhead: noLetterhead,
+			});
+		} catch (error) {
+			if (erpnextUnreachable(error)) return "local"; // XPOS is effectively offline
+			throw error;
+		}
+		if (result?.status === "print_server_unreachable") {
+			showInfo(__("Could not reach the print server; printing here instead."));
+			return "local";
+		}
+		markPrinted(doctype, name);
+		return "printed";
+	}
+
+	/**
+	 * Print a server-side invoice (Save & Print, backup receipts, Order History reprints).
+	 *
+	 * Mule City routing (MuleCity-g100). Bill 2026-09-29: "xpos should only launch local
+	 * print if: print server is down, and ERPNext can't communicate with it, OR xpos
+	 * itself is offline." So when the site has a network printer (boot key
+	 * `mule_default_network_printer`):
+	 * - XPOS offline, or ERPNext never answers → print here through the browser.
+	 * - ERPNext answers that the print server is unreachable → notice, then print here.
+	 * - ERPNext prints it → nothing opens here.
+	 * - Any other failure (no Print permission, bad print format, printer error) → show the
+	 *   error and do NOT print here; the cashier reprints once it is fixed.
+	 * With no network printer the ticket prints here, as before. Sales saved offline never
+	 * reach this function; they print XPOS's own offline receipt (printReceiptOffline).
+	 */
 	async function printInvoice(invoiceName: string, options: PrintInvoiceOptions = {}) {
 		try {
 			const printFormat = options.format || posStore?.defaultPrintFormat || "XPOS Thermal Receipt";
 			const letterHead = posStore.printSettings?.letter_head || "";
+			const noLetterhead = letterHead ? 0 : 1;
 			const doctype = options.doctype || resolveDoctype();
 
-			const baseUrl = window.location.origin;
-			const printUrl = `${baseUrl}/printview?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(
-				invoiceName,
-			)}&format=${encodeURIComponent(printFormat)}&no_letterhead=${letterHead ? "0" : "1"}`;
-			const printWindow = window.open(printUrl, "_blank");
-
-			if (printWindow) {
-				printWindow.onload = () => {
-					printWindow.onafterprint = () => {
-						printWindow.close();
-					};
-					setTimeout(() => {
-						printWindow.print();
-					}, 500);
-					call("xpos.api.print_formats.mark_invoice_printed", {
+			const printer = networkPrinter();
+			if (printer && isOnline()) {
+				try {
+					const outcome = await printOnNetworkPrinter(
+						printer,
 						doctype,
-						name: invoiceName,
-					}).catch(() => {
-						/* non-fatal: reprint control is best-effort */
-					});
-				};
-			} else {
-				window.open(printUrl, "_blank");
+						invoiceName,
+						printFormat,
+						noLetterhead,
+					);
+					if (outcome === "printed") return;
+				} catch (error) {
+					console.error("Network print failed:", error);
+					showError(
+						__("{0} did not print: {1}. Use Reprint once this is fixed.", [
+							invoiceName,
+							extractErrorMessage(error),
+						]),
+					);
+					return;
+				}
 			}
+
+			printInBrowser(doctype, invoiceName, printFormat, noLetterhead);
 		} catch (error) {
 			console.error("Print error:", error);
 			showError(__("Failed to print invoice"));

@@ -311,6 +311,7 @@ import { Button } from "@/components/ui/button";
 import { hasPermission } from "@/services/userRights";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { usePosStore } from "@/stores/posStore";
+import { usePrintInvoice } from "@/composables/usePrintInvoice";
 import { useMoney } from "@/composables/useMoney";
 import { useCartStore } from "@/stores/cartStore";
 // The server posts a $ line discount per unit; the cart shows it for the whole line.
@@ -320,7 +321,6 @@ import { ref } from "vue";
 import { Invoice } from "@/types/pos.types";
 import { useRouter } from "vue-router";
 import { call, showError } from "@/services/api";
-import { get_full_url } from "@/utils";
 import { Badge } from "../ui/badge";
 
 const props = defineProps<{
@@ -330,6 +330,8 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>();
 
 const posStore = usePosStore();
+// Reprints route like Save & Print: network printer when online, this browser otherwise.
+const { printInvoice } = usePrintInvoice();
 const { money, amount, qty, percent, taxRate } = useMoney();
 const cartStore = useCartStore();
 const router = useRouter();
@@ -355,11 +357,6 @@ function orderDateTime(order: Invoice): string {
 	const time = order.posting_time ? String(order.posting_time) : "00:00:00";
 	if (!date) return "";
 	return `${date} ${time}`;
-}
-
-function printInvoice(name: string) {
-	const url = `/printview?doctype=${posStore.invoiceType}&name=${name}&format=${posStore.defaultPrintFormat}&no_letterhead=0&trigger_print=1`;
-	window.open(get_full_url(url), "_blank");
 }
 
 async function repeatFromOrder(order: Invoice) {
