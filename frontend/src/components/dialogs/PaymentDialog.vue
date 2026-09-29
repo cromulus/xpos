@@ -199,6 +199,25 @@
 									{{ method.mode_of_payment }}
 								</p>
 							</button>
+							<!-- Mule City: charge the ticket to the customer's account (a credit sale). -->
+							<button
+								v-if="showOnAccount"
+								type="button"
+								data-testid="payment-method"
+								:data-mode="ON_ACCOUNT"
+								@click="selectOnAccount"
+								class="flex-1 min-w-20 p-2.5 rounded-xl border-2 text-center transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-ring"
+								:class="
+									chargingToAccount
+										? 'border-primary bg-primary/5 text-primary shadow-sm'
+										: 'border-border bg-card text-muted-foreground hover:border-muted-foreground/30'
+								"
+							>
+								<div class="text-lg mb-0.5">
+									<NotebookPen class="w-5 h-5 mx-auto" />
+								</div>
+								<p class="text-[11px] font-medium truncate">{{ __("On Account") }}</p>
+							</button>
 						</div>
 					</div>
 
@@ -751,6 +770,7 @@ import {
 	Smartphone,
 	FileText,
 	DollarSign,
+	NotebookPen,
 } from "lucide-vue-next";
 
 import {
@@ -776,6 +796,7 @@ import {
 } from "@/services/tenderLegs";
 import type { InvoiceChangeLeg, InvoiceData, InvoicePayment, TenderLeg } from "@/types/pos.types";
 import { isOnline, extractErrorMessage, isTabConflictError, isTicketChangedError } from "@/utils";
+import { ON_ACCOUNT, canChargeToAccount } from "@/utils/onAccount";
 import { nowDate } from "@/utils/datetime";
 import {
 	isPaymentDialogSaveAndPrintShortcut,
@@ -861,8 +882,21 @@ function buildLeg(mode: string, nativeAmount: number, id?: string): TenderLeg {
 	return buildTenderLeg(mode, nativeAmount, tenderContext.value, id);
 }
 
+// "On Account": the whole ticket is charged, so nothing is tendered.
+const chargingToAccount = computed(() => selectedMethod.value === ON_ACCOUNT && !isSplitPayment.value);
+const showOnAccount = computed(() =>
+	canChargeToAccount({
+		allowCreditSale: !!posStore.allowCreditSale,
+		online: isOnline(),
+		isReturnMode: cartStore.isReturnMode,
+		customer: cartStore.customer?.name,
+		defaultCustomer: posStore.defaultCustomer,
+	}),
+);
+
 const activeLegs = computed<TenderLeg[]>(() => {
 	if (isSplitPayment.value) return splitPayments.value;
+	if (chargingToAccount.value) return [];
 	if (!selectedMethod.value || tenderedAmount.value <= 0) return [];
 	return [buildLeg(selectedMethod.value, tenderedAmount.value, "single")];
 });
@@ -978,9 +1012,9 @@ function changeRemainingIn(currency: string): number {
 
 const canSubmitOutstanding = computed(() => {
 	if (cartStore.isReturnMode || remainingAmount.value <= 0) return false;
-	// A charge is checked against the customer's credit limit on the server, so
-	// it can't be rung while offline: it would be refused at sync after the goods left.
-	if (posStore.allowCreditSale) return isOnline();
+	// A charge is chosen explicitly with the "On Account" tender (Mule City),
+	// only offered online: the credit limit is checked on the server.
+	if (chargingToAccount.value) return showOnAccount.value;
 	return hasRecordedPayment.value && posStore.allowPartialPayment;
 });
 
@@ -990,8 +1024,8 @@ const remainingLabel = computed(() => {
 
 const outstandingSubmissionHint = computed(() => {
 	if (!canSubmitOutstanding.value) return "";
-	if (posStore.allowCreditSale) {
-		return __("Invoice will be submitted with an outstanding credit balance.");
+	if (chargingToAccount.value) {
+		return __("Charged to {0}'s account; the store copy prints for their signature.", [cartStore.customerName]);
 	}
 	return __("Invoice will be submitted with a partial payment.");
 });
@@ -1146,7 +1180,18 @@ function focusSubmitBtn() {
 }
 
 function selectMethod(method: string) {
+	// Back from "On Account": tender the whole ticket again.
+	if (selectedMethod.value === ON_ACCOUNT && tenderedAmount.value <= 0) {
+		tenderedAmount.value = roundCurrency(Math.abs(cartStore.grandTotal));
+	}
 	selectedMethod.value = method;
+}
+
+function selectOnAccount() {
+	isSplitPayment.value = false;
+	selectedMethod.value = ON_ACCOUNT;
+	tenderedAmount.value = 0;
+	nextTick(() => amountInput.value?.setValue(0));
 }
 
 function setQuickAmount(amount: number) {
@@ -1318,7 +1363,7 @@ function buildInvoicePayload(): InvoiceData {
 	const invoiceData = cartStore.getInvoiceData(posStore.profileName, shiftName);
 	if (cartStore.previewExpectedTotal !== null) invoiceData.expected_total = cartStore.previewExpectedTotal;
 
-	if (!cartStore.isReturnMode && remainingAmount.value > 0 && posStore.allowCreditSale && isOnline()) {
+	if (!cartStore.isReturnMode && remainingAmount.value > 0 && chargingToAccount.value && showOnAccount.value) {
 		invoiceData.is_credit_sale = true;
 	}
 

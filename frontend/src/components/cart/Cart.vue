@@ -127,63 +127,48 @@
 				</button>
 			</div>
 
-			<Button
+			<!-- Compact (Bill 2026-09-29, MuleCity-nfxn.3): one row under the customer card,
+			     next to the status icons, instead of a full-width button and two big boxes. -->
+			<div
 				v-if="cartStore.customer && !cartStore.isReturnMode"
-				variant="outline"
-				class="mt-3 w-full justify-start min-h-11 font-semibold"
-				data-testid="customer-recent-purchases"
-				@click="openRecentPurchases"
+				class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+				data-testid="customer-account-row"
 			>
-				{{ __("Recent purchases") }}
-			</Button>
-
-			<div v-if="showCreditInfo" class="mt-3 grid grid-cols-2 gap-2">
-				<div
-					class="rounded-lg border p-2.5"
-					:class="isOverCreditLimit ? 'border-destructive/40 bg-destructive/5' : 'border-border bg-muted/30'"
-				>
-					<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-						{{ __("Balance") }}
-					</p>
-					<p
-						class="text-2xl font-extrabold"
-						:class="isOverCreditLimit ? 'text-destructive' : 'text-foreground'"
-					>
-						{{ money(customerBalance ?? 0) }}
-					</p>
-				</div>
-				<div
-					class="rounded-lg border p-2.5"
-					:class="isOverCreditLimit ? 'border-destructive/40 bg-destructive/5' : 'border-border bg-muted/30'"
-				>
-					<p class="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
-						{{ __("Credit Limit") }}
-					</p>
-					<p
-						class="text-2xl font-extrabold"
-						:class="isOverCreditLimit ? 'text-destructive' : 'text-foreground'"
-					>
-						{{ customerCreditLimit > 0 ? money(customerCreditLimit) : __("No Limit") }}
-					</p>
-				</div>
-				<p
-					v-if="isOverCreditLimit"
-					class="col-span-2 flex items-center gap-1.5 text-xs font-semibold text-destructive"
-				>
-					<AlertTriangle class="w-3.5 h-3.5 shrink-0" />
-					{{ __("This sale exceeds the credit limit by {0}", [money(projectedBalance - customerCreditLimit)]) }}
-				</p>
 				<Button
-					v-if="canReceiveOnAccount"
-					variant="outline"
+					variant="link"
 					size="sm"
-					class="col-span-2"
-					data-testid="receive-on-account"
-					@click="showReceiveOnAccount = true"
+					class="h-auto p-0 text-xs font-semibold"
+					data-testid="customer-recent-purchases"
+					@click="openRecentPurchases"
 				>
-					{{ __("Receive on Account") }}
+					{{ __("Recent purchases") }}
 				</Button>
+				<template v-if="showCreditInfo">
+					<span :class="isOverCreditLimit ? 'text-destructive font-semibold' : 'text-muted-foreground'" data-testid="customer-balance">
+						{{ __("Balance") }} <strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ money(customerBalance ?? 0) }}</strong>
+					</span>
+					<span :class="isOverCreditLimit ? 'text-destructive font-semibold' : 'text-muted-foreground'" data-testid="customer-credit-limit">
+						{{ __("Limit") }} <strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ customerCreditLimit > 0 ? money(customerCreditLimit) : __("None") }}</strong>
+					</span>
+					<Button
+						v-if="canReceiveOnAccount"
+						variant="link"
+						size="sm"
+						class="h-auto p-0 text-xs"
+						data-testid="receive-on-account"
+						@click="showReceiveOnAccount = true"
+					>
+						{{ __("Receive on Account") }}
+					</Button>
+				</template>
 			</div>
+			<p
+				v-if="showCreditInfo && isOverCreditLimit"
+				class="mt-1 flex items-center gap-1.5 text-xs font-semibold text-destructive"
+			>
+				<AlertTriangle class="w-3.5 h-3.5 shrink-0" />
+				{{ __("This sale exceeds the credit limit by {0}", [money(projectedBalance - customerCreditLimit)]) }}
+			</p>
 			<ReceiveOnAccountDialog
 				:customer="showReceiveOnAccount ? cartStore.customer?.name || null : null"
 				:customer-label="cartStore.customerName"
