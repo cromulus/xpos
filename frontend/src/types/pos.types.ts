@@ -39,6 +39,7 @@ export interface POSProfile {
 	payments: POSPaymentMethod[];
 	pos_mixed_currency_tender?: boolean;
 	taxes_and_charges?: string;
+	apply_discount_on?: string;
 	write_off_account?: string;
 	write_off_cost_center?: string;
 	selling_price_list?: string;
