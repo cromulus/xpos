@@ -1,14 +1,15 @@
 /**
  * @vitest-environment jsdom
  *
- * User stories (MuleCity-g100, Bill 2026-09-29): "XPOS should print through ERPNext,
- * unless the internet is down, and then it prints locally."
+ * User stories (MuleCity-g100). Bill 2026-09-29: "xpos should only launch local print
+ * if: print server is down, and ERPNext can't communicate with it, OR xpos itself is
+ * offline."
  *
- * - Online, and the site has a network printer: Save & Print / reprint ask ERPNext to
- *   print the ticket on that printer (print_by_server), in the POS Profile's print format.
- * - Offline: the ticket prints here through the browser, as before; the server is not asked.
- * - ERPNext cannot print (internet dropped, printer or print server error): the cashier
- *   sees a short notice and the ticket prints here instead.
+ * - Online, the site has a network printer, ERPNext prints the ticket: nothing opens here.
+ * - XPOS offline, or the request never reaches ERPNext: the ticket prints here.
+ * - ERPNext answers that it cannot reach the print server: a notice, then it prints here.
+ * - Any other failure (no Print permission, a printer error ERPNext did reach): the
+ *   cashier sees the error and nothing prints here, so they know to reprint.
  * - The site has no network printer: the ticket prints here, as before.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,15 +41,26 @@ function setBoot(boot: Record<string, unknown>) {
 	(window as any).xpos = { boot: { currencies: [], countries: [], ...boot } };
 }
 
+const ENDPOINT = "xpos.api.printing.print_on_network_printer";
+
 function serverPrintCalls() {
-	return call.mock.calls.filter(([method]) => method === "frappe.utils.print_format.print_by_server");
+	return call.mock.calls.filter(([method]) => method === ENDPOINT);
+}
+
+/** ERPNext answers the print request with `outcome` (a result, or an error to throw). */
+function serverPrintAnswers(outcome: { status: string } | Error) {
+	call.mockImplementation(async (method: string) => {
+		if (method !== ENDPOINT) return undefined;
+		if (outcome instanceof Error) throw outcome;
+		return outcome;
+	});
 }
 
 let open: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	call.mockResolvedValue(undefined);
+	serverPrintAnswers({ status: "printed" });
 	open = vi.fn(() => ({}) as Window);
 	window.open = open as unknown as typeof window.open;
 	setOnline(true);
@@ -60,13 +72,13 @@ afterEach(() => {
 });
 
 describe("printing a saved sale", () => {
-	it("online with a network printer: ERPNext prints the ticket on it, nothing opens here", async () => {
+	it("online and ERPNext prints it: the ticket goes to the network printer, nothing opens here", async () => {
 		const { printInvoice } = usePrintInvoice();
 		await printInvoice("SINV-0001");
 
 		expect(serverPrintCalls()).toEqual([
 			[
-				"frappe.utils.print_format.print_by_server",
+				ENDPOINT,
 				{
 					doctype: "Sales Invoice",
 					name: "SINV-0001",
@@ -97,7 +109,7 @@ describe("printing a saved sale", () => {
 		});
 	});
 
-	it("offline: prints here through the browser and never asks the server", async () => {
+	it("XPOS offline: prints here through the browser and never asks the server", async () => {
 		setOnline(false);
 		const { printInvoice } = usePrintInvoice();
 		await printInvoice("SINV-0002");
@@ -108,33 +120,64 @@ describe("printing a saved sale", () => {
 		expect(open.mock.calls[0][0]).toContain("format=Mule%20City%20Ticket");
 	});
 
-	it("ERPNext cannot print: a short notice, then the ticket prints here", async () => {
-		call.mockImplementation(async (method: string) => {
-			if (method === "frappe.utils.print_format.print_by_server") throw new Error("Printing failed");
-		});
+	it("the request never reaches ERPNext (network error): prints here", async () => {
+		serverPrintAnswers(new Error("__offline__"));
 		const { printInvoice } = usePrintInvoice();
 		await printInvoice("SINV-0003");
 
 		expect(serverPrintCalls()).toHaveLength(1);
-		expect(showInfo).toHaveBeenCalledWith(`Could not print on ${PRINTER}; printing here instead.`);
 		expect(showError).not.toHaveBeenCalled();
 		expect(open).toHaveBeenCalledTimes(1);
 		expect(open.mock.calls[0][0]).toContain("name=SINV-0003");
 	});
 
-	it("internet drops mid-call: the ticket still prints here", async () => {
-		call.mockRejectedValue(new Error("__offline__"));
+	it("ERPNext is down behind the proxy (non-API reply): prints here", async () => {
+		serverPrintAnswers(new SyntaxError("Unexpected token '<'"));
 		const { printInvoice } = usePrintInvoice();
 		await printInvoice("SINV-0004");
 
-		expect(showInfo).toHaveBeenCalledTimes(1);
+		expect(showError).not.toHaveBeenCalled();
 		expect(open).toHaveBeenCalledTimes(1);
+	});
+
+	it("ERPNext cannot reach the print server: a notice, then the ticket prints here", async () => {
+		serverPrintAnswers({ status: "print_server_unreachable" });
+		const { printInvoice } = usePrintInvoice();
+		await printInvoice("SINV-0005");
+
+		expect(showInfo).toHaveBeenCalledWith("Could not reach the print server; printing here instead.");
+		expect(showError).not.toHaveBeenCalled();
+		expect(call).not.toHaveBeenCalledWith("xpos.api.print_formats.mark_invoice_printed", expect.anything());
+		expect(open).toHaveBeenCalledTimes(1);
+		expect(open.mock.calls[0][0]).toContain("name=SINV-0005");
+	});
+
+	it("no Print permission: the error is shown and nothing prints here", async () => {
+		serverPrintAnswers(new Error("Not permitted to print Sales Invoice SINV-0006"));
+		const { printInvoice } = usePrintInvoice();
+		await printInvoice("SINV-0006");
+
+		expect(showError).toHaveBeenCalledWith(
+			"SINV-0006 did not print: Not permitted to print Sales Invoice SINV-0006. Use Reprint once this is fixed.",
+		);
+		expect(open).not.toHaveBeenCalled();
+		expect(showInfo).not.toHaveBeenCalled();
+	});
+
+	it("a printer error ERPNext did reach: the error is shown and nothing prints here", async () => {
+		serverPrintAnswers(new Error("Printing failed"));
+		const { printInvoice } = usePrintInvoice();
+		await printInvoice("SINV-0007");
+
+		expect(showError).toHaveBeenCalledTimes(1);
+		expect(showError.mock.calls[0][0]).toContain("Printing failed");
+		expect(open).not.toHaveBeenCalled();
 	});
 
 	it("no network printer in boot: prints here as before", async () => {
 		setBoot({});
 		const { printInvoice } = usePrintInvoice();
-		await printInvoice("SINV-0005");
+		await printInvoice("SINV-0008");
 
 		expect(serverPrintCalls()).toHaveLength(0);
 		expect(showInfo).not.toHaveBeenCalled();

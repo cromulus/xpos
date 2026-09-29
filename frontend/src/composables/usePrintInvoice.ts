@@ -4,7 +4,7 @@ import { getCachedReceiptContext } from "@/services/dbBridge";
 import { buildReceiptHtml } from "@/services/receiptTemplate";
 import type { ReceiptSnapshot } from "@/types/pos.types";
 import { __ } from "@/lib/translate";
-import { isOnline } from "@/utils";
+import { extractErrorMessage, isNetworkError, isOnline } from "@/utils";
 
 export interface PrintInvoiceOptions {
 	format?: string;
@@ -92,15 +92,61 @@ export function usePrintInvoice() {
 	}
 
 	/**
-	 * Print a server-side invoice (Save & Print, reprints, backup receipts).
+	 * Whether a failed call never got an answer from ERPNext: the till lost its connection,
+	 * or something in between (e.g. the proxy, with ERPNext down) answered with a page that
+	 * is not an API response.
+	 */
+	function erpnextUnreachable(error: unknown): boolean {
+		return isNetworkError(error) || error instanceof SyntaxError;
+	}
+
+	/**
+	 * Ask ERPNext to print the invoice on the network printer.
+	 * Returns "printed", or "local" when the ticket should print here instead.
+	 * Throws for any other failure; the ticket did not print and must not print here.
+	 */
+	async function printOnNetworkPrinter(
+		printer: string,
+		doctype: string,
+		name: string,
+		printFormat: string,
+		noLetterhead: number,
+	): Promise<"printed" | "local"> {
+		let result: { status?: string } | undefined;
+		try {
+			result = await call<{ status?: string }>("xpos.api.printing.print_on_network_printer", {
+				doctype,
+				name,
+				printer_setting: printer,
+				print_format: printFormat,
+				no_letterhead: noLetterhead,
+			});
+		} catch (error) {
+			if (erpnextUnreachable(error)) return "local"; // XPOS is effectively offline
+			throw error;
+		}
+		if (result?.status === "print_server_unreachable") {
+			showInfo(__("Could not reach the print server; printing here instead."));
+			return "local";
+		}
+		markPrinted(doctype, name);
+		return "printed";
+	}
+
+	/**
+	 * Print a server-side invoice (Save & Print, backup receipts, Order History reprints).
 	 *
-	 * Mule City routing (MuleCity-g100): when online and the site has a network printer,
-	 * ERPNext renders the print format to PDF and sends it to that printer itself
-	 * (frappe.utils.print_format.print_by_server), so every till prints the same way
-	 * regardless of the browser. If that fails (internet down, printer or print server
-	 * error), or there is no network printer, or we are offline, it prints here through
-	 * the browser as before. Sales saved offline never reach this function; they print
-	 * XPOS's own offline receipt (printReceiptOffline).
+	 * Mule City routing (MuleCity-g100). Bill 2026-09-29: "xpos should only launch local
+	 * print if: print server is down, and ERPNext can't communicate with it, OR xpos
+	 * itself is offline." So when the site has a network printer (boot key
+	 * `mule_default_network_printer`):
+	 * - XPOS offline, or ERPNext never answers → print here through the browser.
+	 * - ERPNext answers that the print server is unreachable → notice, then print here.
+	 * - ERPNext prints it → nothing opens here.
+	 * - Any other failure (no Print permission, bad print format, printer error) → show the
+	 *   error and do NOT print here; the cashier reprints once it is fixed.
+	 * With no network printer the ticket prints here, as before. Sales saved offline never
+	 * reach this function; they print XPOS's own offline receipt (printReceiptOffline).
 	 */
 	async function printInvoice(invoiceName: string, options: PrintInvoiceOptions = {}) {
 		try {
@@ -112,18 +158,23 @@ export function usePrintInvoice() {
 			const printer = networkPrinter();
 			if (printer && isOnline()) {
 				try {
-					await call("frappe.utils.print_format.print_by_server", {
+					const outcome = await printOnNetworkPrinter(
+						printer,
 						doctype,
-						name: invoiceName,
-						printer_setting: printer,
-						print_format: printFormat,
-						no_letterhead: noLetterhead,
-					});
-					markPrinted(doctype, invoiceName);
-					return;
+						invoiceName,
+						printFormat,
+						noLetterhead,
+					);
+					if (outcome === "printed") return;
 				} catch (error) {
-					console.warn("Network print failed; printing locally:", error);
-					showInfo(__("Could not print on {0}; printing here instead.", [printer]));
+					console.error("Network print failed:", error);
+					showError(
+						__("{0} did not print: {1}. Use Reprint once this is fixed.", [
+							invoiceName,
+							extractErrorMessage(error),
+						]),
+					);
+					return;
 				}
 			}
 
