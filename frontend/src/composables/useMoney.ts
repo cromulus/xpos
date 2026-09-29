@@ -74,6 +74,14 @@ export function useMoney() {
 		return formatPercent(toNumber(value), precision ?? undefined);
 	}
 
+	/**
+	 * A tax rate beside its label, as Mule City prints it: "6.75%", with no
+	 * parentheses and no trailing zeros (Bill 2026-09-29, MuleCity-nfxn.11).
+	 */
+	function taxRate(value: number | string | null | undefined): string {
+		return `${formatQty(toNumber(value))}%`;
+	}
+
 	/** Any non-currency decimal at an explicit precision. */
 	function decimal(value: number | string | null | undefined, precision?: number): string {
 		return formatFloat(toNumber(value), precision ?? undefined);
@@ -91,6 +99,7 @@ export function useMoney() {
 		moneyRate,
 		qty,
 		percent,
+		taxRate,
 		decimal,
 	};
 }
