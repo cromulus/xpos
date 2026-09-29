@@ -25,6 +25,27 @@ real. The browser then fires `offline` and `navigator.onLine` turns false.
 | `XPOS_BENCH_ITEM` | An item in stock with a price, shown in the item list |
 | `XPOS_BENCH_CUSTOMER` | The customer the tickets are rung up for |
 | `XPOS_BENCH_SECOND_MODE` | The second ticket's tender (default `Cash`) |
+| `XPOS_BENCH_EXEMPT_CATEGORY` | A Tax Category whose Tax Rule charges no tax (default `Mule City Exempt`), for `offline-tax.cy.ts` |
 
 The profile's discount cap (`max_discount_percentage_allowed`) must be under
 30% for the refused-sale story.
+
+## The offline suite (Mule City, MuleCity-ispl)
+
+```bash
+yarn test:offline:unit   # the offline unit specs (tests/offline*.spec.ts), no bench needed
+yarn test:offline        # those, then every tests/e2e/bench/offline-*.cy.ts story on the bench
+```
+
+One story file per concern, named `offline-<concern>.cy.ts`, each story "who does
+what offline, and what the server shows after sync":
+
+| File | Story |
+|---|---|
+| `offline-selling.cy.ts` | two tickets sold offline both post; one over the discount cap waits for a manager |
+| `offline-tax.cy.ts` | a farm customer this till never saw online is rung up untaxed; the synced invoice is untaxed |
+
+Shared steps live in `tests/e2e/support/offline.ts` (`openTillOnline`, which starts from
+an empty offline store; `chooseCustomer`; `ringUpOneBag`; `waitUntil`; `customerInvoices`;
+`restoreNetworkAfterEach`, which every story file registers). New offline stories, such as
+the cashier switch (fb00.7), add a file and reuse these steps.

@@ -275,3 +275,12 @@ class TestCustomerGroupFiltering(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestCustomerRowsCarryTheirTaxCategory(unittest.TestCase):
+	"""MuleCity-ispl: the customer rows the till keeps for offline use carry
+	their Tax Category, so a customer never looked up online is taxed offline by
+	the category's taxes the offline sync also keeps."""
+
+	def test_the_list_columns_include_tax_category(self):
+		self.assertIn("tax_category", customers._CUSTOMER_LIST_COLUMNS)

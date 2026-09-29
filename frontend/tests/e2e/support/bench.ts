@@ -5,7 +5,8 @@
  */
 import "./slowMotion";
 
-const IDB_NAME = "xpos_offline_v3";
+// The browser's offline store; support/offline.ts empties it before each warm-up.
+export const IDB_NAME = "xpos_offline_v3";
 
 Cypress.on("uncaught:exception", (err) => {
 	// Offline on purpose: the app's own background calls fail and say so.

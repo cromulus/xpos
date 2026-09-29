@@ -300,6 +300,8 @@ export interface Customer {
 	default_price_list?: string;
 	gender?: string;
 	tax_id?: string;
+	// ERPNext's Tax Category; offline, the till taxes the customer by it (MuleCity-ispl).
+	tax_category?: string | null;
 	balance?: number;
 	credit_limit?: number;
 	[key: string]: unknown;

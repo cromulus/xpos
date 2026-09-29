@@ -1091,6 +1091,35 @@ export async function getCachedTaxContext(posProfile: string, customer: string):
 	return ((await idb.getMeta(key)) as any) ?? null;
 }
 
+/**
+ * Every tax category's tax context at a profile (Mule City's tax_contexts), kept by
+ * the offline sync so a customer this till never looked up online is still taxed
+ * offline: by the tax category their synced row carries. Keyed by category; "" is
+ * a customer with none.
+ */
+export async function cacheTaxContexts(posProfile: string, contexts: Record<string, unknown>): Promise<void> {
+	const key = `tax_contexts::${posProfile}`;
+	if (isElectron()) {
+		await getDb().setMeta(key, JSON.stringify(contexts));
+		return;
+	}
+	const idb = await import("./idbService");
+	await idb.setMeta(key, contexts);
+}
+
+export async function getCachedCategoryTaxContext(posProfile: string, category: string | null): Promise<any | null> {
+	const key = `tax_contexts::${posProfile}`;
+	let contexts: Record<string, unknown> | null;
+	if (isElectron()) {
+		const val = await getDb().getMeta(key);
+		contexts = val ? JSON.parse(val) : null;
+	} else {
+		const idb = await import("./idbService");
+		contexts = ((await idb.getMeta(key)) as Record<string, unknown>) ?? null;
+	}
+	return (contexts?.[category || ""] as any) ?? null;
+}
+
 export async function getCachedReceiptContext(
 	posProfile: string,
 ): Promise<import("@/types/pos.types").ReceiptContext | null> {

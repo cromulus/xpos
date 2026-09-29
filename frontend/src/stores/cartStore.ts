@@ -5,7 +5,14 @@ import { ref, computed, watch } from "vue";
 import { call } from "@/services/api";
 import { usePosStore } from "./posStore";
 import { useSettingsStore } from "./settingsStore";
-import { cacheTaxContext, getCachedItemByCode, getCachedStockForItem, getCachedTaxContext } from "@/services/dbBridge";
+import {
+	cacheTaxContext,
+	getCachedCategoryTaxContext,
+	getCachedItemByCode,
+	getCachedStockForItem,
+	getCachedTaxContext,
+	getCustomer,
+} from "@/services/dbBridge";
 import type {
 	CartItem,
 	POSItem,
@@ -87,6 +94,31 @@ interface ServerPreview {
 /** Stock quantities closer than this count as equal (9-place UOM factors). */
 const STOCK_QTY_TOLERANCE = 1e-6;
 
+/** Offline, and the till has no tax context for the buyer at all (MuleCity-ispl). */
+class OfflineTaxMissing extends Error {}
+
+/**
+ * The buyer's tax context while offline (Mule City, MuleCity-ispl). Taxes depend
+ * only on the customer's tax category, so the category the offline sync kept on
+ * their customer row comes first: it is newer than a per-customer context kept
+ * when this till last rang them up online (Brandy may have moved them from
+ * Taxable to Farm since). The per-customer context is the fallback, for a row
+ * synced before categories were. Null when neither is on this till.
+ */
+async function offlineTaxContext(profile: string, buyer: string, row: { tax_category?: string | null } | null): Promise<any | null> {
+	const own = await getCachedTaxContext(profile, buyer);
+	const synced = row && "tax_category" in row ? row : await getCustomer(buyer).catch(() => null);
+	if (synced && "tax_category" in synced) {
+		const byCategory = await getCachedCategoryTaxContext(profile, (synced as any).tax_category ?? "");
+		if (byCategory) {
+			// The exemption reason is per customer; keep it only if it's for the same category.
+			const reason = own && (own.tax_category ?? null) === (byCategory.tax_category ?? null) ? own.tax_exempt_reason : null;
+			return { ...byCategory, tax_exempt_reason: reason ?? null };
+		}
+	}
+	return own;
+}
+
 export const useCartStore = defineStore("cart", () => {
 	const posStore = usePosStore();
 	const items = ref<CartItem[]>([]);
@@ -103,6 +135,8 @@ export const useCartStore = defineStore("cart", () => {
 		xpos_has_address?: boolean;
 		xpos_has_email?: boolean;
 		xpos_has_phone?: boolean;
+		// ERPNext's Tax Category, on synced rows (offline taxes, MuleCity-ispl).
+		tax_category?: string | null;
 	} | null>(null);
 	const discountPercentage = ref(0);
 	const discountAmount = ref(0);
@@ -129,8 +163,8 @@ export const useCartStore = defineStore("cart", () => {
         cacheTaxContext(String(profile), String(buyer), context).catch(() => {});
       } catch (error) {
         const offline = !isOnline() || isNetworkError(error);
-        context = offline ? await getCachedTaxContext(String(profile), String(buyer)) : null;
-        if (!context) throw error;
+        context = offline ? await offlineTaxContext(String(profile), String(buyer), customer.value) : null;
+        if (!context) throw offline ? new OfflineTaxMissing() : error;
       }
       const offlineContext = !isOnline();
       if (request !== muleTaxRequest) return;
@@ -146,7 +180,11 @@ export const useCartStore = defineStore("cart", () => {
         item.item_tax_map = tax.item_tax_map || {};
       }
     } catch (error) {
-      if (request === muleTaxRequest) muleTaxError.value = "Tax lookup failed. Reselect the customer to retry before taking payment.";
+      if (request === muleTaxRequest) {
+        muleTaxError.value = error instanceof OfflineTaxMissing
+          ? "No tax information for this customer on this till yet. Go online once, or ring them up at the desk."
+          : "Tax lookup failed. Reselect the customer to retry before taking payment.";
+      }
     } finally { if (request === muleTaxRequest) muleTaxPending.value = false; }
   });
 
@@ -914,6 +952,7 @@ export const useCartStore = defineStore("cart", () => {
 			xpos_has_address?: boolean;
 			xpos_has_email?: boolean;
 			xpos_has_phone?: boolean;
+			tax_category?: string | null;
 		} | null,
 	): void {
 		customer.value = cust;

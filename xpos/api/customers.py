@@ -25,6 +25,8 @@ _CUSTOMER_LIST_COLUMNS = (
 	"tax_id",
 	"customer_type",
 	"gender",
+	# The till taxes a customer offline by their category (Mule City, MuleCity-ispl).
+	"tax_category",
 )
 # Shown on the picker row already, so left out of the description.
 _SHOWN_ON_ROW = ("name", "customer_name", "mobile_no", "email_id", "mule_filepro_alias_codes")
