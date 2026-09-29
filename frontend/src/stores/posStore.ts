@@ -310,6 +310,17 @@ export const usePosStore = defineStore("pos", () => {
 								console.warn("[XPOS] Failed to initialize offline customer cache:", error);
 							});
 						});
+
+						// Each tax category's taxes, so a customer this till never rang
+						// up online is taxed offline (Mule City, MuleCity-ispl). The
+						// periodic sync only starts caching them five minutes in.
+						import("@/stores/offlineStore").then(({ useOfflineStore }) => {
+							useOfflineStore()
+								.cacheTaxContextsForOffline(result.pos_profile.name)
+								.catch((error) => {
+									console.warn("[XPOS] Failed to initialize offline tax cache:", error);
+								});
+						});
 					} catch (error) {
 						console.warn("[XPOS] Failed to cache POS data:", error);
 					}
@@ -434,6 +445,14 @@ export const usePosStore = defineStore("pos", () => {
 						customerStore.cacheAllCustomers(profileName).catch((error) => {
 							console.warn("[XPOS] Failed to initialize offline customer cache:", error);
 						});
+					});
+
+					import("@/stores/offlineStore").then(({ useOfflineStore }) => {
+						useOfflineStore()
+							.cacheTaxContextsForOffline(profileName)
+							.catch((error) => {
+								console.warn("[XPOS] Failed to initialize offline tax cache:", error);
+							});
 					});
 				} catch (error) {
 					console.warn("[XPOS] Failed to cache POS data:", error);

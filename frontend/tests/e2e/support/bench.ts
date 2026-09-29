@@ -5,7 +5,8 @@
  */
 import "./slowMotion";
 
-const IDB_NAME = "xpos_offline_v3";
+// The browser's offline store; support/offline.ts empties it before each warm-up.
+export const IDB_NAME = "xpos_offline_v3";
 
 Cypress.on("uncaught:exception", (err) => {
 	// Offline on purpose: the app's own background calls fail and say so.
@@ -45,7 +46,9 @@ Cypress.Commands.add("benchCall", (method: string, args: Record<string, unknown>
 				body: args,
 			}),
 		)
-		.its("body.message");
+		// Frappe leaves "message" out of the body when a method returns None
+		// (check_open_shift on a till with no open shift): that is null, not an error.
+		.then((response) => response.body.message ?? null);
 });
 
 /**

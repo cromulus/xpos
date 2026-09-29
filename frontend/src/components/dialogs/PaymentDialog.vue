@@ -107,7 +107,7 @@
 							>
 								<span class="flex items-center gap-1">
 									{{ tax.description }}
-									<span class="text-[10px]">({{ percent(tax.rate) }})</span>
+									<span v-if="tax.rate" class="text-[10px]">{{ taxRate(tax.rate) }}</span>
 									<span
 										v-if="tax.included_in_print_rate"
 										class="text-[9px] text-blue-500"
@@ -848,7 +848,7 @@ import {
 } from "@/components/dialogs/paymentDialogShortcuts";
 
 const posStore = usePosStore();
-const { moneyPrecision, percent } = useMoney();
+const { moneyPrecision, percent, taxRate } = useMoney();
 const { printInvoice, printInvoiceLocal } = usePrintInvoice();
 const { completeOfflineSale } = useOfflineSale();
 const cartStore = useCartStore();

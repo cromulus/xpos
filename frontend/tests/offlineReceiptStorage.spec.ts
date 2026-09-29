@@ -18,6 +18,7 @@ const { bridge, call, online } = vi.hoisted(() => ({
 		cachePOSData: vi.fn(),
 		getCachedPOSData: vi.fn(),
 		cacheReceiptContext: vi.fn(),
+		cacheTaxContexts: vi.fn(),
 	},
 	call: vi.fn(),
 	online: { value: true },
@@ -170,5 +171,22 @@ describe("receipt layout cache (browser)", () => {
 		await settle();
 
 		expect(bridge.cacheReceiptContext).not.toHaveBeenCalled();
+	});
+});
+
+describe("offline tax cache (Mule City, MuleCity-ispl)", () => {
+	// Found on erp2: the periodic sync only starts caching taxes five minutes after
+	// the till opens, so a till that went offline sooner had none. Opening or
+	// resuming a shift now caches each tax category's taxes with items and customers.
+	it.each([
+		["opens", (pos: ReturnType<typeof usePosStore>) => pos.openShift("Shop Floor", "Acme", [])],
+		["is resumed", (pos: ReturnType<typeof usePosStore>) => pos.checkExistingShift()],
+	])("is filled when a shift %s on an offline-mode profile", async (_when, start) => {
+		mockServer({ use_offline_mode: 1 });
+		await start(usePosStore());
+		await settle();
+		await settle();
+
+		expect(call).toHaveBeenCalledWith("mulecity_erpnext.pos_workspace.tax_contexts", { pos_profile: "Shop Floor" });
 	});
 });

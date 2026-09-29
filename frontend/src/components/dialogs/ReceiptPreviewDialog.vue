@@ -200,7 +200,7 @@
 							class="flex justify-between px-4 py-2.5 text-sm"
 						>
 							<span class="text-muted-foreground"
-								>{{ tax.description }} ({{ percent(tax.rate) }})</span
+								>{{ tax.description }}<template v-if="tax.rate"> {{ taxRate(tax.rate) }}</template></span
 							>
 							<span class="text-foreground font-medium">{{ money(tax.tax_amount) }}</span>
 						</div>
@@ -330,7 +330,7 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>();
 
 const posStore = usePosStore();
-const { money, amount, qty, percent } = useMoney();
+const { money, amount, qty, percent, taxRate } = useMoney();
 const cartStore = useCartStore();
 const router = useRouter();
 

@@ -275,3 +275,24 @@ class TestCustomerGroupFiltering(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestCustomerRowsCarryTheirTaxCategory(unittest.TestCase):
+	"""MuleCity-ispl: the customer rows the till keeps for offline use carry
+	their Tax Category, so a customer never looked up online is taxed offline by
+	the category's taxes the offline sync also keeps."""
+
+	def test_the_list_columns_include_tax_category(self):
+		self.assertIn("tax_category", customers._CUSTOMER_LIST_COLUMNS)
+
+	@patch("xpos.api.customers._enrich_picker_customers")
+	@patch("xpos.api.customers.frappe")
+	def test_the_customer_query_selects_every_list_column(self, mock_frappe, _mock_enrich):
+		"""Listing a column wasn't enough: the query must select it (found on erp2,
+		where every synced row came back without tax_category)."""
+		mock_frappe.db.sql.return_value = []
+		customers.get_customers()
+		query = mock_frappe.db.sql.call_args[0][0]
+		for column in customers._CUSTOMER_LIST_COLUMNS:
+			with self.subTest(column=column):
+				self.assertIn(f"c.`{column}`", query)
