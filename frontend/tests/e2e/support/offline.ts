@@ -20,7 +20,8 @@ export const secondMode = () => (Cypress.env("secondMode") as string) || "Cash";
 export function waitUntil<T>(read: () => Cypress.Chainable<T>, ok: (value: T) => boolean, message: string, tries = 60) {
 	read().then((value) => {
 		if (ok(value)) return;
-		if (tries <= 0) throw new Error(`Timed out waiting: ${message}`);
+		// Say what was last read (e.g. a queued sale's sync error) so a failure explains itself.
+		if (tries <= 0) throw new Error(`Timed out waiting: ${message}; last read: ${JSON.stringify(value).slice(0, 2000)}`);
 		cy.wait(1000);
 		waitUntil(read, ok, message, tries - 1);
 	});
