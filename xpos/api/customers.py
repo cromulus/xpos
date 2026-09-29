@@ -182,20 +182,13 @@ def get_customers(
 	selected_limit = values["limit"]
 	if cint(with_metadata) and limit_sql:
 		values["limit"] += 1  # One extra row distinguishes a full selection from a capped one.
+	# Every _CUSTOMER_LIST_COLUMNS name is selected: listing a column there
+	# without selecting it left tax_category off the synced rows (MuleCity-ispl).
+	list_columns = ", ".join(f"c.`{column}`" for column in _CUSTOMER_LIST_COLUMNS)
 	customers = frappe.db.sql(  # nosemgrep: frappe-sql-format-injection — conditions built from validated allowed-field lists, values parameterized
 		f"""
 		SELECT
-			c.name,
-			c.customer_name,
-			c.mobile_no,
-			c.email_id,
-			c.customer_group,
-			c.territory,
-			c.default_currency,
-			c.image,
-			c.tax_id,
-			c.customer_type,
-			c.gender
+			{list_columns}
 			{extra_columns}
 		FROM `tabCustomer` c
 		{join}

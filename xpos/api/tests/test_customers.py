@@ -284,3 +284,15 @@ class TestCustomerRowsCarryTheirTaxCategory(unittest.TestCase):
 
 	def test_the_list_columns_include_tax_category(self):
 		self.assertIn("tax_category", customers._CUSTOMER_LIST_COLUMNS)
+
+	@patch("xpos.api.customers._enrich_picker_customers")
+	@patch("xpos.api.customers.frappe")
+	def test_the_customer_query_selects_every_list_column(self, mock_frappe, _mock_enrich):
+		"""Listing a column wasn't enough: the query must select it (found on erp2,
+		where every synced row came back without tax_category)."""
+		mock_frappe.db.sql.return_value = []
+		customers.get_customers()
+		query = mock_frappe.db.sql.call_args[0][0]
+		for column in customers._CUSTOMER_LIST_COLUMNS:
+			with self.subTest(column=column):
+				self.assertIn(f"c.`{column}`", query)
