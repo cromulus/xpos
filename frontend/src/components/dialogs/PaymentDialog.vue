@@ -218,6 +218,20 @@
 								</div>
 								<p class="text-[11px] font-medium truncate">{{ __("On Account") }}</p>
 							</button>
+							<!-- Mule City: a payment toward what the customer already owes (Bill 2026-09-29,
+							     MuleCity-nfxn.3). Opens Receive on Account; this ticket stays in the cart. -->
+							<button
+								v-if="canReceiveOnAccount"
+								type="button"
+								data-testid="receive-on-account"
+								class="flex-1 min-w-20 p-2.5 rounded-xl border-2 text-center transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-ring border-border bg-card text-muted-foreground hover:border-muted-foreground/30"
+								@click="openReceiveOnAccount"
+							>
+								<div class="text-lg mb-0.5">
+									<HandCoins class="w-5 h-5 mx-auto" />
+								</div>
+								<p class="text-[11px] font-medium truncate">{{ __("Receive on Account") }}</p>
+							</button>
 						</div>
 					</div>
 
@@ -771,6 +785,7 @@ import {
 	FileText,
 	DollarSign,
 	NotebookPen,
+	HandCoins,
 } from "lucide-vue-next";
 
 import {
@@ -797,6 +812,7 @@ import {
 import type { InvoiceChangeLeg, InvoiceData, InvoicePayment, TenderLeg } from "@/types/pos.types";
 import { isOnline, extractErrorMessage, isTabConflictError, isTicketChangedError } from "@/utils";
 import { ON_ACCOUNT, canChargeToAccount } from "@/utils/onAccount";
+import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { nowDate } from "@/utils/datetime";
 import {
 	isPaymentDialogSaveAndPrintShortcut,
@@ -881,6 +897,8 @@ const tenderContext = computed<TenderContext>(() => ({
 function buildLeg(mode: string, nativeAmount: number, id?: string): TenderLeg {
 	return buildTenderLeg(mode, nativeAmount, tenderContext.value, id);
 }
+
+const { canReceive: canReceiveOnAccount, openReceiveOnAccount } = useCustomerAccount();
 
 // "On Account": the whole ticket is charged, so nothing is tendered.
 const chargingToAccount = computed(() => selectedMethod.value === ON_ACCOUNT && !isSplitPayment.value);

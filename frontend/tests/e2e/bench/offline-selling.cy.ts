@@ -64,9 +64,9 @@ function openXposOnline() {
 }
 
 function chooseCustomer() {
-	// The cart's customer button ("Click to change customer"); skip if the
-	// customer is already the cart's (a new ticket starts on the profile's default).
-	cy.contains("button", "Click to change customer").then(($button) => {
+	// The customer button in the cart's header; skip if the customer is already
+	// the cart's (a new ticket starts on the profile's default).
+	cy.get("[data-testid='cart-customer']").then(($button) => {
 		if ($button.text().includes(customer())) return;
 		cy.wrap($button).click();
 		cy.get("[role='dialog'] input").first().type(customer());

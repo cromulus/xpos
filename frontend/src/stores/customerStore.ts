@@ -21,6 +21,8 @@ export const useCustomerStore = defineStore("customers", () => {
 	const showNewCustomerForm = ref(false);
 	const showLoyaltyDialog = ref(false);
 	const showCustomerEditDialog = ref(false);
+	// Receive on Account (Mule City): opened from Pay or the empty cart's Pay button.
+	const showReceiveOnAccount = ref(false);
 
 	const selectedCustomerInfo = ref<Customer | null>(null);
 	const customerAddresses = ref<CustomerAddress[]>([]);
@@ -300,6 +302,7 @@ export const useCustomerStore = defineStore("customers", () => {
 		showNewCustomerForm,
 		showLoyaltyDialog,
 		showCustomerEditDialog,
+		showReceiveOnAccount,
 		selectedCustomerInfo,
 		customerAddresses,
 		customerCredit,
