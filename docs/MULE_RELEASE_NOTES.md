@@ -1,5 +1,28 @@
 # Mule City XPOS release notes
 
+## Unreleased (next mc tag): cashier initials at Pay (`feat/cashier-switching`, MuleCity-fb00.2)
+
+Bill (2026-09-29): the register signs in as one shared "POS" user; every sale
+and return records who rang it by the cashier's initials. Replaces the earlier
+PIN / cashier-switching design.
+
+- POS Profile: `xpos_require_cashier_initials` (off by default; off behaves
+  exactly as before) and `xpos_cashiers`, a list of "XPOS Cashier" rows
+  (`initials`, `cashier_name`).
+- Pay asks for "Cashier initials", empty and focused on every sale, and shows
+  the matched name; initials not on the list keep Pay disabled. Enter moves on
+  to the amount. The initials go in the payload as `pos_cashier`, including a
+  sale queued offline (the profile and its list are in the cached shift data).
+- `create_invoice` refuses a sale or return without listed initials and stores
+  them trimmed and uppercase on the new Sales Invoice (and POS Invoice) field
+  `pos_cashier` (read-only, no-copy, a standard filter). A sale replayed from
+  the offline queue is never refused: it is saved with what was typed and a
+  comment on the invoice says the initials were missing or not listed.
+- Receipts print the initials as "Cashier" when present (XPOS Thermal Receipt
+  and the register's own receipt), else the user's name as before.
+- Validation: vitest and vue-tsc. The Python module
+  `xpos/api/tests/test_cashier_initials.py` still needs a bench run.
+
 ## mule-v2.10.1-mc7 (2026-09-28)
 
 - Customer lookup uses the active POS profile when called from the picker,

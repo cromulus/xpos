@@ -142,6 +142,10 @@ export const usePosStore = defineStore("pos", () => {
 
 	const salesPersonEnabled = computed(() => allowedSalesPersons.value.length > 0);
 
+	/** Initials at Pay on a shared register login (Mule City, MuleCity-fb00.2). */
+	const requireCashierInitials = computed(() => !!posProfile.value?.xpos_require_cashier_initials);
+	const cashiers = computed(() => posProfile.value?.xpos_cashiers ?? []);
+
 	const allowWriteOffChange = computed(() => !!posProfile.value?.allow_write_off_change);
 
 	const displayItemCode = computed(() => !!posProfile.value?.display_item_code);
@@ -584,6 +588,8 @@ export const usePosStore = defineStore("pos", () => {
 		allowDeleteOfflineInvoice,
 		displayAdditionalNotes,
 		allowedSalesPersons,
+		requireCashierInitials,
+		cashiers,
 		salesPersonEnabled,
 		allowWriteOffChange,
 		displayItemCode,

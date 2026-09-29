@@ -466,6 +466,51 @@ def check_may_sell(pos_profile: str | None) -> None:
 	resolve_pos_profile(pos_profile)
 
 
+def normalize_initials(value) -> str:
+	"""Cashier initials as stored and compared: trimmed and uppercase ("le " -> "LE")."""
+	return cstr(value).strip().upper()
+
+
+def apply_pos_cashier(invoice_doc, pos, typed, replay: bool = False) -> str | None:
+	"""Stamp the initials of the cashier who rang this sale (Mule City, MuleCity-fb00.2).
+
+	A register signs in as one shared POS user, so the invoice's owner does not
+	say who rang it. When the POS Profile's ``xpos_require_cashier_initials`` is
+	on, the cashier types their initials at Pay (honor system, no PIN) and they
+	must match a row of the profile's ``xpos_cashiers`` list. Returns go through
+	here too. With the flag off the field is ignored and nothing is set.
+
+	An offline sale being replayed (``replay``) was paid while the register was
+	offline; the customer has gone, so refusing it would lose a paid sale. It is
+	saved with whatever was typed and a note for the invoice's timeline is
+	returned. Otherwise returns None.
+	"""
+	if not cint(pos.get("xpos_require_cashier_initials")):
+		return None
+
+	initials = normalize_initials(typed)
+	known = {normalize_initials(row.get("initials")) for row in pos.get("xpos_cashiers") or []}
+	if initials and initials in known:
+		invoice_doc.pos_cashier = initials
+		return None
+
+	if not replay:
+		if not initials:
+			frappe.throw(_("Enter your cashier initials to complete this sale."))
+		frappe.throw(
+			_("Cashier initials {0} are not on the cashier list of POS Profile {1}.").format(
+				initials, pos.name
+			)
+		)
+
+	invoice_doc.pos_cashier = initials or None
+	if initials:
+		return _(
+			"Offline sale synced with cashier initials {0}, which are not on the cashier list of POS Profile {1}."
+		).format(initials, pos.name)
+	return _("Offline sale synced without cashier initials.")
+
+
 def _build_invoice_doc(data: dict, local_id: str | None = None):
 	"""Build the unsaved invoice a cart payload becomes: lines, price lock, taxes, payments.
 
@@ -857,6 +902,11 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	"""
 	data = json.loads(data) if isinstance(data, str) else data
 
+	# Only the offline queue passes ``local_id`` as its own argument (the browser
+	# queue's sync and retry, the desktop sync engine): it is replaying a sale
+	# already paid at the till. Pay online sends the id inside ``data`` only.
+	# Keep this before the fallback below; apply_pos_cashier relies on it.
+	replaying_offline_sale = bool(local_id)
 	local_id = local_id or data.get("local_id")
 
 	warehouse = data.get("warehouse")
@@ -875,6 +925,11 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 	check_may_sell(data.get("pos_profile"))
 
 	invoice_doc, pos, doctype, is_existing_draft = _build_invoice_doc(data, local_id)
+	# Checked here, not in _build_invoice_doc: preview_invoice shares the builder
+	# and runs before the cashier reaches Pay.
+	cashier_note = apply_pos_cashier(
+		invoice_doc, pos, data.get("pos_cashier"), replay=replaying_offline_sale
+	)
 	submit_in_background = cint(data.get("submit_in_background", 0))
 
 	try:
@@ -890,6 +945,9 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 			dt, name = existing
 			return {**_build_invoice_response(frappe.get_doc(dt, name)), "duplicate": True}
 		raise
+
+	if cashier_note:
+		invoice_doc.add_comment("Comment", cashier_note)
 
 	enforce_stock_availability(invoice_doc)
 

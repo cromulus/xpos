@@ -57,6 +57,13 @@
 
 			<div class="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
 				<div class="flex-1 flex flex-col p-4 gap-3 min-w-0 overflow-y-auto xpos-scrollbar">
+					<CashierInitialsField
+						v-if="posStore.requireCashierInitials"
+						ref="cashierField"
+						v-model="cashierInitials"
+						:cashiers="posStore.cashiers"
+						@done="focusAmountInput"
+					/>
 					<div
 						class="rounded-xl border"
 						:class="
@@ -813,6 +820,8 @@ import type { InvoiceChangeLeg, InvoiceData, InvoicePayment, TenderLeg } from "@
 import { isOnline, extractErrorMessage, isTabConflictError, isTicketChangedError } from "@/utils";
 import { ON_ACCOUNT, canChargeToAccount } from "@/utils/onAccount";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
+import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
+import { applyCashier, cashierInitialsOk, normalizeInitials } from "@/utils/cashierInitials";
 import { nowDate } from "@/utils/datetime";
 import {
 	isPaymentDialogSaveAndPrintShortcut,
@@ -829,6 +838,13 @@ const authStore = useAuthStore();
 const paymentStore = usePaymentStore();
 
 const amountInput = ref<InstanceType<typeof NumberInput> | null>(null);
+// Who rang this sale on a shared login (MuleCity-fb00.2); empty on every sale
+// because this dialog is mounted afresh each time Pay opens.
+const cashierInitials = ref("");
+const cashierField = ref<InstanceType<typeof CashierInitialsField> | null>(null);
+const receiptCashier = computed(
+	() => (posStore.requireCashierInitials && normalizeInitials(cashierInitials.value)) || authStore.userFullName,
+);
 const submitBtn = ref<InstanceType<typeof Button> | null>(null);
 const methodRefs: Record<number, HTMLButtonElement> = {};
 const quickAmountRefs: Record<number, HTMLElement> = {};
@@ -1050,6 +1066,7 @@ const outstandingSubmissionHint = computed(() => {
 
 const canSubmit = computed(() => {
 	if (cartStore.isEmpty) return false;
+	if (!cashierInitialsOk(posStore.requireCashierInitials, posStore.cashiers, cashierInitials.value)) return false;
 	if (selectedRateMissing.value) return false;
 	const total = roundCurrency(Math.abs(cartStore.grandTotal));
 	if (total <= 0) return true;
@@ -1071,7 +1088,7 @@ onMounted(async () => {
 		selectedMethod.value = availableMethods.value[0].mode_of_payment;
 	}
 	nextTick(() => {
-		amountInput.value?.focus();
+		(cashierField.value ?? amountInput.value)?.focus();
 	});
 
 	if (cartStore.customer) {
@@ -1380,6 +1397,7 @@ function buildInvoicePayload(): InvoiceData {
 
 	const invoiceData = cartStore.getInvoiceData(posStore.profileName, shiftName);
 	if (cartStore.previewExpectedTotal !== null) invoiceData.expected_total = cartStore.previewExpectedTotal;
+	applyCashier(invoiceData, posStore.requireCashierInitials, cashierInitials.value);
 
 	if (!cartStore.isReturnMode && remainingAmount.value > 0 && chargingToAccount.value && showOnAccount.value) {
 		invoiceData.is_credit_sale = true;
@@ -1423,7 +1441,7 @@ async function submitPayment(withPrint: boolean = true) {
 					pos_opening_shift_local_id: shiftName,
 					is_draft: false,
 					is_return: cartStore.isReturnMode,
-					receipt: cartStore.getReceiptSnapshot("", authStore.userFullName),
+					receipt: cartStore.getReceiptSnapshot("", receiptCashier.value),
 				},
 				customer_name: cartStore.customerName,
 				grand_total: cartStore.grandTotal,
@@ -1453,14 +1471,14 @@ async function submitPayment(withPrint: boolean = true) {
 		if (!isOnline()) {
 			const saved = await completeOfflineSale(invoiceData, {
 				withPrint,
-				cashier: authStore.userFullName,
+				cashier: receiptCashier.value,
 			});
 			if (!saved) showError(__("Failed to save invoice offline"));
 			return;
 		}
 		const result = await submitDurableInvoice(
 			invoiceData,
-			cartStore.getReceiptSnapshot("", authStore.userFullName),
+			cartStore.getReceiptSnapshot("", receiptCashier.value),
 			async () => {
 				let response = await call<CreateInvoiceResult>("xpos.api.invoices.create_invoice", {
 					data: JSON.stringify(invoiceData),
@@ -1497,7 +1515,7 @@ async function submitPayment(withPrint: boolean = true) {
 		} else if (isNetworkError(error)) {
 			const saved = await completeOfflineSale(invoiceData, {
 				withPrint,
-				cashier: authStore.userFullName,
+				cashier: receiptCashier.value,
 			});
 			if (saved) return;
 			showError(__("You are offline. Invoice could not be saved locally."));
