@@ -69,12 +69,25 @@ export function chooseCustomer(name: string = customer()) {
 	});
 }
 
+/**
+ * On a register that asks for cashier initials at Pay (Mule City's shared counter
+ * login, MuleCity-fb00), type listed initials before choosing the tender; a site
+ * without the flag shows no field and this does nothing.
+ */
+export function typeCashierInitials(initials: string = "LE") {
+	cy.get("[role='dialog']").then(($dialog) => {
+		const field = $dialog.find("[data-testid='cashier-initials-input']");
+		if (field.length) cy.wrap(field).clear().type(initials);
+	});
+}
+
 /** One bag for `buyer`, paid in full with `mode`, Save & Print. */
 export function ringUpOneBag(mode: string, buyer: string = customer()) {
 	chooseCustomer(buyer);
 	cy.contains(item()).first().click();
 	cy.cartRows().should("have.length", 1);
 	cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
+	typeCashierInitials();
 	cy.get(`[data-testid='payment-method'][data-mode='${mode}']`).click();
 	// Selecting the tender fills the remaining amount; Enter is Save & Print.
 	cy.get("[role='dialog']").type("{enter}");
