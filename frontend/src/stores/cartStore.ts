@@ -249,7 +249,19 @@ export const useCartStore = defineStore("cart", () => {
 
 	const ruleDiscountPercentage = ref(0);
 	const ruleDiscountAmount = ref(0);
-	const applyDiscountOn = ref("Grand Total");
+	// A transaction Pricing Rule's apply_discount_on wins while its discount stands;
+	// otherwise the POS Profile's, as ERPNext sets it on the invoice.
+	const ruleDiscountOn = ref("");
+	const applyDiscountOn = computed(
+		() => ruleDiscountOn.value || posStore.posProfile?.apply_discount_on || "Grand Total",
+	);
+
+	/** The additional discount taken off the net before tax ("Net Total"), else 0. */
+	const netTotalDiscount = computed(() => {
+		if (applyDiscountOn.value !== "Net Total") return 0;
+		if (discountPercentage.value > 0) return Math.round(subtotal.value * discountPercentage.value) / 100;
+		return discountAmount.value > 0 ? discountAmount.value : 0;
+	});
 	const isPricingCart = ref(false);
 	const pricingSource = ref<PricingSource>("server");
 
@@ -339,6 +351,21 @@ export const useCartStore = defineStore("cart", () => {
 		}
 
 		if (itemNets.length === 0) return [];
+
+		// On "Net Total" ERPNext spreads the discount over the lines by their net
+		// (rounded to the cent, the last line taking the remainder), then taxes them.
+		const discount = netTotalDiscount.value;
+		if (discount && subtotal.value) {
+			let remaining = discount;
+			itemNets.forEach((line, i) => {
+				const share =
+					i === itemNets.length - 1
+						? remaining
+						: Math.round((discount * line.net * 100) / subtotal.value) / 100;
+				line.net -= share;
+				remaining -= share;
+			});
+		}
 
 		const result: CalculatedTax[] = [];
 
@@ -433,7 +460,7 @@ export const useCartStore = defineStore("cart", () => {
 			if (!isReturnMode.value && writeOffAmount.value > 0) due -= writeOffAmount.value;
 			return due;
 		}
-		let total = subtotal.value + taxAmount.value;
+		let total = subtotal.value - netTotalDiscount.value + taxAmount.value;
 
 		// Apply offer item-level discounts
 		if (offerItemDiscountTotal.value > 0) {
@@ -445,11 +472,13 @@ export const useCartStore = defineStore("cart", () => {
 			total -= (total * offerGrandTotalDiscountPct.value) / 100;
 		}
 
-		if (discountPercentage.value > 0) {
-			const base = applyDiscountOn.value === "Net Total" ? subtotal.value : total;
-			total -= (base * discountPercentage.value) / 100;
-		} else if (discountAmount.value > 0) {
-			total -= discountAmount.value;
+		// On "Net Total" the discount already came off the net, before tax.
+		if (applyDiscountOn.value !== "Net Total") {
+			if (discountPercentage.value > 0) {
+				total -= (total * discountPercentage.value) / 100;
+			} else if (discountAmount.value > 0) {
+				total -= discountAmount.value;
+			}
 		}
 		if (!isReturnMode.value && redeemLoyaltyPoints.value && loyaltyAmount.value > 0) {
 			total -= loyaltyAmount.value;
@@ -1253,7 +1282,7 @@ export const useCartStore = defineStore("cart", () => {
 	}
 
 	function applyTransactionDiscount(update: ResolvedCartPricing["invoice_updates"]): void {
-		applyDiscountOn.value = update.apply_discount_on || "Grand Total";
+		ruleDiscountOn.value = (update.from_pricing_rule && update.apply_discount_on) || "";
 
 		if (update.from_pricing_rule) {
 			discountPercentage.value = update.additional_discount_percentage;
@@ -1292,7 +1321,7 @@ export const useCartStore = defineStore("cart", () => {
 			applyTransactionDiscount({
 				additional_discount_percentage: 0,
 				discount_amount: 0,
-				apply_discount_on: "Grand Total",
+				apply_discount_on: "",
 				from_pricing_rule: false,
 			});
 			return;
@@ -1417,7 +1446,7 @@ export const useCartStore = defineStore("cart", () => {
 		discountAmount.value = 0;
 		ruleDiscountPercentage.value = 0;
 		ruleDiscountAmount.value = 0;
-		applyDiscountOn.value = "Grand Total";
+		ruleDiscountOn.value = "";
 		pricingSource.value = "server";
 		clearLoyalty();
 		appliedOffers.value = [];
