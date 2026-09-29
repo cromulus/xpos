@@ -1,5 +1,22 @@
 # Mule City XPOS release notes
 
+## Native formula entry candidate (2026-09-29; not released)
+
+Workstream: `codex/native-formula-entry`, based on mc13 `cc2c709`.
+MuleCity-jr36.11 and MuleCity-phjf track integration.
+
+- New mix and Edit recipe open `/desk/new-formula` in a separate tab, keeping
+  the cart. The full formula library opens native Items.
+- Cart rows preserve Sales Order, source row, BOM and literal mill instructions.
+  Distinct order rows or instructions stay separate. Retired quote fields are
+  dropped from invoice transport.
+- Pickup prices use b3's MuleCity-jfdy `9f53a07` (local cherry-pick `edc26d4`).
+  The same source row supplies mill instructions, overriding cart edits.
+  This candidate adds no second order-price or ingredient-price engine.
+- Validation: 511 frontend tests, typecheck, build and 41 backend adapter tests
+  passed. Installed browser and combined app integration remain release gates.
+  No platform pins, main/staging merges, pushes or deployment are included.
+
 ## mule-v2.10.1-mc7 (2026-09-28)
 
 - Customer lookup uses the active POS profile when called from the picker,

@@ -230,6 +230,56 @@ class TestCreateInvoice(unittest.TestCase):
 		self.assertEqual(mock_item.price_list_rate, 12.346)
 		self.assertEqual(mock_item.rate, 12.346)
 
+	@patch("xpos.api.invoices.frappe")
+	def test_mapped_mix_build_retains_order_price_and_mill_instructions(self, mock_frappe):
+		"""Pickup retains the approved mix price despite today's rate and a lower cap."""
+		mock_pos = MagicMock()
+		mock_pos.company = "Test Company"
+		mock_pos.warehouse = "Store - TC"
+		mock_pos.currency = "USD"
+		mock_pos.get.side_effect = lambda key, default=None: {
+			"selling_price_list": "Retail", "max_discount_percentage_allowed": 5,
+		}.get(key, default)
+		mock_frappe.get_cached_doc.return_value = mock_pos
+		mock_frappe.db.get_value.return_value = "Debtors - TC"
+		mock_frappe.db.get_default.return_value = "3"
+		mock_item = MagicMock()
+		mock_item.qty = 1
+		mock_item.is_free_item = 0
+		mock_item.get.side_effect = lambda key, default=None: getattr(mock_item, key, default)
+		mock_invoice = MagicMock()
+		mock_invoice.get.side_effect = lambda key, default=None: [mock_item] if key == "items" else default
+		mock_invoice.append.side_effect = lambda table, data: mock_item if table == "items" else MagicMock()
+		mock_frappe.new_doc.return_value = mock_invoice
+		source = {"price_list_rate": 20, "rate": 18, "discount_percentage": 10, "discount_amount": 2,
+			"mule_processing_instructions": "CRACK <<2X>>\n2 PALLETS"}
+		from frappe import _dict
+		with patch("xpos.api.invoices._sales_order_line", return_value=_dict(source)), patch(
+			"xpos.api.invoices.selling_price", return_value=50
+		) as current, patch("xpos.api.auth.user_has_pos_permission", return_value=False), patch(
+			"xpos.api.invoices.pricing_rule_rates", return_value=[18]
+		), patch("xpos.api.invoices.check_discount_cap", wraps=invoices.check_discount_cap) as cap:
+			invoices._build_invoice_doc({
+				"pos_profile": "POS-PROFILE-1", "customer": "Customer A",
+				"items": [{"item_code": "MIX", "qty": 1, "uom": "Bag", "rate": 0.01,
+					"sales_order": "SO-1", "so_detail": "SO-ROW", "discount_percentage": 99,
+					"mule_processing_instructions": "client override"}],
+				"payments": [{"mode_of_payment": "Cash", "amount": 18}],
+			})
+		cap.assert_called_once_with(mock_invoice, 5, [18])
+		# Approved pricing survives, but a new 30% counter discount is refused.
+		mock_invoice.get.side_effect = lambda key, default=None: {"items": [mock_item], "additional_discount_percentage": 30}.get(key, default)
+		mock_invoice.additional_discount_percentage = 30
+		with patch("xpos.api.invoices.frappe.throw", side_effect=ValueError("cap")):
+			with self.assertRaisesRegex(ValueError, "cap"):
+				invoices.check_discount_cap(mock_invoice, 5, [18])
+		current.assert_not_called()
+		self.assertEqual(mock_item.price_list_rate, 20)
+		self.assertEqual(mock_item.rate, 18)
+		self.assertEqual(mock_item.mule_processing_instructions, source["mule_processing_instructions"])
+		self.assertEqual(mock_item.discount_percentage, 10)
+		mock_frappe.throw.assert_not_called()
+
 
 class TestInvoiceOutstandingPermissions(unittest.TestCase):
 	"""Tests for outstanding-balance permission enforcement."""

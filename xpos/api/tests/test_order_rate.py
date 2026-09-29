@@ -20,7 +20,7 @@ def order_row(**values):
 
 class TestSalesOrderLine(unittest.TestCase):
 	def lookup(self, row, found):
-		with patch.object(invoices.frappe.db, "get_value", return_value=found):
+		with patch.object(invoices.frappe, "get_meta"), patch.object(invoices.frappe.db, "get_value", return_value=found):
 			return invoices._sales_order_line(row)
 
 	def test_a_line_naming_its_submitted_order_row_gets_that_row(self):
@@ -49,3 +49,23 @@ class TestDiscountCapStartsFromTheOrderRate(unittest.TestCase):
 		with patch.object(invoices, "_engine_rates", return_value=[10.37, 10.37]):
 			rates = invoices.pricing_rule_rates(doc, frappe._dict(name="P"))
 		self.assertEqual(rates, [9.0, 10.37])
+
+
+class TestNativeOrderTransport(unittest.TestCase):
+	def test_native_links_and_literal_notes_survive_but_old_quote_evidence_does_not(self):
+		"""Pickup transports the native source row without reviving a parallel quote."""
+		row = {"sales_order": "SO-1", "so_detail": "ROW-1", "bom_no": "BOM-1",
+			"mule_processing_instructions": "CRACK <<2X>>\n2 PALLETS",
+			"mule_source_bom": "OLD", "mule_mix_quote": "QUOTE", "rate": 999}
+		self.assertEqual(invoices._mule_order_fields(row), {
+			key: row[key] for key in ("sales_order", "so_detail", "bom_no", "mule_processing_instructions")})
+		self.assertEqual(invoices._mule_order_fields({"item_code": "CORN"}), {})
+
+	def test_optional_mill_instructions_are_read_only_when_the_field_exists(self):
+		"""A plain ERPNext site has no Mule fields; a Mule site reads its order note."""
+		for has_field in (False, True):
+			with self.subTest(has_field=has_field), patch.object(invoices.frappe, "get_meta") as meta, patch.object(
+				invoices.frappe.db, "get_value", return_value=order_row()) as lookup:
+				meta.return_value.has_field.return_value = has_field
+				invoices._sales_order_line({"item_code": "FEED", "so_detail": "ROW-1"})
+				self.assertEqual("mule_processing_instructions" in lookup.call_args.args[2], has_field)

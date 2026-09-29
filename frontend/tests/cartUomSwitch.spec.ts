@@ -226,3 +226,34 @@ describe("switching a cart line between Bag and Pound", () => {
 		expect(cart.items[0].rate).not.toBe(23.47);
 	});
 });
+
+
+describe("native mix provenance through the cart", () => {
+	beforeEach(() => { setActivePinia(createPinia()); vi.clearAllMocks(); });
+	it("retains the exact source row and BOM through reload and checkout", () => {
+		const cart = useCartStore();
+		cart.loadFromInvoice({ customer: "CUSTOMER", customer_name: "Customer", items: [{
+			item_code: "MIX", item_name: "Customer mix", qty: 2, rate: 18, uom: "Bag",
+			stock_uom: "Pound", sales_order: "SO-1", so_detail: "ROW-1", bom_no: "BOM-1",
+			warehouse: "Stores - MC", mule_mix_quote: "RETIRED", mule_processing_instructions: "CRACK <<2X>>\n2 PALLETS",
+		}] } as any);
+		const row = cart.getInvoiceData("Mule City Retail", "SHIFT").items[0] as any;
+		expect(row).toMatchObject({ sales_order: "SO-1", so_detail: "ROW-1", bom_no: "BOM-1", warehouse: "Stores - MC", mule_processing_instructions: "CRACK <<2X>>\n2 PALLETS" });
+		expect(row).not.toHaveProperty("mule_mix_quote");
+	});
+	it("never combines two source order rows for the same mix and unit", () => {
+		const cart = useCartStore();
+		cart.addItem(feed({ sales_order: "SO-1", so_detail: "ROW-1", bom_no: "BOM-1" } as any));
+		cart.addItem(feed({ sales_order: "SO-2", so_detail: "ROW-2", bom_no: "BOM-1" } as any));
+		expect(cart.items).toHaveLength(2);
+		expect(cart.items.map(row => (row as any).so_detail)).toEqual(["ROW-1", "ROW-2"]);
+	});
+	it("keeps different mill instructions on separate mix rows", () => {
+		const cart = useCartStore();
+		cart.addItem(feed({ bom_no: "BOM-1", mule_processing_instructions: "CRACK <<2X>>" } as any));
+		cart.addItem(feed({ bom_no: "BOM-1", mule_processing_instructions: "WHOLE" } as any));
+		expect(cart.items).toHaveLength(2);
+		expect(cart.items.map(row => (row as any).mule_processing_instructions)).toEqual(["CRACK <<2X>>", "WHOLE"]);
+	});
+
+});

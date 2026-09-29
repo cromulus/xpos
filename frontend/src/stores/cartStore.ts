@@ -604,6 +604,10 @@ export const useCartStore = defineStore("cart", () => {
 			(i: CartItem) =>
 				i.item_code === item.item_code &&
 				i.uom === (item.uom || item.stock_uom) &&
+				// Separate source rows keep their own agreed price and recipe.
+				["sales_order", "so_detail", "bom_no", "mule_processing_instructions"].every(
+					field => ((i as any)[field] || "") === ((item as any)[field] || ""),
+				) &&
 				!i.serial_no &&
 				!i.batch_no,
 		);
