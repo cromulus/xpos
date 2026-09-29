@@ -29,7 +29,8 @@
     "test:e2e": "node scripts/run-cypress.mjs run --with-server",
     "test:e2e:demo": "node scripts/run-cypress.mjs run --with-server --demo",
     "test:e2e:open": "node scripts/run-cypress.mjs open --with-server",
-    "test:e2e:run": "node scripts/run-cypress.mjs run"
+    "test:e2e:run": "node scripts/run-cypress.mjs run",
+    "test:e2e:bench": "node scripts/run-cypress.mjs run --browser chrome --config-file cypress.bench.config.ts"
   },
   "dependencies": {
     "@zxing/browser": "^0.1.5",
