@@ -978,7 +978,9 @@ function changeRemainingIn(currency: string): number {
 
 const canSubmitOutstanding = computed(() => {
 	if (cartStore.isReturnMode || remainingAmount.value <= 0) return false;
-	if (posStore.allowCreditSale) return true;
+	// A charge is checked against the customer's credit limit on the server, so
+	// it can't be rung while offline: it would be refused at sync after the goods left.
+	if (posStore.allowCreditSale) return isOnline();
 	return hasRecordedPayment.value && posStore.allowPartialPayment;
 });
 
@@ -1316,7 +1318,7 @@ function buildInvoicePayload(): InvoiceData {
 	const invoiceData = cartStore.getInvoiceData(posStore.profileName, shiftName);
 	if (cartStore.previewExpectedTotal !== null) invoiceData.expected_total = cartStore.previewExpectedTotal;
 
-	if (!cartStore.isReturnMode && remainingAmount.value > 0 && posStore.allowCreditSale) {
+	if (!cartStore.isReturnMode && remainingAmount.value > 0 && posStore.allowCreditSale && isOnline()) {
 		invoiceData.is_credit_sale = true;
 	}
 

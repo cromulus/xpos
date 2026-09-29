@@ -167,7 +167,24 @@
 					<AlertTriangle class="w-3.5 h-3.5 shrink-0" />
 					{{ __("This sale exceeds the credit limit by {0}", [money(projectedBalance - customerCreditLimit)]) }}
 				</p>
+				<Button
+					v-if="canReceiveOnAccount"
+					variant="outline"
+					size="sm"
+					class="col-span-2"
+					data-testid="receive-on-account"
+					@click="showReceiveOnAccount = true"
+				>
+					{{ __("Receive on Account") }}
+				</Button>
 			</div>
+			<ReceiveOnAccountDialog
+				:customer="showReceiveOnAccount ? cartStore.customer?.name || null : null"
+				:customer-label="cartStore.customerName"
+				:balance="customerBalance ?? 0"
+				@close="showReceiveOnAccount = false"
+				@received="onReceivedOnAccount"
+			/>
 		</div>
 
 		<div ref="cartScrollContainer" class="flex-1 overflow-y-auto px-4 xpos-scrollbar">
@@ -286,6 +303,8 @@ import {
 } from "lucide-vue-next";
 import __ from "@/lib/translate";
 import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
+import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
+import { isOnline } from "@/utils";
 import type { ItemUOM } from "@/types/pos.types";
 
 const posStore = usePosStore();
@@ -363,6 +382,18 @@ const showCreditInfo = computed(
 		!cartStore.isReturnMode &&
 		((customerBalance.value ?? 0) > 0 || customerCreditLimit.value > 0),
 );
+
+// A payment toward what the customer owes, when the profile and role allow it
+// (posStore.allowOutstandingSettlement) and the server can be reached.
+const showReceiveOnAccount = ref(false);
+const canReceiveOnAccount = computed(
+	() => posStore.allowOutstandingSettlement && (customerBalance.value ?? 0) > 0 && isOnline(),
+);
+
+function onReceivedOnAccount() {
+	showReceiveOnAccount.value = false;
+	if (cartStore.customer?.name) customerStore.getCustomerInfo(cartStore.customer.name);
+}
 
 function handleCustomerClick() {
 	if (cartStore.isReturnMode) {

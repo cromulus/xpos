@@ -31,6 +31,15 @@ class TestPrivilegedHelpersAreNotExposed(unittest.TestCase):
 		self.assertTrue(function_exists("xpos.api.payments", "create_payment_entry"))
 		self.assertFalse(is_whitelisted("xpos.api.payments", "create_payment_entry"))
 
+	def test_receive_on_account_is_a_gated_public_entry_point(self):
+		"""Taking a payment on account is whitelisted and checks the settle gate first."""
+		import inspect
+
+		from xpos.api import payments
+
+		self.assertTrue(is_whitelisted("xpos.api.payments", "receive_on_account"))
+		self.assertIn("can_settle_outstanding(pos_profile)", inspect.getsource(payments.receive_on_account))
+
 	def test_settle_outstanding_invoice_remains_the_public_entry_point(self):
 		"""The gated wrapper stays reachable so the feature keeps working."""
 		self.assertTrue(is_whitelisted("xpos.api.payments", "settle_outstanding_invoice"))

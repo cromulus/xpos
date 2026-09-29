@@ -9,6 +9,7 @@ POS Payments API.
 - Outstanding invoice lookup
 - Unallocated payment lookup
 - Payment entry creation
+- Payments on account (a customer paying toward what they owe)
 """
 
 import json
@@ -308,6 +309,93 @@ def settle_outstanding_invoice(
 		"payment_entry": result.get("name"),
 		"allocated_amount": amount,
 		"outstanding_after": flt(frappe.db.get_value("Sales Invoice", invoice, "outstanding_amount")),
+	}
+
+
+@frappe.whitelist()
+def receive_on_account(
+	customer: str,
+	amount: float,
+	mode_of_payment: str,
+	pos_opening_shift: str,
+	pos_profile: str | None = None,
+) -> dict:
+	"""Take a payment toward what a customer owes, the standard ERPNext way.
+
+	One Payment Entry (Receive, Customer), allocated by ERPNext's own "Get
+	Outstanding Invoices" + "Allocate Payment Amount" (oldest first); what is
+	left over stays an unallocated advance for Payment Reconciliation. Gated
+	like ``settle_outstanding_invoice``, which settles a single ticket.
+	"""
+	from erpnext.accounts.doctype.payment_entry.payment_entry import get_outstanding_reference_documents
+	from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
+
+	if not can_settle_outstanding(pos_profile):
+		frappe.throw(_("You are not permitted to take payments on account."), frappe.PermissionError)
+	if not pos_opening_shift:
+		frappe.throw(_("An open shift is required to take a payment on account."))
+	amount = flt(amount)
+	if amount <= 0:
+		frappe.throw(_("Payment amount must be greater than zero."))
+	if not frappe.db.exists("Customer", customer):
+		frappe.throw(_("Customer {0} does not exist").format(customer))
+
+	company = frappe.db.get_value("POS Profile", pos_profile, "company") if pos_profile else None
+	company = company or frappe.defaults.get_user_default("Company")
+
+	pe = frappe.new_doc("Payment Entry")
+	pe.payment_type = "Receive"
+	pe.party_type = "Customer"
+	pe.party = customer
+	pe.company = company
+	pe.posting_date = nowdate()
+	pe.mode_of_payment = mode_of_payment
+	pe.paid_to = get_bank_cash_account(mode_of_payment, company).get("account")
+	pe.paid_amount = amount
+	pe.received_amount = amount
+	pe.reference_no = pos_opening_shift
+	pe.reference_date = nowdate()
+	pe.setup_party_account_field()
+	pe.set_missing_values()
+
+	outstanding = get_outstanding_reference_documents(
+		{
+			"posting_date": nowdate(),
+			"company": company,
+			"party_type": "Customer",
+			"party": customer,
+			"party_account": pe.paid_from,
+			"get_outstanding_invoices": True,
+		},
+		validate=True,
+	) or []
+	for ref in outstanding:
+		if flt(ref.get("outstanding_amount")) <= 0:
+			continue
+		pe.append(
+			"references",
+			{
+				"reference_doctype": ref.get("voucher_type"),
+				"reference_name": ref.get("voucher_no"),
+				"due_date": ref.get("due_date"),
+				"total_amount": ref.get("invoice_amount"),
+				"outstanding_amount": ref.get("outstanding_amount"),
+				"payment_term": ref.get("payment_term"),
+				"account": ref.get("account"),
+			},
+		)
+	pe.allocate_amount_to_references(amount, paid_amount_change=True, allocate_payment_amount=True)
+	pe.references = [row for row in pe.references if flt(row.allocated_amount) > 0]
+	pe.insert(ignore_permissions=True)
+	pe.submit()
+
+	return {
+		"payment_entry": pe.name,
+		"allocated": [
+			{"reference_doctype": r.reference_doctype, "reference_name": r.reference_name, "allocated_amount": flt(r.allocated_amount)}
+			for r in pe.references
+		],
+		"unallocated_amount": flt(pe.unallocated_amount),
 	}
 
 
