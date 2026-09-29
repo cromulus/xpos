@@ -58,14 +58,17 @@ describe("selling while the store's internet is down", () => {
 				pages.forEach((page) => expect(page).to.contain(item()));
 			});
 			cy.pendingInvoices().then((rows) => {
-				const charged = rows.map((r) => Number(r.grand_total)).sort();
+				// To the cent: the queue keeps the cart's float (11.069999999999999), the
+				// server posts 11.07.
+				const cents = (amount: unknown) => Math.round(Number(amount) * 100);
+				const charged = rows.map((r) => cents(r.grand_total)).sort();
 
 				cy.networkOn();
 				waitUntil(() => cy.pendingInvoices(), (rows) => rows.length === 0, "both offline sales to sync");
 				customerInvoices().then((after: Array<{ name: string; grand_total: number }>) => {
 					const posted = after.filter((i) => !known.has(i.name));
 					expect(posted, "two new Sales Invoices").to.have.length(2);
-					expect(posted.map((i) => Number(i.grand_total)).sort()).to.deep.equal(charged);
+					expect(posted.map((i) => cents(i.grand_total)).sort()).to.deep.equal(charged);
 				});
 			});
 		});
