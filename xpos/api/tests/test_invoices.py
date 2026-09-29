@@ -199,6 +199,56 @@ class TestCreateInvoice(unittest.TestCase):
 
 		self.assertEqual(mock_invoice.additional_discount_percentage, 10)
 
+	def discounted_sale(self, mock_frappe, profile_discount_on, **payload):
+		"""Post a $100 sale with $10 off at a counter whose profile applies discounts on `profile_discount_on`."""
+		profile = {"apply_discount_on": profile_discount_on}
+		mock_pos = MagicMock()
+		mock_pos.company = "Test Company"
+		mock_pos.warehouse = "Store - TC"
+		mock_pos.currency = "USD"
+		mock_pos.get.side_effect = lambda key, default=None: profile.get(key, 0)
+		mock_frappe.get_cached_doc.return_value = mock_pos
+		mock_frappe.db.get_value.return_value = "Debtors - TC"
+
+		mock_invoice = MagicMock()
+		mock_invoice.name = "INV-004"
+		mock_invoice.as_dict.return_value = {"name": "INV-004"}
+		mock_frappe.new_doc.return_value = mock_invoice
+
+		invoices.create_invoice(
+			{
+				"pos_profile": "POS-PROFILE-1",
+				"customer": "Customer A",
+				"items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100}],
+				"payments": [{"mode_of_payment": "Cash", "amount": 96.08}],
+				"discount_amount": 10,
+				**payload,
+			}
+		)
+		return mock_invoice
+
+	@patch("xpos.api.invoices.frappe")
+	def test_a_discount_follows_the_profiles_apply_discount_on(self, mock_frappe):
+		"""User story: a counter set to discount the Net Total takes a discount before tax, even
+		when the register did not say where to apply it."""
+		invoice = self.discounted_sale(mock_frappe, "Net Total")
+
+		self.assertEqual(invoice.apply_discount_on, "Net Total")
+
+	@patch("xpos.api.invoices.frappe")
+	def test_the_registers_own_apply_discount_on_wins(self, mock_frappe):
+		"""A transaction Pricing Rule's choice, sent by the register, beats the profile's."""
+		invoice = self.discounted_sale(mock_frappe, "Net Total", apply_discount_on="Grand Total")
+
+		self.assertEqual(invoice.apply_discount_on, "Grand Total")
+
+	@patch("xpos.api.invoices.frappe")
+	def test_a_profile_without_one_discounts_the_grand_total(self, mock_frappe):
+		"""Negative: nothing says where, so the discount comes off the Grand Total as before."""
+		invoice = self.discounted_sale(mock_frappe, None)
+
+		self.assertEqual(invoice.apply_discount_on, "Grand Total")
+
 	@patch("xpos.api.invoices.frappe")
 	def test_create_invoice_preserves_three_decimal_item_rate(self, mock_frappe):
 		"""Item rates should retain up to three decimals when xpos creates invoices."""
