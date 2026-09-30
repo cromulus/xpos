@@ -1028,7 +1028,7 @@
    "allow_on_submit": 0,
    "default": null,
    "depends_on": null,
-   "description": "Initials the cashier typed at Pay on a shared register login. Checked against the POS Profile's cashier list.",
+   "description": "Who rang the sale: on a shared register login, the initials typed at Pay (checked against the POS Profile's cashier list); otherwise the signed-in user's full name.",
    "dt": "POS Invoice",
    "fieldname": "pos_cashier",
    "fieldtype": "Data",

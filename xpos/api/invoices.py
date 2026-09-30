@@ -495,14 +495,24 @@ def normalize_initials(value) -> str:
 	return cstr(value).strip().upper()
 
 
-def apply_pos_cashier(invoice_doc, pos, typed, replay: bool = False) -> str | None:
-	"""Stamp the initials of the cashier who rang this sale (Mule City, MuleCity-fb00.2).
+def is_shared_login(pos, user: str) -> bool:
+	"""Whether ``user``'s row on the POS Profile is marked ``xpos_shared_login``
+	(a register login several cashiers share, MuleCity-1p4i)."""
+	return any(
+		row.get("user") == user and cint(row.get("xpos_shared_login"))
+		for row in pos.get("applicable_for_users") or []
+	)
 
-	A register signs in as one shared POS user, so the invoice's owner does not
-	say who rang it. When the POS Profile's ``xpos_require_cashier_initials`` is
-	on, the cashier types their initials at Pay (honor system, no PIN) and they
-	must match a row of the profile's ``xpos_cashiers`` list. Returns go through
-	here too. With the flag off the field is ignored and nothing is set.
+
+def apply_pos_cashier(invoice_doc, pos, typed, replay: bool = False) -> str | None:
+	"""Stamp who rang this sale (Mule City, MuleCity-fb00.2, MuleCity-1p4i).
+
+	When the POS Profile's ``xpos_require_cashier_initials`` is on, a sale rung
+	on a shared login (its profile row has ``xpos_shared_login``) asks the
+	cashier for their initials at Pay (honor system, no PIN); they must match a
+	row of the profile's ``xpos_cashiers`` list. Anyone signed in as themselves
+	is not asked: the sale records their full name. Returns go through here
+	too. With the flag off the field is ignored and nothing is set.
 
 	An offline sale being replayed (``replay``) was paid while the register was
 	offline; the customer has gone, so refusing it would lose a paid sale. It is
@@ -510,6 +520,11 @@ def apply_pos_cashier(invoice_doc, pos, typed, replay: bool = False) -> str | No
 	returned. Otherwise returns None.
 	"""
 	if not cint(pos.get("xpos_require_cashier_initials")):
+		return None
+
+	user = frappe.session.user
+	if not is_shared_login(pos, user):
+		invoice_doc.pos_cashier = frappe.utils.get_fullname(user)
 		return None
 
 	initials = normalize_initials(typed)

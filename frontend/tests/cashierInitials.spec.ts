@@ -7,6 +7,10 @@
  * be on the POS Profile's cashier list, and they go on the invoice as
  * `pos_cashier` so we know who rang each sale. The box starts empty on every
  * sale; a register that does not ask for initials pays exactly as before.
+ *
+ * Bill (2026-09-30, MuleCity-1p4i): owners and front desk also sell under their
+ * own logins. Only a login marked as the register's shared login is asked; a
+ * named login pays with no box, and the server records their name.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, shallowMount } from "@vue/test-utils";
@@ -50,7 +54,14 @@ import PaymentDialog from "@/components/dialogs/PaymentDialog.vue";
 import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
 import { usePosStore } from "@/stores/posStore";
 import { useCartStore } from "@/stores/cartStore";
-import { applyCashier, cashierInitialsOk, matchCashier, normalizeInitials } from "@/utils/cashierInitials";
+import { useAuthStore } from "@/stores/authStore";
+import {
+	applyCashier,
+	cashierInitialsOk,
+	initialsRequiredFor,
+	matchCashier,
+	normalizeInitials,
+} from "@/utils/cashierInitials";
 
 const CASHIERS: XposCashier[] = [
 	{ initials: "LE", cashier_name: "Lee Evans" },
@@ -80,6 +91,30 @@ describe("cashier initials rules", () => {
 	});
 });
 
+// The register's shared login, and an owner who sells under his own login.
+const SHARED_LOGIN = "pos@example.com";
+const NAMED_LOGIN = "ben@example.com";
+const REGISTER_USERS = [
+	{ user: SHARED_LOGIN, xpos_shared_login: 1 },
+	{ user: NAMED_LOGIN, xpos_shared_login: 0 },
+];
+
+describe("who is asked for initials", () => {
+	const profile = (require: number) =>
+		({ name: "Counter", xpos_require_cashier_initials: require, applicable_for_users: REGISTER_USERS }) as never;
+
+	it("asks only the shared login, and only when the profile requires initials", () => {
+		expect(initialsRequiredFor(profile(1), [SHARED_LOGIN])).toBe(true);
+		expect(initialsRequiredFor(profile(1), [NAMED_LOGIN])).toBe(false);
+		expect(initialsRequiredFor(profile(0), [SHARED_LOGIN])).toBe(false);
+	});
+
+	it("does not ask a user who has no row, or when there is no profile", () => {
+		expect(initialsRequiredFor(profile(1), ["Guest", ""])).toBe(false);
+		expect(initialsRequiredFor(null, [SHARED_LOGIN])).toBe(false);
+	});
+});
+
 describe("the Cashier initials box", () => {
 	it("names the matched cashier as they type, and says when initials are not on the list", async () => {
 		const box = mount(CashierInitialsField, { props: { cashiers: CASHIERS, modelValue: "" } });
@@ -106,13 +141,15 @@ describe("Pay with cashier initials", () => {
 		mocks.online = true;
 	});
 
-	function ringUp(requireInitials: boolean) {
+	function ringUp(requireInitials: boolean, user = SHARED_LOGIN) {
+		useAuthStore().user = { user, user_email: user, user_fullname: user } as never;
 		const pos = usePosStore();
 		pos.posProfile = {
 			name: "Mule City Counter",
 			payments: [{ mode_of_payment: "Cash", default: 1 }],
 			xpos_require_cashier_initials: requireInitials ? 1 : 0,
 			xpos_cashiers: CASHIERS,
+			applicable_for_users: REGISTER_USERS,
 		} as never;
 		const cart = useCartStore();
 		cart.customer = { name: "Walk-In Customer" } as never;
@@ -218,6 +255,18 @@ describe("Pay with cashier initials", () => {
 
 	it("is not shown, and payment works as before, when the profile does not ask for initials", async () => {
 		ringUp(false);
+		const wrapper = await openPay();
+
+		expect(wrapper.findComponent(CashierInitialsField).exists()).toBe(false);
+		expect(saveButton(wrapper).attributes("disabled")).toBe("false");
+
+		await saveOnly(wrapper);
+		expect(sentPayload()).not.toHaveProperty("pos_cashier");
+		wrapper.unmount();
+	});
+
+	it("is not shown to a named login, which pays without initials", async () => {
+		ringUp(true, NAMED_LOGIN);
 		const wrapper = await openPay();
 
 		expect(wrapper.findComponent(CashierInitialsField).exists()).toBe(false);

@@ -9,6 +9,10 @@ their initials at Pay. It is honor system (no PIN), but the initials must be on
 the POS Profile's cashier list, and they are saved on the Sales Invoice so we
 know who rang each sale. A sale paid while the register was offline is never
 lost over its initials: it is saved and the invoice gets a note instead.
+
+Bill (2026-09-30, MuleCity-1p4i): owners and front desk also sell at the
+register under their own logins. Only a login marked ``xpos_shared_login`` on
+the profile is asked for initials; a named login's sale records their name.
 """
 
 import unittest
@@ -28,9 +32,22 @@ def raising_throw(*args, **kwargs):
 	raise Exception(args[0] if args else "thrown")
 
 
+# The register's shared login, and a person who sells under their own login.
+SHARED_LOGIN = "pos@example.com"
+NAMED_LOGIN = "ben@example.com"
+REGISTER_USERS = [
+	{"user": SHARED_LOGIN, "xpos_shared_login": 1},
+	{"user": NAMED_LOGIN, "xpos_shared_login": 0},
+]
+
+
 def counter_profile(require_initials=1, cashiers=CASHIERS):
 	"""The Mule City counter's POS Profile: every other setting reads as off."""
-	fields = {"xpos_require_cashier_initials": require_initials, "xpos_cashiers": cashiers}
+	fields = {
+		"xpos_require_cashier_initials": require_initials,
+		"xpos_cashiers": cashiers,
+		"applicable_for_users": REGISTER_USERS,
+	}
 	pos = MagicMock()
 	pos.name = "Mule City Counter"
 	pos.company = "Mule City"
@@ -77,6 +94,8 @@ class TestCashierInitialsAtPay(unittest.TestCase):
 		self.frappe = self.stub("frappe")
 		self.frappe.throw.side_effect = raising_throw
 		self.frappe.db.get_value.return_value = "Debtors - MC"
+		self.frappe.session.user = SHARED_LOGIN
+		self.frappe.utils.get_fullname.side_effect = lambda user: {NAMED_LOGIN: "Ben Smith"}.get(user, user)
 		self.new_invoice()
 
 	def new_invoice(self):
@@ -197,6 +216,35 @@ class TestCashierInitialsAtPay(unittest.TestCase):
 		with self.assertRaises(Exception) as refused:
 			self.sale(counter_profile(cashiers=[]), pos_cashier="LE")
 		self.assertIn("LE", str(refused.exception))
+		self.invoice.insert.assert_not_called()
+
+
+	def test_a_named_login_is_not_asked_and_the_sale_records_their_name(self):
+		"""Ben sells under his own login: no initials, and the sale says Ben rang it."""
+		self.frappe.session.user = NAMED_LOGIN
+		self.sale(counter_profile())
+
+		self.invoice.insert.assert_called_once()
+		self.assertEqual(stored_cashier(self.invoice), "Ben Smith")
+		self.invoice.add_comment.assert_not_called()
+
+	def test_a_named_login_ignores_typed_initials(self):
+		"""Initials sent from Ben's login (a stale cart) do not replace his name."""
+		self.frappe.session.user = NAMED_LOGIN
+		self.sale(counter_profile(), pos_cashier="LE")
+		self.assertEqual(stored_cashier(self.invoice), "Ben Smith")
+
+	def test_a_login_not_marked_shared_is_named(self):
+		"""A user with no shared-login row (say, a System Manager) is recorded by name."""
+		self.frappe.session.user = "admin@example.com"
+		self.sale(counter_profile())
+		self.assertEqual(stored_cashier(self.invoice), "admin@example.com")
+
+	def test_negative_the_shared_login_is_still_refused_without_initials(self):
+		"""The same register, the shared login: Pay without initials is still refused."""
+		with self.assertRaises(Exception) as refused:
+			self.sale(counter_profile())
+		self.assertIn("cashier initials", str(refused.exception))
 		self.invoice.insert.assert_not_called()
 
 

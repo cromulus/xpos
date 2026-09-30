@@ -1,6 +1,23 @@
 # Mule City XPOS release notes
 
-## Unreleased (`fix/mix-labels`, MuleCity-c6dp): Customer Mixes say what the evidence is
+## mule-v2.10.1-mc22
+
+### Named logins (MuleCity-1p4i): initials only on a shared login
+
+Bill (2026-09-30): owners and front desk also sell at the register under their
+own logins; only the shared counter login is asked for initials.
+
+- POS Profile User: `xpos_shared_login` ("Shared Login", off by default). Migrate needed.
+- The initials rule is now: the profile's `xpos_require_cashier_initials` AND the
+  signed-in user's row is a Shared Login. Pay shows the box only then
+  (`initialsRequiredFor`, the posStore's `requireCashierInitials`; PaymentDialog
+  unchanged). `apply_pos_cashier` refuses a shared login's sale without listed
+  initials as before; anyone else's sale is saved with `pos_cashier` = their
+  full name, whatever was typed. Profile flag off: unchanged (nothing set).
+- A profile that requires initials but marks no row as shared asks nobody.
+- Tests: `xpos.api.tests.test_cashier_initials`, `frontend/tests/cashierInitials.spec.ts`.
+
+### Customer Mixes labels (MuleCity-c6dp): Customer Mixes say what the evidence is
 
 - Each mix is named by the `display_name` and `owner_name` that `find_mixes`
   already returns ("CORN, OATS, SOYBEAN MEAL" / "Recipe of ALBERT ADKINS"), not
