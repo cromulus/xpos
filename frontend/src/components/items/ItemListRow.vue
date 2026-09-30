@@ -64,6 +64,7 @@
 
 		<button
 			class="shrink-0 w-8 h-8 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-secondary/80"
+			:aria-label="__('Product details')"
 			@click.stop="$emit('showDetail', item)"
 		>
 			<Info class="w-4 h-4" />
