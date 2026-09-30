@@ -18,6 +18,8 @@ import {
 	type ReceiptContext,
 } from "@/types/pos.types";
 import { isOnline } from "@/utils";
+import { initialsRequiredFor } from "@/utils/cashierInitials";
+import { useAuthStore } from "@/stores/authStore";
 import { symbolFor } from "@/composables/useCurrency";
 
 export const usePosStore = defineStore("pos", () => {
@@ -142,8 +144,11 @@ export const usePosStore = defineStore("pos", () => {
 
 	const salesPersonEnabled = computed(() => allowedSalesPersons.value.length > 0);
 
-	/** Initials at Pay on a shared register login (Mule City, MuleCity-fb00.2). */
-	const requireCashierInitials = computed(() => !!posProfile.value?.xpos_require_cashier_initials);
+	/** Initials at Pay on a shared register login only (Mule City, MuleCity-fb00.2, MuleCity-1p4i). */
+	const requireCashierInitials = computed(() => {
+		const auth = useAuthStore();
+		return initialsRequiredFor(posProfile.value, [auth.userName, auth.userEmail]);
+	});
 	const cashiers = computed(() => posProfile.value?.xpos_cashiers ?? []);
 
 	const allowWriteOffChange = computed(() => !!posProfile.value?.allow_write_off_change);

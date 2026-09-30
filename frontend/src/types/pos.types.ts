@@ -92,6 +92,8 @@ export interface POSProfile {
 	/** Ask for the cashier's initials at Pay on every sale (Mule City, MuleCity-fb00.2). */
 	xpos_require_cashier_initials?: boolean | number;
 	xpos_cashiers?: XposCashier[];
+	/** ERPNext's register users; `xpos_shared_login` marks a login several cashiers share (MuleCity-1p4i). */
+	applicable_for_users?: { user: string; xpos_shared_login?: boolean | number }[];
 	[key: string]: any;
 }
 

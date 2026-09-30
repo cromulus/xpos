@@ -206,6 +206,18 @@
    "translatable": 0,
    "unique": 0,
    "width": null
+  },
+  {
+   "default": "0",
+   "description": "Shared counter login: ask for the cashier's initials on every sale. Only used when the POS Profile requires cashier initials; anyone else is recorded as the cashier by name.",
+   "dt": "POS Profile User",
+   "fieldname": "xpos_shared_login",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "insert_after": "pos_role",
+   "label": "Shared Login",
+   "module": "X POS",
+   "name": "POS Profile User-xpos_shared_login"
   }
  ],
  "custom_perms": [],

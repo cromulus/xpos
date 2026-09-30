@@ -2,12 +2,23 @@
  * Cashier initials at Pay (Mule City, MuleCity-fb00.2).
  *
  * Several cashiers share one register login, so the login does not say who rang
- * a sale. When the POS Profile's `xpos_require_cashier_initials` is on, the
- * cashier types their initials at Pay (honor system, no PIN); they must be on
- * the profile's cashier list and are saved on the invoice as `pos_cashier`.
- * The server (`xpos.api.invoices.apply_pos_cashier`) applies the same rules.
+ * a sale. When the POS Profile's `xpos_require_cashier_initials` is on and the
+ * signed-in user's row on the profile is a shared login (`xpos_shared_login`,
+ * MuleCity-1p4i), the cashier types their initials at Pay (honor system, no
+ * PIN); they must be on the profile's cashier list and are saved on the invoice
+ * as `pos_cashier`. Anyone signed in as themselves is not asked; the server
+ * records their name. The server (`xpos.api.invoices.apply_pos_cashier`)
+ * applies the same rules.
  */
-import type { InvoiceData, XposCashier } from "@/types/pos.types";
+import type { InvoiceData, POSProfile, XposCashier } from "@/types/pos.types";
+
+/** Whether Pay asks this user for initials: the profile requires them and the user's row is a shared login. */
+export function initialsRequiredFor(profile: POSProfile | null | undefined, users: string[]): boolean {
+	if (!profile?.xpos_require_cashier_initials) return false;
+	return (profile.applicable_for_users ?? []).some(
+		(row) => users.includes(row.user) && !!row.xpos_shared_login,
+	);
+}
 
 /** Initials as stored and compared: trimmed and uppercase ("le " -> "LE"). */
 export function normalizeInitials(value: string | null | undefined): string {
