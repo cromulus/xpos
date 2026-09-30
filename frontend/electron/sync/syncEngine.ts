@@ -433,7 +433,8 @@ async function pushTable(config: SyncTableConfig): Promise<{ synced: number; fai
 			}
 
 			const serverResult = await apiCall<{ name?: string }>(
-				config.pushMethod,
+				(config.pushMethod === "xpos.api.invoices.create_invoice" && data.mule_vfd_offline)
+					? "mulecity_erpnext.vfd_offline.replay" : config.pushMethod,
 				{
 					data: JSON.stringify(data),
 					local_id: recordLocalId,

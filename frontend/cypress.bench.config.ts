@@ -21,6 +21,7 @@ export default defineConfig({
 			item: process.env.XPOS_BENCH_ITEM || "",
 			customer: process.env.XPOS_BENCH_CUSTOMER || "",
 			secondMode: process.env.XPOS_BENCH_SECOND_MODE || "",
+			vfdFixture: process.env.XPOS_BENCH_VFD_FIXTURE || "",
 			exemptCategory: process.env.XPOS_BENCH_EXEMPT_CATEGORY || "",
 			exemptReasonField: process.env.XPOS_BENCH_EXEMPT_REASON_FIELD || "",
 			exemptReason: process.env.XPOS_BENCH_EXEMPT_REASON || "",

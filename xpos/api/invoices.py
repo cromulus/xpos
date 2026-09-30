@@ -345,7 +345,7 @@ def _set_order_advances(invoice_doc) -> None:
 
 def _mule_order_fields(row):
 	"""Carry native source links; the sales document validates the exact BOM."""
-	return {field: row.get(field) for field in ("sales_order", "so_detail", "bom_no", "mule_processing_instructions") if row.get(field) is not None}
+	return {field: row.get(field) for field in ("sales_order", "so_detail", "bom_no", "mule_vfd", "mule_processing_instructions") if row.get(field) is not None}
 
 
 class TicketChangedError(frappe.ValidationError):

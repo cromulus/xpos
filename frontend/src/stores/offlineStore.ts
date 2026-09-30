@@ -1,3 +1,4 @@
+import { attachOfflineCoverage, queuedInvoiceMethod, refreshVfdContext } from "@/services/vfdOffline";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { call, showSuccess, showError, showInfo } from "@/services/api";
@@ -199,6 +200,7 @@ export const useOfflineStore = defineStore("offline", () => {
 		receipt?: ReceiptSnapshot,
 	): Promise<{ success: boolean; localId?: number }> {
 		try {
+			await attachOfflineCoverage(invoiceData);
 			const record = {
 				data: invoiceData as unknown,
 				customer_name: customerName || invoiceData.customer,
@@ -216,6 +218,7 @@ export const useOfflineStore = defineStore("offline", () => {
 			return { success: true, localId: (result as any).id ?? result };
 		} catch (error) {
 			console.error("Failed to save offline invoice:", error);
+			showError(error instanceof Error ? error.message : String(error));
 			return { success: false };
 		}
 	}
@@ -265,7 +268,7 @@ export const useOfflineStore = defineStore("offline", () => {
 					invoice.status = "syncing";
 					if (invoice.id) await updatePendingInvoice(invoice.id, { status: "syncing" });
 
-					await call<{ name: string }>("xpos.api.invoices.create_invoice", {
+					await call<{ name: string }>(queuedInvoiceMethod(invoice.data), {
 						data: JSON.stringify(invoice.data),
 						local_id: invoice.local_id,
 					});
@@ -354,7 +357,7 @@ export const useOfflineStore = defineStore("offline", () => {
 			invoice.status = "syncing";
 			await updatePendingInvoice(invoice.id!, { status: "syncing" });
 
-			await call<{ name: string }>("xpos.api.invoices.create_invoice", {
+			await call<{ name: string }>(queuedInvoiceMethod(invoice.data), {
 				data: JSON.stringify(invoice.data),
 				local_id: invoice.local_id,
 			});
@@ -444,6 +447,7 @@ export const useOfflineStore = defineStore("offline", () => {
 			});
 			await cacheTaxContexts(profile, contexts || {});
 			status.finish("Taxes", profile, Object.keys(contexts || {}).length, true);
+			await refreshVfdContext(profile);
 		} catch (error) {
 			status.fail("Taxes");
 			throw error;

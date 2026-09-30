@@ -257,3 +257,18 @@ describe("native mix provenance through the cart", () => {
 	});
 
 });
+
+
+it("keeps the native 50-pound Bag conversion and original directive in a prepared pickup payload", () => {
+  setActivePinia(createPinia());
+  const cart = useCartStore();
+  cart.loadFromInvoice({ customer: "Buyer", customer_name: "Buyer", items: [{
+    item_code: "MIX", item_name: "Medicated mix", qty: 2, rate: 20,
+    uom: "Bag", stock_uom: "Pound", conversion_factor: 50,
+    sales_order: "SO", so_detail: "ROW", bom_no: "BOM", mule_vfd: "VFD",
+    warehouse: "Stores - MC",
+  }] } as any);
+  const payload = cart.getInvoiceData("Mule City Retail", "SHIFT");
+  expect(payload.items[0]).toMatchObject({ qty: 2, uom: "Bag", conversion_factor: 50,
+    sales_order: "SO", so_detail: "ROW", bom_no: "BOM", mule_vfd: "VFD" });
+});

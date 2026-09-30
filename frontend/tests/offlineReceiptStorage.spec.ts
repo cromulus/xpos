@@ -190,3 +190,5 @@ describe("offline tax cache (Mule City, MuleCity-ispl)", () => {
 		expect(call).toHaveBeenCalledWith("mulecity_erpnext.pos_workspace.tax_contexts", { pos_profile: "Shop Floor" });
 	});
 });
+
+vi.mock("@/services/vfdOffline", () => ({ attachOfflineCoverage: vi.fn(), refreshVfdContext: vi.fn(), queuedInvoiceMethod: () => "xpos.api.invoices.create_invoice" }));

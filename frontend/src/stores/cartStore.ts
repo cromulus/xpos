@@ -1,3 +1,4 @@
+import { prepareVfdPickup } from "@/services/vfdOffline";
 import { newInvoiceId } from "@/services/invoiceSubmission";
 import { muleOrderFields } from "@/services/muleOrderFields";
 import { defineStore } from "pinia";
@@ -734,7 +735,7 @@ export const useCartStore = defineStore("cart", () => {
 				i.item_code === item.item_code &&
 				i.uom === (item.uom || item.stock_uom) &&
 				// Separate source rows keep their own agreed price and recipe.
-				["sales_order", "so_detail", "bom_no", "mule_processing_instructions"].every(
+				["sales_order", "so_detail", "bom_no", "mule_vfd", "mule_processing_instructions"].every(
 					field => ((i as any)[field] || "") === ((item as any)[field] || ""),
 				) &&
 				!i.serial_no &&
@@ -1575,6 +1576,7 @@ export const useCartStore = defineStore("cart", () => {
 				const result = await call<Omit<ServerPreview, "key">>("xpos.api.invoices.preview_invoice", {
 					data: JSON.stringify(previewPayload()),
 				});
+				await prepareVfdPickup(getInvoiceData(posStore.profileName, posStore.posOpeningShift?.name || ""));
 				serverPreview.value = { ...result, key };
 				// The cart or buyer changed while the server was pricing it: press Pay again.
 				if (key !== previewKey.value || muleTaxPending.value || muleTaxError.value) return;
@@ -1831,6 +1833,7 @@ export const useCartStore = defineStore("cart", () => {
 					rate: normalizeItemRate(item.rate),
 					price_list_rate: normalizeItemRate(item.rate),
 					uom: item.uom || item.stock_uom,
+					conversion_factor: item.conversion_factor || 1,
 					discount_percentage: item.discount_percentage,
 					// The server takes the money discount per unit (MuleCity-1msa).
 					discount_amount: perUnitDiscount(
