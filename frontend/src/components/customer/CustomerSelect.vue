@@ -146,13 +146,9 @@
 						/>
 					</div>
 
+					<!-- Mule City (Bill 2026-09-29, MuleCity-nfxn.7): no Tax ID or Birthday at the
+					     counter; the tax exemption is set on the desk (Edit Customer's button). -->
 					<div class="grid grid-cols-2 gap-3">
-						<div>
-							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-								__("Tax ID")
-							}}</label>
-							<Input v-model="newCustomer.tax_id" type="text" :placeholder="__('Tax ID')" />
-						</div>
 						<div>
 							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
 								__("Mobile No")
@@ -163,10 +159,6 @@
 								:placeholder="__('Mobile No')"
 							/>
 						</div>
-					</div>
-
-
-					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
 								__("Email")
@@ -223,18 +215,6 @@
 						</div>
 					</div>
 
-
-					<div class="grid grid-cols-2 gap-3">
-						<div>
-							<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-								__("Birthday")
-							}}</label>
-							<DateTimePicker
-								v-model="newCustomer.birthday"
-								:placeholder="__('Select birthday')"
-							/>
-						</div>
-					</div>
 				</div>
 
 				<DialogFooter class="shrink-0 border-t border-border px-5 py-4">
@@ -283,7 +263,6 @@ import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import __ from "@/lib/translate";
 import type { Customer } from "@/types/pos.types";
 import DateTimeInput from "../ui/date-time-input/DateTimeInput.vue";
-import DateTimePicker from "../ui/datetime-picker/DateTimePicker.vue";
 
 const cartStore = useCartStore();
 const customerStore = useCustomerStore();
@@ -305,7 +284,6 @@ const countryOptions = computed<AutocompleteOption[]>(() =>
 
 const defaultNewCustomer = () => ({
 	customer_name: "",
-	tax_id: "",
 	mobile_no: "",
 	address_line1: "",
 	address_line2: "",
@@ -314,7 +292,6 @@ const defaultNewCustomer = () => ({
 	city: "",
 	country: "",
 	email_id: "",
-	birthday: "",
 });
 
 const newCustomer = ref(defaultNewCustomer());
@@ -426,8 +403,6 @@ async function createAndSelect() {
 			customer_name: newCustomer.value.customer_name,
 			mobile_no: newCustomer.value.mobile_no || undefined,
 			email_id: newCustomer.value.email_id || undefined,
-			tax_id: newCustomer.value.tax_id || undefined,
-			birthday: newCustomer.value.birthday || undefined,
 			address_line1: newCustomer.value.address_line1 || undefined,
 			address_line2: newCustomer.value.address_line2 || undefined,
 			state: newCustomer.value.state || undefined,

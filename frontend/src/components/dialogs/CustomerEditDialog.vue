@@ -36,18 +36,21 @@
 					/>
 				</div>
 
+				<!-- Mule City (Bill 2026-09-29, MuleCity-nfxn.7): name, phone and email only.
+				     Customer Group, Territory, Tax ID, Gender, Referral Code and Birthday
+				     aren't used at the counter; they keep their values and stay on the desk. -->
 				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-							__("Tax ID")
-						}}</label>
-						<Input v-model="form.tax_id" type="text" :placeholder="__('Tax ID')" />
-					</div>
 					<div>
 						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
 							__("Mobile No")
 						}}</label>
 						<Input v-model="form.mobile_no" type="tel" :placeholder="__('Mobile No')" />
+					</div>
+					<div>
+						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
+							__("Email")
+						}}</label>
+						<Input v-model="form.email_id" type="email" :placeholder="__('Email')" />
 					</div>
 				</div>
 
@@ -65,72 +68,11 @@
 					{{ __("Tax exemption") }}
 				</Button>
 
-				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-							__("Email")
-						}}</label>
-						<Input v-model="form.email_id" type="email" :placeholder="__('Email')" />
-					</div>
-					<div>
-						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-							__("Gender")
-						}}</label>
-						<Autocomplete
-							v-model="form.gender"
-							:options="genderOptions"
-							:placeholder="__('Select gender')"
-							:show-search-icon="false"
-							:max-visible="5"
-						/>
-					</div>
-				</div>
-
-				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<label class="text-xs font-medium text-muted-foreground mb-1 block"
-							>{{ __("Customer Group") }} *</label
-						>
-						<Autocomplete
-							v-model="form.customer_group"
-							:options="customerGroupOptions"
-							:placeholder="__('Select group')"
-							:show-search-icon="false"
-							:max-visible="10"
-						/>
-					</div>
-					<div>
-						<label class="text-xs font-medium text-muted-foreground mb-1 block"
-							>{{ __("Territory") }} *</label
-						>
-						<Autocomplete
-							v-model="form.territory"
-							:options="territoryOptions"
-							:placeholder="__('Select territory')"
-							:show-search-icon="true"
-							:max-visible="10"
-						/>
-					</div>
-				</div>
-
-				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-							__("Referral Code")
-						}}</label>
-						<Input v-model="form.referral_code" type="text" :placeholder="__('Referral code')" />
-					</div>
-					<div>
-						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
-							__("Birthday")
-						}}</label>
-						<DateTimePicker
-							v-model="form.birthday"
-							:placeholder="__('Select birthday')"
-							mode="date"
-						/>
-					</div>
-				</div>
+				<CustomerAddresses
+					v-if="cartStore.customer?.name"
+					:customer="cartStore.customer.name"
+					@changed="onAddressesChanged"
+				/>
 			</div>
 
 			<DialogFooter class="shrink-0 border-t border-border px-5 py-4">
@@ -147,20 +89,12 @@
 </template>
 
 <script setup lang="ts">
+import { changedFields } from "@/utils/customerEdit";
 import { ref, computed, watch, nextTick } from "vue";
 import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
-import { showSuccess, showError, call } from "@/services/api";
+import { showSuccess, showError } from "@/services/api";
 import { openCustomerTaxSection } from "@/services/customerTax";
-import {
-	cacheCustomerGroups,
-	getCachedCustomerGroups,
-	cacheTerritories,
-	getCachedTerritories,
-	cacheCountries,
-	getCachedCountries,
-} from "@/services/dbBridge";
-import { isOnline } from "@/utils";
 import {
 	Dialog,
 	DialogContent,
@@ -171,11 +105,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Autocomplete } from "@/components/ui/autocomplete";
-import type { AutocompleteOption } from "@/components/ui/autocomplete";
 import { Loader2 } from "lucide-vue-next";
 import __ from "@/lib/translate";
-import DateTimePicker from "@/components/ui/datetime-picker/DateTimePicker.vue";
+import CustomerAddresses from "@/components/customer/CustomerAddresses.vue";
+import type { CustomerAddress } from "@/types/pos.types";
 
 const cartStore = useCartStore();
 const customerStore = useCustomerStore();
@@ -183,49 +116,26 @@ const customerStore = useCustomerStore();
 const customerNameInput = ref<InstanceType<typeof Input> | null>(null);
 const isLoadingInfo = ref(false);
 const isSaving = ref(false);
-const customerGroups = ref<string[]>([]);
-const territories = ref<string[]>([]);
-const countries = ref<string[]>([]);
-
-const genderOptions: AutocompleteOption[] = [
-	{ label: __("Male"), value: "Male" },
-	{ label: __("Female"), value: "Female" },
-	{ label: __("Other"), value: "Other" },
-	{ label: __("Prefer not to say"), value: "Prefer not to say" },
-];
-
-const customerGroupOptions = computed<AutocompleteOption[]>(() =>
-	customerGroups.value.map((g) => ({ label: g, value: g })),
-);
-
-const territoryOptions = computed<AutocompleteOption[]>(() =>
-	territories.value.map((t) => ({ label: t, value: t })),
-);
 
 const defaultForm = () => ({
 	customer_name: "",
-	tax_id: "",
 	mobile_no: "",
 	email_id: "",
-	gender: "",
-	referral_code: "",
-	birthday: "",
-	customer_group: "",
-	territory: "",
 });
 
 const form = ref(defaultForm());
+// What the customer had when the dialog opened: only fields the cashier changed
+// are saved, so a phone or email shown from the customer's Contact is not
+// copied onto the Customer (Mule City, nfxn.8).
+const loaded = ref(defaultForm());
 
-const canSave = computed(
-	() => !!form.value.customer_name.trim() && !!form.value.customer_group && !!form.value.territory,
-);
+const canSave = computed(() => !!form.value.customer_name.trim());
 
 watch(
 	() => customerStore.showCustomerEditDialog,
 	async (isOpen) => {
 		if (isOpen && cartStore.customer?.name) {
 			await loadCustomerData(cartStore.customer.name);
-			loadDropdownData();
 		}
 	},
 );
@@ -237,15 +147,10 @@ async function loadCustomerData(customerName: string) {
 		if (info) {
 			form.value = {
 				customer_name: info.customer_name || "",
-				tax_id: ((info as Record<string, unknown>).tax_id as string) || "",
 				mobile_no: info.mobile_no || "",
 				email_id: info.email_id || "",
-				gender: ((info as Record<string, unknown>).gender as string) || "",
-				referral_code: ((info as Record<string, unknown>).referral_code as string) || "",
-				birthday: ((info as Record<string, unknown>).birthday as string) || "",
-				customer_group: info.customer_group || "",
-				territory: info.territory || "",
 			};
+			loaded.value = { ...form.value };
 		}
 		nextTick(() => {
 			const el = customerNameInput.value?.$el as HTMLElement | undefined;
@@ -257,76 +162,12 @@ async function loadCustomerData(customerName: string) {
 	}
 }
 
-function loadDropdownData() {
-	const boot = window.xpos?.boot;
-	if (boot?.countries?.length) {
-		countries.value = boot.countries.map((c) => c.name || "").filter(Boolean);
-	}
-	if (boot?.territories?.length) {
-		territories.value = boot.territories.map((t) => t.name || t.territory_name || "").filter(Boolean);
-	}
-	fetchDropdownOptions();
-}
-
-async function fetchDropdownOptions() {
-	const [cachedGroups, cachedTerritories, cachedCountries] = await Promise.all([
-		getCachedCustomerGroups(),
-		getCachedTerritories(),
-		getCachedCountries(),
-	]);
-
-	if (cachedGroups.length) customerGroups.value = cachedGroups;
-	if (!territories.value.length && cachedTerritories.length) territories.value = cachedTerritories;
-	if (!countries.value.length && cachedCountries.length) countries.value = cachedCountries;
-
-	if (!isOnline()) {
-		if (!customerGroups.value.length) customerGroups.value = ["All Customer Groups"];
-		if (!territories.value.length) territories.value = ["All Territories"];
-		return;
-	}
-
-	try {
-		const groupsResult = await call<string[]>("xpos.api.customers.get_customer_groups").catch(
-			() => [] as string[],
-		);
-		if (groupsResult?.length) {
-			customerGroups.value = groupsResult;
-			await cacheCustomerGroups(groupsResult).catch(() => {});
-		} else if (!customerGroups.value.length) {
-			customerGroups.value = ["All Customer Groups"];
-		}
-
-		if (territories.value.length) {
-			await cacheTerritories(territories.value).catch(() => {});
-		} else {
-			territories.value = ["All Territories"];
-		}
-	} catch {
-		if (!customerGroups.value.length) customerGroups.value = ["All Customer Groups"];
-		if (!territories.value.length) territories.value = ["All Territories"];
-	}
-}
-
 async function saveChanges() {
 	if (!canSave.value || !cartStore.customer?.name) return;
 	isSaving.value = true;
 
 	try {
-		const payload: Record<string, unknown> = {
-			customer_name: form.value.customer_name,
-			mobile_no: form.value.mobile_no || undefined,
-			email_id: form.value.email_id || undefined,
-			tax_id: form.value.tax_id || undefined,
-			gender: form.value.gender || undefined,
-			referral_code: form.value.referral_code || undefined,
-			birthday: form.value.birthday || undefined,
-			customer_group: form.value.customer_group || undefined,
-			territory: form.value.territory || undefined,
-		};
-
-		Object.keys(payload).forEach((key) => {
-			if (payload[key] === undefined) delete payload[key];
-		});
+		const payload = changedFields(form.value, loaded.value);
 
 		const result = await customerStore.updateCustomer(cartStore.customer.name, payload);
 
@@ -346,6 +187,15 @@ async function saveChanges() {
 	} finally {
 		isSaving.value = false;
 	}
+}
+
+// The cart's "can take a delivery" icon follows an address saved here.
+function onAddressesChanged(addresses: CustomerAddress[]) {
+	if (!cartStore.customer) return;
+	cartStore.setCustomer({
+		...cartStore.customer,
+		xpos_has_address: addresses.some((address) => !!address.address_line1?.trim()),
+	});
 }
 
 function close() {

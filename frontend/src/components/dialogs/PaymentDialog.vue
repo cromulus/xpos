@@ -57,6 +57,13 @@
 
 			<div class="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
 				<div class="flex-1 flex flex-col p-4 gap-3 min-w-0 overflow-y-auto xpos-scrollbar">
+					<CashierInitialsField
+						v-if="posStore.requireCashierInitials"
+						ref="cashierField"
+						v-model="cashierInitials"
+						:cashiers="posStore.cashiers"
+						@done="focusAmountInput"
+					/>
 					<div
 						class="rounded-xl border"
 						:class="
@@ -107,7 +114,7 @@
 							>
 								<span class="flex items-center gap-1">
 									{{ tax.description }}
-									<span class="text-[10px]">({{ percent(tax.rate) }})</span>
+									<span v-if="tax.rate" class="text-[10px]">{{ taxRate(tax.rate) }}</span>
 									<span
 										v-if="tax.included_in_print_rate"
 										class="text-[9px] text-blue-500"
@@ -149,6 +156,34 @@
 								<span class="text-[10px]">{{ __("Applied") }}</span>
 							</div>
 						</div>
+					</div>
+
+					<!-- Custom mixes to order (Mule City, MuleCity-3j1m): paid now or at pickup. -->
+					<div v-if="cartStore.hasOrderLines && cartStore.counterQuote" data-testid="mix-pay-mode" class="space-y-2">
+						<h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+							{{ __("Custom mix order") }}
+						</h3>
+						<div class="flex gap-2">
+							<button
+								v-for="mode in mixPayModes"
+								:key="mode.value"
+								type="button"
+								:data-pay-mode="mode.value"
+								class="flex-1 px-3 py-2 rounded-md border text-sm"
+								:class="cartStore.mixPayMode === mode.value ? 'border-primary bg-primary/10 font-semibold' : 'border-border'"
+								@click="cartStore.mixPayMode = mode.value"
+							>
+								{{ mode.label }}
+							</button>
+						</div>
+						<p class="text-xs text-muted-foreground" data-testid="mix-pay-summary">
+							{{ __("Today's ticket {0}. Mix order {1}, pickup {2}: {3}.", [
+								formatWithSymbol(invoiceCurrency, cartStore.counterQuote.ticket_due),
+								formatWithSymbol(invoiceCurrency, cartStore.counterQuote.orders_total),
+								cartStore.pickupDate,
+								cartStore.mixPayMode === "now" ? __("paid now") : __("due at pickup"),
+							]) }}
+						</p>
 					</div>
 
 					<div>
@@ -217,6 +252,20 @@
 									<NotebookPen class="w-5 h-5 mx-auto" />
 								</div>
 								<p class="text-[11px] font-medium truncate">{{ __("On Account") }}</p>
+							</button>
+							<!-- Mule City: a payment toward what the customer already owes (Bill 2026-09-29,
+							     MuleCity-nfxn.3). Opens Receive on Account; this ticket stays in the cart. -->
+							<button
+								v-if="canReceiveOnAccount"
+								type="button"
+								data-testid="receive-on-account"
+								class="flex-1 min-w-20 p-2.5 rounded-xl border-2 text-center transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-ring border-border bg-card text-muted-foreground hover:border-muted-foreground/30"
+								@click="openReceiveOnAccount"
+							>
+								<div class="text-lg mb-0.5">
+									<HandCoins class="w-5 h-5 mx-auto" />
+								</div>
+								<p class="text-[11px] font-medium truncate">{{ __("Receive on Account") }}</p>
 							</button>
 						</div>
 					</div>
@@ -771,6 +820,7 @@ import {
 	FileText,
 	DollarSign,
 	NotebookPen,
+	HandCoins,
 } from "lucide-vue-next";
 
 import {
@@ -797,6 +847,9 @@ import {
 import type { InvoiceChangeLeg, InvoiceData, InvoicePayment, TenderLeg } from "@/types/pos.types";
 import { isOnline, extractErrorMessage, isTabConflictError, isTicketChangedError } from "@/utils";
 import { ON_ACCOUNT, canChargeToAccount } from "@/utils/onAccount";
+import { useCustomerAccount } from "@/composables/useCustomerAccount";
+import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
+import { applyCashier, cashierInitialsOk, normalizeInitials } from "@/utils/cashierInitials";
 import { nowDate } from "@/utils/datetime";
 import {
 	isPaymentDialogSaveAndPrintShortcut,
@@ -804,7 +857,7 @@ import {
 } from "@/components/dialogs/paymentDialogShortcuts";
 
 const posStore = usePosStore();
-const { moneyPrecision, percent } = useMoney();
+const { moneyPrecision, percent, taxRate } = useMoney();
 const { printInvoice, printInvoiceLocal } = usePrintInvoice();
 const { completeOfflineSale } = useOfflineSale();
 const cartStore = useCartStore();
@@ -813,6 +866,13 @@ const authStore = useAuthStore();
 const paymentStore = usePaymentStore();
 
 const amountInput = ref<InstanceType<typeof NumberInput> | null>(null);
+// Who rang this sale on a shared login (MuleCity-fb00.2); empty on every sale
+// because this dialog is mounted afresh each time Pay opens.
+const cashierInitials = ref("");
+const cashierField = ref<InstanceType<typeof CashierInitialsField> | null>(null);
+const receiptCashier = computed(
+	() => (posStore.requireCashierInitials && normalizeInitials(cashierInitials.value)) || authStore.userFullName,
+);
 const submitBtn = ref<InstanceType<typeof Button> | null>(null);
 const methodRefs: Record<number, HTMLButtonElement> = {};
 const quickAmountRefs: Record<number, HTMLElement> = {};
@@ -882,9 +942,17 @@ function buildLeg(mode: string, nativeAmount: number, id?: string): TenderLeg {
 	return buildTenderLeg(mode, nativeAmount, tenderContext.value, id);
 }
 
+const { canReceive: canReceiveOnAccount, openReceiveOnAccount } = useCustomerAccount();
+
 // "On Account": the whole ticket is charged, so nothing is tendered.
 const chargingToAccount = computed(() => selectedMethod.value === ON_ACCOUNT && !isSplitPayment.value);
+const mixPayModes = [
+	{ value: "now" as const, label: __("Pay now") },
+	{ value: "pickup" as const, label: __("Pay at pickup") },
+];
+// A prepaid mix is paid with cash, card or check, never on account.
 const showOnAccount = computed(() =>
+	!(cartStore.hasOrderLines && cartStore.mixPayMode === "now") &&
 	canChargeToAccount({
 		allowCreditSale: !!posStore.allowCreditSale,
 		online: isOnline(),
@@ -1032,6 +1100,7 @@ const outstandingSubmissionHint = computed(() => {
 
 const canSubmit = computed(() => {
 	if (cartStore.isEmpty) return false;
+	if (!cashierInitialsOk(posStore.requireCashierInitials, posStore.cashiers, cashierInitials.value)) return false;
 	if (selectedRateMissing.value) return false;
 	const total = roundCurrency(Math.abs(cartStore.grandTotal));
 	if (total <= 0) return true;
@@ -1053,7 +1122,7 @@ onMounted(async () => {
 		selectedMethod.value = availableMethods.value[0].mode_of_payment;
 	}
 	nextTick(() => {
-		amountInput.value?.focus();
+		(cashierField.value ?? amountInput.value)?.focus();
 	});
 
 	if (cartStore.customer) {
@@ -1362,6 +1431,7 @@ function buildInvoicePayload(): InvoiceData {
 
 	const invoiceData = cartStore.getInvoiceData(posStore.profileName, shiftName);
 	if (cartStore.previewExpectedTotal !== null) invoiceData.expected_total = cartStore.previewExpectedTotal;
+	applyCashier(invoiceData, posStore.requireCashierInitials, cashierInitials.value);
 
 	if (!cartStore.isReturnMode && remainingAmount.value > 0 && chargingToAccount.value && showOnAccount.value) {
 		invoiceData.is_credit_sale = true;
@@ -1398,6 +1468,11 @@ async function submitPayment(withPrint: boolean = true) {
 	try {
 		const shiftName = posStore.posOpeningShift?.name || "";
 
+		if (cartStore.hasOrderLines) {
+			await submitMixOrder(invoiceData, withPrint);
+			return;
+		}
+
 		if (isElectron() && window.electronAPI?.db) {
 			const result = await window.electronAPI.db.addPendingInvoice({
 				data: {
@@ -1405,7 +1480,7 @@ async function submitPayment(withPrint: boolean = true) {
 					pos_opening_shift_local_id: shiftName,
 					is_draft: false,
 					is_return: cartStore.isReturnMode,
-					receipt: cartStore.getReceiptSnapshot("", authStore.userFullName),
+					receipt: cartStore.getReceiptSnapshot("", receiptCashier.value),
 				},
 				customer_name: cartStore.customerName,
 				grand_total: cartStore.grandTotal,
@@ -1435,14 +1510,14 @@ async function submitPayment(withPrint: boolean = true) {
 		if (!isOnline()) {
 			const saved = await completeOfflineSale(invoiceData, {
 				withPrint,
-				cashier: authStore.userFullName,
+				cashier: receiptCashier.value,
 			});
 			if (!saved) showError(__("Failed to save invoice offline"));
 			return;
 		}
 		const result = await submitDurableInvoice(
 			invoiceData,
-			cartStore.getReceiptSnapshot("", authStore.userFullName),
+			cartStore.getReceiptSnapshot("", receiptCashier.value),
 			async () => {
 				let response = await call<CreateInvoiceResult>("xpos.api.invoices.create_invoice", {
 					data: JSON.stringify(invoiceData),
@@ -1476,10 +1551,13 @@ async function submitPayment(withPrint: boolean = true) {
 			showError(__("This tab was changed on another terminal. Reload it and try again."));
 			close();
 			cartStore.openDraftDialog();
+		} else if (isNetworkError(error) && cartStore.hasOrderLines) {
+			// An order and its advance need the server; never queue them as a plain sale.
+			showError(__("Custom mixes can't be ordered offline. Go online, or take the order at the desk."));
 		} else if (isNetworkError(error)) {
 			const saved = await completeOfflineSale(invoiceData, {
 				withPrint,
-				cashier: authStore.userFullName,
+				cashier: receiptCashier.value,
 			});
 			if (saved) return;
 			showError(__("You are offline. Invoice could not be saved locally."));
@@ -1490,6 +1568,52 @@ async function submitPayment(withPrint: boolean = true) {
 	} finally {
 		isSubmitting.value = false;
 		printAfterSave.value = false;
+	}
+}
+
+interface CounterCheckoutResult {
+	invoice: { name: string } | null;
+	orders: { sales_order: string; grand_total: number; advance_paid: number }[];
+	change_amount: number;
+	duplicate?: boolean;
+}
+
+/**
+ * Pay for a cart holding custom mixes to order (Mule City, MuleCity-3j1m). The site
+ * does it all in one request: the orders (priced and locked at placement), the
+ * advance on each when paid now, and XPOS's own ticket for everything else. The
+ * ticket prints with an "Ordered today" block; a mix-only cart prints the order.
+ */
+async function submitMixOrder(invoiceData: InvoiceData, withPrint: boolean) {
+	if (!isOnline()) {
+		showError(__("Custom mixes can't be ordered offline. Go online, or take the order at the desk."));
+		return;
+	}
+	const result = await call<CounterCheckoutResult>("mulecity_erpnext.counter_mix_orders.counter_checkout", {
+		data: JSON.stringify({ ...invoiceData, pay_mode: cartStore.mixPayMode }),
+	});
+	const orders = result.orders.map((row) => row.sales_order).join(", ");
+	posStore.lastInvoiceName = result.invoice?.name || "";
+	showSuccess(
+		result.invoice
+			? __("Ticket {0} saved; mix ordered on {1}.", [result.invoice.name, orders])
+			: __("Mix ordered on {0}.", [orders]),
+	);
+	cartStore.clearAll();
+	if (!withPrint) return;
+	try {
+		if (result.invoice?.name) {
+			await printInvoice(result.invoice.name);
+		} else {
+			for (const row of result.orders) {
+				window.open(
+					`/printview?doctype=Sales%20Order&name=${encodeURIComponent(row.sales_order)}&format=Mule%20City%20Order`,
+					"_blank",
+				);
+			}
+		}
+	} catch {
+		showError(__("Saved. Printing failed; reprint from the order."));
 	}
 }
 

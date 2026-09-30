@@ -52,7 +52,8 @@ import { __ } from "@/lib/translate";
 const cache = useCacheStatus(),
 	pos = usePosStore(),
 	offline = useOfflineStore();
-const kinds = ["Customers", "Products and stock"];
+// Taxes: every tax category's taxes, so any synced customer is taxed offline (MuleCity-ispl).
+const kinds = ["Customers", "Products and stock", "Taxes"];
 const now = ref(Date.now());
 const timer = setInterval(() => {
 	now.value = Date.now();
@@ -85,6 +86,7 @@ async function refresh() {
 	await Promise.all([
 		useCustomerStore().cacheAllCustomers(pos.profileName),
 		useItemStore().cacheAllItems(pos.profileName),
+		offline.cacheTaxContextsForOffline(pos.profileName).catch(() => {}),
 		offline.syncPendingInvoices(),
 	]);
 	now.value = Date.now();

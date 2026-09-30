@@ -21,6 +21,8 @@ export const useCustomerStore = defineStore("customers", () => {
 	const showNewCustomerForm = ref(false);
 	const showLoyaltyDialog = ref(false);
 	const showCustomerEditDialog = ref(false);
+	// Receive on Account (Mule City): opened from Pay or the empty cart's Pay button.
+	const showReceiveOnAccount = ref(false);
 
 	const selectedCustomerInfo = ref<Customer | null>(null);
 	const customerAddresses = ref<CustomerAddress[]>([]);
@@ -174,12 +176,28 @@ export const useCustomerStore = defineStore("customers", () => {
 
 	async function createAddress(data: Record<string, unknown>): Promise<CustomerAddress> {
 		try {
-			const result = await call<CustomerAddress>("xpos.api.customers.make_address", data);
+			// make_address takes one JSON argument, ``args`` (it holds the customer).
+			const result = await call<CustomerAddress>("xpos.api.customers.make_address", {
+				args: JSON.stringify(data),
+			});
 			return result;
 		} catch (error) {
 			console.error("Error creating address:", error);
 			throw error;
 		}
+	}
+
+	/** Change one of the customer's addresses (Mule City, nfxn.6). */
+	async function updateAddress(
+		customer: string,
+		name: string,
+		data: Record<string, unknown>,
+	): Promise<CustomerAddress> {
+		return call<CustomerAddress>("xpos.api.customers.update_address", {
+			customer,
+			name,
+			args: JSON.stringify(data),
+		});
 	}
 
 	async function fetchCredit(customerName: string, company?: string): Promise<CustomerCredit | null> {
@@ -300,6 +318,7 @@ export const useCustomerStore = defineStore("customers", () => {
 		showNewCustomerForm,
 		showLoyaltyDialog,
 		showCustomerEditDialog,
+		showReceiveOnAccount,
 		selectedCustomerInfo,
 		customerAddresses,
 		customerCredit,
@@ -318,6 +337,7 @@ export const useCustomerStore = defineStore("customers", () => {
 		getCustomerInfo,
 		fetchAddresses,
 		createAddress,
+		updateAddress,
 		fetchCredit,
 		clearDetail,
 		fetchLoyaltyPrograms,

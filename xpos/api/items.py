@@ -11,6 +11,22 @@ from frappe.utils import cint, flt, getdate, nowdate
 
 from xpos.api.utilities import SAFE_FIELDNAME, get_invoice_type, get_item_search_settings
 
+# Site hook: callables(pos_profile) -> item codes made to order (Mule City's
+# custom mixes). They are sold before any stock exists, so the "hide
+# unavailable items" filter keeps them and the cart doesn't refuse them for
+# lacking stock; each item carries ``is_made_to_order``.
+MADE_TO_ORDER_HOOK = "xpos_made_to_order_items"
+
+
+def made_to_order_items(pos_profile: str | None) -> set[str]:
+	"""The item codes the site's ``xpos_made_to_order_items`` hooks name for this profile."""
+	codes: set[str] = set()
+	if not pos_profile:
+		return codes
+	for method in frappe.get_hooks(MADE_TO_ORDER_HOOK):
+		codes.update(frappe.get_attr(method)(pos_profile) or [])
+	return codes
+
 
 def selling_price(
 	item_code: str,
@@ -229,6 +245,7 @@ def get_pos_items(
 
 	hide_unavailable = pos.get("hide_unavailable_items") and warehouse
 	use_pos_deduction = bool(get_invoice_type() == "POS Invoice")
+	made_to_order = made_to_order_items(pos_profile)
 
 	if hide_unavailable:
 		wh_list = [warehouse]
@@ -266,7 +283,7 @@ def get_pos_items(
 			filters={"is_stock_item": 0, "disabled": 0, "is_sales_item": 1},
 			pluck="name",
 		)
-		available_items = list(set(in_stock_items + non_stock_items))
+		available_items = list(set(in_stock_items + non_stock_items) | made_to_order)
 		if not available_items:
 			return []
 		filters["name"] = ["in", available_items]
@@ -360,6 +377,7 @@ def get_pos_items(
 		)
 
 		item.actual_qty = stock.get(item.item_code, 0)
+		item.is_made_to_order = int(item.item_code in made_to_order)
 
 	if include_uoms and items:
 		item_codes = [item.item_code for item in items]
@@ -391,7 +409,12 @@ def get_items_count(pos_profile: str, search_term: str = "", item_group: str = "
 
 	if pos.get("hide_unavailable_items") and pos.warehouse:
 		bin_join = "LEFT JOIN `tabBin` bin ON bin.item_code = i.name AND bin.warehouse = %(warehouse)s"
-		conditions += " AND (i.is_stock_item = 0 OR bin.actual_qty > 0)"
+		made_to_order = made_to_order_items(pos_profile)
+		if made_to_order:
+			conditions += " AND (i.is_stock_item = 0 OR bin.actual_qty > 0 OR i.name IN %(made_to_order)s)"
+			values["made_to_order"] = tuple(made_to_order)
+		else:
+			conditions += " AND (i.is_stock_item = 0 OR bin.actual_qty > 0)"
 		values["warehouse"] = pos.warehouse
 
 	if item_group and item_group != "All Item Groups":
@@ -487,6 +510,14 @@ def get_item_groups(pos_profile: str | None = None):
 
 @frappe.whitelist()
 def search_barcode(barcode: str, pos_profile: str | None = None):
+	"""Search item by barcode, flagging a made-to-order item (see made_to_order_items)."""
+	result = _search_barcode(barcode, pos_profile)
+	if result:
+		result["is_made_to_order"] = int(result["item_code"] in made_to_order_items(pos_profile))
+	return result
+
+
+def _search_barcode(barcode: str, pos_profile: str | None = None):
 	"""Search item by barcode.
 
 	Also supports scale barcodes (weighted items) if configured on the POS Profile.

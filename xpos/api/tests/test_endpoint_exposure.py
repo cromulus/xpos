@@ -89,3 +89,16 @@ class TestRepricingEndpointIsGone(unittest.TestCase):
 		ungated repricing endpoint defeated that control entirely.
 		"""
 		self.assertFalse(function_exists("xpos.api.items", "update_price_list_rate"))
+
+
+class TestNetworkPrintingExposure(unittest.TestCase):
+	"""The till reaches the network printer only through the permission-checked endpoint."""
+
+	def test_print_on_network_printer_is_the_public_entry_point(self):
+		"""It checks Print permission on the document before anything is sent to the printer."""
+		self.assertTrue(is_whitelisted("xpos.api.printing", "print_on_network_printer"))
+
+	def test_reachability_probe_is_not_an_endpoint(self):
+		"""Exposing it would let any caller make the server open connections to arbitrary hosts."""
+		self.assertTrue(function_exists("xpos.api.printing", "print_server_reachable"))
+		self.assertFalse(is_whitelisted("xpos.api.printing", "print_server_reachable"))

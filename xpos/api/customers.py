@@ -25,6 +25,8 @@ _CUSTOMER_LIST_COLUMNS = (
 	"tax_id",
 	"customer_type",
 	"gender",
+	# The till taxes a customer offline by their category (Mule City, MuleCity-ispl).
+	"tax_category",
 )
 # Shown on the picker row already, so left out of the description.
 _SHOWN_ON_ROW = ("name", "customer_name", "mobile_no", "email_id", "mule_filepro_alias_codes")
@@ -180,20 +182,13 @@ def get_customers(
 	selected_limit = values["limit"]
 	if cint(with_metadata) and limit_sql:
 		values["limit"] += 1  # One extra row distinguishes a full selection from a capped one.
+	# Every _CUSTOMER_LIST_COLUMNS name is selected: listing a column there
+	# without selecting it left tax_category off the synced rows (MuleCity-ispl).
+	list_columns = ", ".join(f"c.`{column}`" for column in _CUSTOMER_LIST_COLUMNS)
 	customers = frappe.db.sql(  # nosemgrep: frappe-sql-format-injection — conditions built from validated allowed-field lists, values parameterized
 		f"""
 		SELECT
-			c.name,
-			c.customer_name,
-			c.mobile_no,
-			c.email_id,
-			c.customer_group,
-			c.territory,
-			c.default_currency,
-			c.image,
-			c.tax_id,
-			c.customer_type,
-			c.gender
+			{list_columns}
 			{extra_columns}
 		FROM `tabCustomer` c
 		{join}
@@ -269,6 +264,35 @@ def _enrich_picker_customers(customers, company):
 		for sale in frappe.get_list(doctype, filters=filters,
 			fields=["customer", {"SUM": "base_net_total", "as": "sales"}], group_by="customer", limit_page_length=0):
 			by_name[sale["customer"]]["xpos_sales_12mo"] += flt(sale["sales"])
+
+
+def _linked_contact_details(customer: str) -> dict:
+	"""The first phone and email on the customer's linked Contacts, primary first.
+
+	Imported customers (Mule City's FilePro sync) keep their phones and emails
+	on Contacts, not on Customer.mobile_no / email_id, the same fallback the
+	customer picker uses (_enrich_picker_customers).
+	"""
+	phone = frappe.db.sql(
+		"""
+		SELECT cp.phone FROM `tabDynamic Link` dl
+		JOIN `tabContact Phone` cp ON cp.parent = dl.parent
+		WHERE dl.parenttype = 'Contact' AND dl.link_doctype = 'Customer' AND dl.link_name = %(customer)s
+		ORDER BY cp.is_primary_mobile_no DESC, cp.idx, cp.phone LIMIT 1
+		""",
+		{"customer": customer},
+	)
+	email = frappe.db.sql(
+		"""
+		SELECT ce.email_id FROM `tabDynamic Link` dl
+		JOIN `tabContact Email` ce ON ce.parent = dl.parent
+		WHERE dl.parenttype = 'Contact' AND dl.link_doctype = 'Customer' AND dl.link_name = %(customer)s
+		AND TRIM(IFNULL(ce.email_id, '')) != ''
+		ORDER BY ce.is_primary DESC, ce.idx, ce.email_id LIMIT 1
+		""",
+		{"customer": customer},
+	)
+	return {"mobile_no": phone[0][0] if phone else "", "email_id": email[0][0] if email else ""}
 
 
 @frappe.whitelist()
@@ -361,12 +385,18 @@ def get_customer_info(customer: str):
 	from erpnext.selling.doctype.customer.customer import get_credit_limit
 
 	credit_limit = flt(get_credit_limit(customer, frappe.defaults.get_user_default("Company")))
+	contact = (
+		_linked_contact_details(customer)
+		if not (cust.mobile_no and cust.email_id)
+		else {"mobile_no": "", "email_id": ""}
+	)
 
 	return {
 		"name": cust.name,
 		"customer_name": cust.customer_name,
-		"mobile_no": cust.mobile_no,
-		"email_id": cust.email_id,
+		# Blank on imported customers; fall back to their Contacts (Mule City, nfxn.8).
+		"mobile_no": cust.mobile_no or contact["mobile_no"],
+		"email_id": cust.email_id or contact["email_id"],
 		"customer_group": cust.customer_group,
 		"territory": cust.territory,
 		"default_currency": cust.default_currency,
@@ -625,6 +655,8 @@ def make_address(args: str | dict):
 	customer = args.get("customer")
 	if not customer:
 		frappe.throw(_("Customer is required to create an address"))
+	if not (args.get("address_line1") or "").strip() or not (args.get("city") or "").strip():
+		frappe.throw(_("Street address and city are required to save an address"))
 
 	address = frappe.get_doc(
 		{
@@ -658,6 +690,36 @@ def make_address(args: str | dict):
 		"address_line1": address.address_line1,
 		"city": address.city,
 	}
+
+
+# The parts of an address the counter edits (Mule City, nfxn.6).
+_ADDRESS_FIELDS = ("address_line1", "address_line2", "city", "state", "pincode", "country")
+
+
+@frappe.whitelist()  # nosemgrep: overusing-args — args is a JSON-encoded dict from the client, standard Frappe pattern
+def update_address(customer: str, name: str, args: str | dict):
+	"""Change one of ``customer``'s addresses (Mule City, nfxn.6).
+
+	Only an address linked to that customer, and only its street, city, state,
+	postcode and country; a street and a city are required.
+	"""
+	if isinstance(args, str):
+		args = json.loads(args)
+	if not frappe.has_permission("Customer", "write", customer):
+		frappe.throw(_("Not permitted to change {0}'s addresses").format(customer), frappe.PermissionError)
+	if not frappe.db.exists(
+		"Dynamic Link",
+		{"parenttype": "Address", "parent": name, "link_doctype": "Customer", "link_name": customer},
+	):
+		frappe.throw(_("Address {0} is not one of {1}'s addresses").format(name, customer), frappe.PermissionError)
+	if not (args.get("address_line1") or "").strip() or not (args.get("city") or "").strip():
+		frappe.throw(_("Street address and city are required to save an address"))
+	address = frappe.get_doc("Address", name)
+	for field in _ADDRESS_FIELDS:
+		if field in args:
+			address.set(field, args[field] or ("" if field != "country" else address.country))
+	address.save(ignore_permissions=True)
+	return {field: address.get(field) for field in ("name", "address_title", *_ADDRESS_FIELDS)}
 
 
 @frappe.whitelist()

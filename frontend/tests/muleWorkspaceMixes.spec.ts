@@ -11,7 +11,7 @@ const rows = [
 const recipe = { item: "CF-4112-A846", bom: "BOM-1", quantity: 500, uom: "Pound", ingredients: [{ item_name: "CORN", qty: 400, uom: "Pound" }], available: 0, stock_uom: "Pound", bag_weight: 50 };
 
 let mounted: ReturnType<typeof mount> | null = null;
-afterEach(() => { mounted?.unmount(); mounted = null; vi.restoreAllMocks(); });
+afterEach(() => { mounted?.unmount(); mounted = null; });
 
 async function openMixes() {
 	HTMLDialogElement.prototype.showModal ??= function () {};
@@ -46,28 +46,20 @@ describe("Customer Mixes", () => {
 		expect(document.body.querySelector(".mule-recipe")?.textContent).toContain("CORN");
 		expect(scroll).toHaveBeenCalled();
 	});
-	it("opens a native revision without creating a scratchpad or changing the basket", async () => {
-		const opened = vi.spyOn(window, "open").mockReturnValue(null);
+});
+
+describe("The register's shared login only sells (Bill, 2026-09-29, MuleCity-fb00)", () => {
+	it("offers no desk shortcuts: no new order, account payment, prepare order, formula editor or library", async () => {
 		Element.prototype.scrollIntoView = vi.fn();
-		const { wrapper, request } = await openMixes();
-		await wrapper.setProps({ cartHasItems: true });
-		([...document.body.querySelectorAll("button")].find(b => b.textContent === "View recipe") as HTMLButtonElement).click();
+		const { request } = await openMixes();
+		[...document.body.querySelectorAll("button")].find(b => b.textContent === "View recipe")!.click();
 		await flushPromises();
-		request.mockClear();
-		([...document.body.querySelectorAll("button")].find(b => b.textContent === "Edit in formula editor") as HTMLButtonElement).click();
-		expect(opened).toHaveBeenCalledWith("/desk/new-formula?bom=BOM-1&customer=MC-CUST-4112", "_blank", "noopener");
-		expect(request).not.toHaveBeenCalled();
-		expect(wrapper.emitted("pickup")).toBeUndefined();
+		const text = document.body.textContent || "";
+		expect(text).toContain("CORN");
+		for (const gone of ["New order", "Account payment", "Prepare order", "Edit in formula editor", "Full formula library"]) {
+			expect(text).not.toContain(gone);
+		}
+		expect(document.querySelectorAll('a[href^="/desk/sales-order/new"], a[href^="/desk/payment-entry"]').length).toBe(0);
+		expect(request.mock.calls.map(c => c[0])).not.toContain("mulecity_erpnext.pos_workspace.create_mix_order");
 	});
-
-	it("offers a new native mix with the selected customer", async () => {
-		const { wrapper } = await openMixes();
-		const link = wrapper.findAll("a").find(a => a.text() === "New mix")!;
-		expect(link.attributes("href")).toBe("/desk/new-formula?customer=MC-CUST-4112");
-		const library = [...document.body.querySelectorAll("a")].find(a => a.textContent === "Full formula library")!;
-		expect(library.getAttribute("href")).toBe("/desk/item?mule_product_class=customer_formula");
-		await wrapper.setProps({ customer: undefined });
-		expect(link.attributes("href")).toBe("/desk/new-formula?customer=");
-	});
-
 });

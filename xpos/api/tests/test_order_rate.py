@@ -5,6 +5,7 @@ mulecity_erpnext's test_xpos_counter_settings (TestPickupKeepsTheOrderPrice).
 """
 
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 import frappe
@@ -69,3 +70,28 @@ class TestNativeOrderTransport(unittest.TestCase):
 				meta.return_value.has_field.return_value = has_field
 				invoices._sales_order_line({"item_code": "FEED", "so_detail": "ROW-1"})
 				self.assertEqual("mule_processing_instructions" in lookup.call_args.args[2], has_field)
+
+
+class TestOrderAdvances(unittest.TestCase):
+	"""MuleCity-fxh: a ticket billing an order uses what was paid on the order."""
+
+	def test_the_orders_own_advances_are_set_on_the_ticket(self):
+		doc = frappe._dict(company="Mule", currency="USD", conversion_rate=None)
+		doc.calculate_taxes_and_totals = unittest.mock.Mock()
+		doc.set_advances = unittest.mock.Mock()
+		with patch.object(invoices.frappe, "get_cached_value", return_value="USD"):
+			invoices._set_order_advances(doc)
+		self.assertEqual(doc.only_include_allocated_payments, 1)
+		self.assertEqual(doc.conversion_rate, 1)
+		doc.calculate_taxes_and_totals.assert_called_once()
+		doc.set_advances.assert_called_once()
+
+	def test_the_expected_total_is_what_the_register_collected(self):
+		"""$31.11 ticket, $20 paid on the order: the register showed $11.11."""
+		doc = frappe._dict(grand_total=31.11, rounded_total=0, total_advance=20, is_return=0, currency="USD")
+		with patch.object(invoices, "get_currency_precision", return_value=2), patch.object(
+			invoices, "invoice_currency_of", return_value="USD"
+		):
+			invoices.check_expected_total(doc, {"expected_total": 11.11})
+			with self.assertRaises(frappe.ValidationError):
+				invoices.check_expected_total(doc, {"expected_total": 31.11})

@@ -6533,6 +6533,29 @@
    "module": "X POS",
    "name": "POS Profile-xpos_product_order",
    "options": "Alphabetical\nItem Code\nRecently Updated\nMost Recent Purchase\nMost Revenue\nMost Transactions"
+  },
+  {
+   "default": "0",
+   "description": "Several cashiers share one register login. Each sale and return asks for the cashier's initials at Pay; they must be on the list below and are saved on the invoice.",
+   "dt": "POS Profile",
+   "fieldname": "xpos_require_cashier_initials",
+   "fieldtype": "Check",
+   "insert_after": "xpos_product_order",
+   "label": "Require Cashier Initials",
+   "module": "X POS",
+   "name": "POS Profile-xpos_require_cashier_initials"
+  },
+  {
+   "depends_on": "eval:doc.xpos_require_cashier_initials",
+   "description": "The cashiers who may ring sales at this register, by the initials they type at Pay.",
+   "dt": "POS Profile",
+   "fieldname": "xpos_cashiers",
+   "fieldtype": "Table",
+   "insert_after": "xpos_require_cashier_initials",
+   "label": "Cashiers",
+   "module": "X POS",
+   "name": "POS Profile-xpos_cashiers",
+   "options": "XPOS Cashier"
   }
  ],
  "custom_perms": [],

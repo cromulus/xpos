@@ -5,7 +5,14 @@ import { ref, computed, watch } from "vue";
 import { call } from "@/services/api";
 import { usePosStore } from "./posStore";
 import { useSettingsStore } from "./settingsStore";
-import { cacheTaxContext, getCachedItemByCode, getCachedStockForItem, getCachedTaxContext } from "@/services/dbBridge";
+import {
+	cacheTaxContext,
+	getCachedCategoryTaxContext,
+	getCachedItemByCode,
+	getCachedStockForItem,
+	getCachedTaxContext,
+	getCustomer,
+} from "@/services/dbBridge";
 import type {
 	CartItem,
 	POSItem,
@@ -84,8 +91,51 @@ interface ServerPreview {
 	amount_due: number;
 }
 
+/**
+ * What the Mule site's ``counter_mix_orders.counter_quote`` returns for a cart
+ * holding made-to-order mixes, keyed to the cart it priced (Mule City,
+ * MuleCity-3j1m): today's ticket and the orders, priced separately.
+ */
+interface CounterQuote {
+	key: string;
+	ticket_due: number;
+	orders_total: number;
+	orders: { item_code: string; qty: number; uom?: string; grand_total: number }[];
+}
+
+/** A cart's custom mixes are paid now (an advance on the order) or at pickup. */
+export type MixPayMode = "now" | "pickup";
+
 /** Stock quantities closer than this count as equal (9-place UOM factors). */
 const STOCK_QTY_TOLERANCE = 1e-6;
+
+/** Offline, and the till has no tax context for the buyer at all (MuleCity-ispl). */
+class OfflineTaxMissing extends Error {}
+
+/**
+ * The buyer's tax context while offline (Mule City, MuleCity-ispl). Taxes depend
+ * only on the customer's tax category, so the category the offline sync kept on
+ * their customer row comes first: it is newer than a per-customer context kept
+ * when this till last rang them up online (Brandy may have moved them from
+ * Taxable to Farm since). The per-customer context is the fallback, for a row
+ * synced before categories were. Null when neither is on this till.
+ */
+async function offlineTaxContext(profile: string, buyer: string, row: { tax_category?: string | null } | null): Promise<any | null> {
+	const own = await getCachedTaxContext(profile, buyer);
+	const synced = row && "tax_category" in row ? row : await getCustomer(buyer).catch(() => null);
+	if (synced && "tax_category" in synced) {
+		const byCategory = await getCachedCategoryTaxContext(profile, (synced as any).tax_category ?? "");
+		if (byCategory) {
+			// The site sends each category's exemption reason with it (it follows the
+			// category one-to-one); an older sync without it falls back to this
+			// customer's own reason when that was for the same category.
+			const sameCategory = own && (own.tax_category ?? null) === (byCategory.tax_category ?? null);
+			const reason = byCategory.tax_exempt_reason ?? (sameCategory ? own.tax_exempt_reason : null);
+			return { ...byCategory, tax_exempt_reason: reason ?? null };
+		}
+	}
+	return own;
+}
 
 export const useCartStore = defineStore("cart", () => {
 	const posStore = usePosStore();
@@ -103,6 +153,8 @@ export const useCartStore = defineStore("cart", () => {
 		xpos_has_address?: boolean;
 		xpos_has_email?: boolean;
 		xpos_has_phone?: boolean;
+		// ERPNext's Tax Category, on synced rows (offline taxes, MuleCity-ispl).
+		tax_category?: string | null;
 	} | null>(null);
 	const discountPercentage = ref(0);
 	const discountAmount = ref(0);
@@ -129,8 +181,8 @@ export const useCartStore = defineStore("cart", () => {
         cacheTaxContext(String(profile), String(buyer), context).catch(() => {});
       } catch (error) {
         const offline = !isOnline() || isNetworkError(error);
-        context = offline ? await getCachedTaxContext(String(profile), String(buyer)) : null;
-        if (!context) throw error;
+        context = offline ? await offlineTaxContext(String(profile), String(buyer), customer.value) : null;
+        if (!context) throw offline ? new OfflineTaxMissing() : error;
       }
       const offlineContext = !isOnline();
       if (request !== muleTaxRequest) return;
@@ -146,7 +198,11 @@ export const useCartStore = defineStore("cart", () => {
         item.item_tax_map = tax.item_tax_map || {};
       }
     } catch (error) {
-      if (request === muleTaxRequest) muleTaxError.value = "Tax lookup failed. Reselect the customer to retry before taking payment.";
+      if (request === muleTaxRequest) {
+        muleTaxError.value = error instanceof OfflineTaxMissing
+          ? "No tax information for this customer on this till yet. Go online once, or ring them up at the desk."
+          : "Tax lookup failed. Reselect the customer to retry before taking payment.";
+      }
     } finally { if (request === muleTaxRequest) muleTaxPending.value = false; }
   });
 
@@ -155,6 +211,10 @@ export const useCartStore = defineStore("cart", () => {
 	// payment the server builds the ticket save would post and the register charges
 	// that. It is kept only while the cart is unchanged (same key).
 	const serverPreview = ref<ServerPreview | null>(null);
+	// Custom mixes ordered at the counter (Mule City, MuleCity-3j1m).
+	const pickupDate = ref("");
+	const mixPayMode = ref<MixPayMode>("now");
+	const counterQuote = ref<CounterQuote | null>(null);
 	// Declared before anything reads the cart's invoice data (the preview key does).
 	let invoiceLocalId = "";
 	const serverPreviewPending = ref(false);
@@ -189,7 +249,19 @@ export const useCartStore = defineStore("cart", () => {
 
 	const ruleDiscountPercentage = ref(0);
 	const ruleDiscountAmount = ref(0);
-	const applyDiscountOn = ref("Grand Total");
+	// A transaction Pricing Rule's apply_discount_on wins while its discount stands;
+	// otherwise the POS Profile's, as ERPNext sets it on the invoice.
+	const ruleDiscountOn = ref("");
+	const applyDiscountOn = computed(
+		() => ruleDiscountOn.value || posStore.posProfile?.apply_discount_on || "Grand Total",
+	);
+
+	/** The additional discount taken off the net before tax ("Net Total"), else 0. */
+	const netTotalDiscount = computed(() => {
+		if (applyDiscountOn.value !== "Net Total") return 0;
+		if (discountPercentage.value > 0) return Math.round(subtotal.value * discountPercentage.value) / 100;
+		return discountAmount.value > 0 ? discountAmount.value : 0;
+	});
 	const isPricingCart = ref(false);
 	const pricingSource = ref<PricingSource>("server");
 
@@ -280,6 +352,21 @@ export const useCartStore = defineStore("cart", () => {
 
 		if (itemNets.length === 0) return [];
 
+		// On "Net Total" ERPNext spreads the discount over the lines by their net
+		// (rounded to the cent, the last line taking the remainder), then taxes them.
+		const discount = netTotalDiscount.value;
+		if (discount && subtotal.value) {
+			let remaining = discount;
+			itemNets.forEach((line, i) => {
+				const share =
+					i === itemNets.length - 1
+						? remaining
+						: Math.round((discount * line.net * 100) / subtotal.value) / 100;
+				line.net -= share;
+				remaining -= share;
+			});
+		}
+
 		const result: CalculatedTax[] = [];
 
 		for (const tax of taxDetails) {
@@ -362,6 +449,10 @@ export const useCartStore = defineStore("cart", () => {
 
 	const grandTotal = computed(() => {
 		const posStore = usePosStore();
+		// A cart with custom mix orders: today's ticket, plus the orders when paid now.
+		if (counterQuote.value && counterQuote.value.key === previewKey.value) {
+			return counterQuote.value.ticket_due + (mixPayMode.value === "now" ? counterQuote.value.orders_total : 0);
+		}
 		if (serverPreview.value && serverPreview.value.key === previewKey.value) {
 			// The same settlements the cart's own total takes off below.
 			let due = serverPreview.value.amount_due;
@@ -369,7 +460,7 @@ export const useCartStore = defineStore("cart", () => {
 			if (!isReturnMode.value && writeOffAmount.value > 0) due -= writeOffAmount.value;
 			return due;
 		}
-		let total = subtotal.value + taxAmount.value;
+		let total = subtotal.value - netTotalDiscount.value + taxAmount.value;
 
 		// Apply offer item-level discounts
 		if (offerItemDiscountTotal.value > 0) {
@@ -381,11 +472,13 @@ export const useCartStore = defineStore("cart", () => {
 			total -= (total * offerGrandTotalDiscountPct.value) / 100;
 		}
 
-		if (discountPercentage.value > 0) {
-			const base = applyDiscountOn.value === "Net Total" ? subtotal.value : total;
-			total -= (base * discountPercentage.value) / 100;
-		} else if (discountAmount.value > 0) {
-			total -= discountAmount.value;
+		// On "Net Total" the discount already came off the net, before tax.
+		if (applyDiscountOn.value !== "Net Total") {
+			if (discountPercentage.value > 0) {
+				total -= (total * discountPercentage.value) / 100;
+			} else if (discountAmount.value > 0) {
+				total -= discountAmount.value;
+			}
 		}
 		if (!isReturnMode.value && redeemLoyaltyPoints.value && loyaltyAmount.value > 0) {
 			total -= loyaltyAmount.value;
@@ -460,6 +553,10 @@ export const useCartStore = defineStore("cart", () => {
 		if (Number(item.is_stock_item) === 0) {
 			return { allowed: true };
 		}
+		// Made to order: the mill makes it for this sale, so it has no stock yet.
+		if (Number(item.is_made_to_order) === 1) {
+			return { allowed: true };
+		}
 
 		// actual_qty is in the stock unit.
 		const uomLabel = item.stock_uom || item.uom;
@@ -502,6 +599,29 @@ export const useCartStore = defineStore("cart", () => {
 		return batches?.find((b) => b.batch_no === batchNo)?.qty;
 	}
 
+	/**
+	 * Lines the mill still has to make: a made-to-order mix whose quantity is more
+	 * than the made bags on hand. Pay turns the rest into an order (the server
+	 * decides the exact split, leaving out bags reserved for other orders).
+	 */
+	const orderLineUids = computed(
+		() =>
+			new Set(
+				items.value
+					.filter(
+						(item: CartItem) =>
+							Number(item.is_made_to_order) === 1 &&
+							!(item as any).so_detail &&
+							item.qty * (item.conversion_factor || 1) > Math.max(item.actual_qty ?? 0, 0) + STOCK_QTY_TOLERANCE,
+					)
+					.map((item: CartItem) => item.uid),
+			),
+	);
+	const hasOrderLines = computed(() => !isReturnMode.value && orderLineUids.value.size > 0);
+	function isOrderLine(uid: string | undefined): boolean {
+		return !!uid && orderLineUids.value.has(uid);
+	}
+
 	function canAddItem(item: POSItem): { allowed: boolean; message?: string } {
 		return checkAvailability(item, 1, (item as CartItem).conversion_factor || 1, item.batch_no);
 	}
@@ -516,7 +636,9 @@ export const useCartStore = defineStore("cart", () => {
 			return { valid: true, messages: [] };
 		}
 
-		const stockItems = items.value.filter((i: CartItem) => Number(i.is_stock_item) !== 0);
+		const stockItems = items.value.filter(
+			(i: CartItem) => Number(i.is_stock_item) !== 0 && Number(i.is_made_to_order) !== 1,
+		);
 		if (stockItems.length === 0) {
 			return { valid: true, messages: [] };
 		}
@@ -632,6 +754,7 @@ export const useCartStore = defineStore("cart", () => {
 				batch_no: item.batch_no || "",
 				actual_qty: item.actual_qty || 0,
 				is_stock_item: item.is_stock_item,
+				is_made_to_order: item.is_made_to_order,
 				has_serial_no: item.has_serial_no,
 				has_batch_no: item.has_batch_no,
 				conversion_factor: (item as CartItem).conversion_factor || 1,
@@ -709,6 +832,7 @@ export const useCartStore = defineStore("cart", () => {
 			batch_no: batchNo || "",
 			actual_qty: item.actual_qty || 0,
 			is_stock_item: item.is_stock_item,
+			is_made_to_order: item.is_made_to_order,
 			has_serial_no: item.has_serial_no,
 			has_batch_no: item.has_batch_no,
 			conversion_factor: conversionFactor || 1,
@@ -918,6 +1042,7 @@ export const useCartStore = defineStore("cart", () => {
 			xpos_has_address?: boolean;
 			xpos_has_email?: boolean;
 			xpos_has_phone?: boolean;
+			tax_category?: string | null;
 		} | null,
 	): void {
 		customer.value = cust;
@@ -1161,7 +1286,7 @@ export const useCartStore = defineStore("cart", () => {
 	}
 
 	function applyTransactionDiscount(update: ResolvedCartPricing["invoice_updates"]): void {
-		applyDiscountOn.value = update.apply_discount_on || "Grand Total";
+		ruleDiscountOn.value = (update.from_pricing_rule && update.apply_discount_on) || "";
 
 		if (update.from_pricing_rule) {
 			discountPercentage.value = update.additional_discount_percentage;
@@ -1200,7 +1325,7 @@ export const useCartStore = defineStore("cart", () => {
 			applyTransactionDiscount({
 				additional_discount_percentage: 0,
 				discount_amount: 0,
-				apply_discount_on: "Grand Total",
+				apply_discount_on: "",
 				from_pricing_rule: false,
 			});
 			return;
@@ -1316,13 +1441,16 @@ export const useCartStore = defineStore("cart", () => {
 	function clearCart(): void {
 		invoiceLocalId = "";
 		serverPreview.value = null;
+		counterQuote.value = null;
+		pickupDate.value = "";
+		mixPayMode.value = "now";
 		items.value = [];
 		selectedCartIndex.value = -1;
 		discountPercentage.value = 0;
 		discountAmount.value = 0;
 		ruleDiscountPercentage.value = 0;
 		ruleDiscountAmount.value = 0;
-		applyDiscountOn.value = "Grand Total";
+		ruleDiscountOn.value = "";
 		pricingSource.value = "server";
 		clearLoyalty();
 		appliedOffers.value = [];
@@ -1400,6 +1528,7 @@ export const useCartStore = defineStore("cart", () => {
 	// A cart that changes after the check is never charged its own sum: drop the
 	// preview, and if payment is open close it so Pay checks again.
 	watch(previewKey, (key) => {
+		if (counterQuote.value && counterQuote.value.key !== key) counterQuote.value = null;
 		if (!serverPreview.value || serverPreview.value.key === key) return;
 		serverPreview.value = null;
 		if (showPaymentDialog.value) {
@@ -1417,6 +1546,10 @@ export const useCartStore = defineStore("cart", () => {
 
 	async function openPaymentDialog(): Promise<void> {
 		if (muleTaxPending.value || muleTaxError.value || serverPreviewPending.value) return;
+		if (hasOrderLines.value) {
+			await openMixOrderPayment();
+			return;
+		}
 		// Offline the server can't be asked; the offline queue posts what the server decides.
 		if (!isReturnMode.value && isOnline()) {
 			const key = previewKey.value;
@@ -1436,6 +1569,40 @@ export const useCartStore = defineStore("cart", () => {
 			} finally {
 				serverPreviewPending.value = false;
 			}
+		}
+		showPaymentDialog.value = true;
+	}
+
+	/**
+	 * Pay for a cart with custom mixes to order (Mule City, MuleCity-3j1m): the site
+	 * prices today's ticket and the orders separately, placing the orders only
+	 * inside a rolled-back savepoint (short ingredients are refused here). Orders
+	 * need the server, so an offline till refuses them.
+	 */
+	async function openMixOrderPayment(): Promise<void> {
+		serverPreviewError.value = "";
+		if (!isOnline()) {
+			serverPreviewError.value = __("Custom mixes can't be ordered offline. Go online, or take the order at the desk.");
+			return;
+		}
+		if (!pickupDate.value) {
+			serverPreviewError.value = __("Choose a pickup date for the custom mix order.");
+			return;
+		}
+		const key = previewKey.value;
+		serverPreviewPending.value = true;
+		try {
+			const result = await call<Omit<CounterQuote, "key">>("mulecity_erpnext.counter_mix_orders.counter_quote", {
+				data: JSON.stringify(previewPayload()),
+			});
+			counterQuote.value = { ...result, key };
+			if (key !== previewKey.value) return;
+		} catch (error) {
+			counterQuote.value = null;
+			serverPreviewError.value = extractErrorMessage(error);
+			return;
+		} finally {
+			serverPreviewPending.value = false;
 		}
 		showPaymentDialog.value = true;
 	}
@@ -1711,6 +1878,7 @@ export const useCartStore = defineStore("cart", () => {
 			data.pos_change_legs = changeLegs.value;
 		}
 
+		if (hasOrderLines.value) (data as any).pickup_date = pickupDate.value;
 		if (orderNotes.value) data.pos_notes = orderNotes.value;
 		if (deliveryDate.value) data.pos_delivery_date = deliveryDate.value;
 		if (salesPerson.value) data.sales_person = salesPerson.value;
@@ -1978,5 +2146,10 @@ export const useCartStore = defineStore("cart", () => {
 		closeDraftDialog,
 		setDeliveryCharge,
 		itemRatePrecision,
+		pickupDate,
+		mixPayMode,
+		counterQuote,
+		hasOrderLines,
+		isOrderLine,
 	};
 });

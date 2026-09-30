@@ -34,7 +34,7 @@
 					<span class="text-muted-foreground flex items-center gap-1">
 						{{ tax.description }}
 						<span v-if="tax.rate" class="text-xs text-muted-foreground"
-							>({{ percent(tax.rate) }})</span
+							>{{ taxRate(tax.rate) }}</span
 						>
 						<span v-if="tax.included_in_print_rate" class="text-[10px] text-blue-500">{{
 							__("incl.")
@@ -351,7 +351,7 @@
 					? 'bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-amber-500/25 text-white'
 					: 'bg-linear-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 shadow-primary/25'
 			"
-			:disabled="cartStore.isEmpty || !cartStore.customer || cartStore.muleTaxPending || !!cartStore.muleTaxError || cartStore.serverPreviewPending"
+			:disabled="receivesOnAccount ? false : cartStore.isEmpty || !cartStore.customer || cartStore.muleTaxPending || !!cartStore.muleTaxError || cartStore.serverPreviewPending"
 			@click="handleCheckout()"
 		>
 			<Wallet class="w-5 h-5" />
@@ -369,6 +369,7 @@ import { ref, computed, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { hasPermission } from "@/services/userRights";
 import { useCartStore } from "@/stores/cartStore";
+import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { useAuthStore } from "@/stores/authStore";
 import { useOfferStore } from "@/stores/offerStore";
 import { call, showSuccess, showError } from "@/services/api";
@@ -400,7 +401,7 @@ import type { DeliveryCharge } from "@/types/pos.types";
 import { useMoney } from "@/composables/useMoney";
 
 const posStore = usePosStore();
-const { money, moneyPrecision, percent } = useMoney();
+const { money, moneyPrecision, percent, taxRate } = useMoney();
 const cartStore = useCartStore();
 const authStore = useAuthStore();
 const offerStore = useOfferStore();
@@ -471,7 +472,13 @@ const discountValue = computed(() => {
 	return cartStore.discountAmount;
 });
 
+// An empty cart for a customer who owes: Pay takes a payment toward the balance
+// (Receive on Account, Mule City nfxn.3), as the old button on the cart did.
+const customerAccount = useCustomerAccount();
+const receivesOnAccount = computed(() => cartStore.isEmpty && customerAccount.canReceive.value);
+
 const payButtonLabel = computed(() => {
+	if (receivesOnAccount.value) return __("Receive on Account");
 	if (cartStore.isEmpty) return __("Add items to pay");
 	if (!cartStore.customer) return __("Select customer first");
 	if (posStore.enableCashierSettlement && !cartStore.isReturnMode) return __("Send to Cashier");
@@ -480,6 +487,10 @@ const payButtonLabel = computed(() => {
 });
 
 function handleCheckout() {
+	if (receivesOnAccount.value) {
+		customerAccount.openReceiveOnAccount();
+		return;
+	}
 	if (posStore.enableCashierSettlement && !cartStore.isReturnMode) {
 		sendToCashier();
 		return;

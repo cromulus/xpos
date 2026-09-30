@@ -11,7 +11,9 @@ import {
 	countDeadLetters,
 	retryDeadLetter as retryDeadLetterBridge,
 	adjustCachedStock,
+	cacheTaxContexts,
 } from "@/services/dbBridge";
+import { useCacheStatus } from "@/stores/cacheStatus";
 import type { PendingInvoice } from "@/services/idbService";
 import type { InvoiceData, ReceiptSnapshot } from "@/types/pos.types";
 import __ from "@/lib/translate";
@@ -427,6 +429,27 @@ export const useOfflineStore = defineStore("offline", () => {
 		}
 	}
 
+	/**
+	 * Keep every tax category's taxes for offline use (Mule City's tax_contexts,
+	 * MuleCity-ispl), so a customer this till never looked up online is taxed by
+	 * the category on their synced row. The cart already asks Mule City's
+	 * tax_context online; a site without that endpoint just records a failure.
+	 */
+	async function cacheTaxContextsForOffline(profile: string): Promise<void> {
+		const status = useCacheStatus();
+		if (!status.begin("Taxes", profile)) return;
+		try {
+			const contexts = await call<Record<string, unknown>>("mulecity_erpnext.pos_workspace.tax_contexts", {
+				pos_profile: profile,
+			});
+			await cacheTaxContexts(profile, contexts || {});
+			status.finish("Taxes", profile, Object.keys(contexts || {}).length, true);
+		} catch (error) {
+			status.fail("Taxes");
+			throw error;
+		}
+	}
+
 	async function syncOfflineData(): Promise<void> {
 		if (!isOnline.value) return;
 
@@ -444,6 +467,10 @@ export const useOfflineStore = defineStore("offline", () => {
 			const customerStore = useCustomerStore();
 			customerStore.cacheAllCustomers(posStore.profileName).catch((err) => {
 				console.warn("[XPOS Sync] Failed to sync customers:", err);
+			});
+
+			cacheTaxContextsForOffline(posStore.profileName).catch((err) => {
+				console.warn("[XPOS Sync] Failed to sync tax contexts:", err);
 			});
 
 			if (pendingCount.value > 0) {
@@ -483,5 +510,6 @@ export const useOfflineStore = defineStore("offline", () => {
 		startPeriodicSync,
 		stopPeriodicSync,
 		syncOfflineData,
+		cacheTaxContextsForOffline,
 	};
 });

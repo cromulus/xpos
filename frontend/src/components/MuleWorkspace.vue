@@ -2,10 +2,10 @@
   <nav class="mule-counter-tools" aria-label="Mule City customer work">
     <strong>Mule City</strong>
     <button type="button" @click="open('mixes')">Customer Mixes</button>
-    <a :href="'/desk/new-formula?customer=' + encodeURIComponent(customer || '')" target="_blank" rel="noopener">New mix</a>
     <button type="button" @click="open('orders')">Orders for Pickup</button>
-    <a :href="'/desk/sales-order/new?customer=' + encodeURIComponent(customer || '')" target="_blank">New order</a>
-    <a href="/desk/payment-entry/new" target="_blank">Account payment</a>
+    <!-- No desk shortcuts (new order, account payment, formula editor): the register's shared
+         login only sells. Account payments are Pay's "Receive on Account"; orders and formula
+         edits happen at each person's own computer (Bill, 2026-09-29, MuleCity-fb00). -->
     <!-- Only off production (mulecity_erpnext site_role.py puts the flag in boot, MuleCity-nfxn.1). -->
     <small v-if="practiceSite">Practice site</small>
   </nav>
@@ -45,19 +45,9 @@
         <table v-if="details.ingredients.length"><thead><tr><th>Ingredient</th><th>Quantity</th></tr></thead><tbody>
           <tr v-for="(ingredient, index) in details.ingredients" :key="index"><td>{{ ingredient.item_name }}</td><td>{{ ingredient.qty }} {{ ingredient.uom }}</td></tr>
         </tbody></table>
-        <form v-if="details.bom" class="mule-order" @submit.prevent="orderMix">
-          <label>Quantity<input v-model.number="qty" type="number" :min="unit === 'Bag' ? 1 : 0.001" :step="unit === 'Bag' ? 1 : 'any'" required /></label>
-          <label>Unit<select v-model="unit"><option value="Pound">Pounds</option><option v-if="details.bag_weight" value="Bag">Bags ({{ details.bag_weight }} lb)</option></select></label>
-          <label>Pickup date<input v-model="date" type="date" required /></label>
-          <button type="submit" :disabled="busy || !customer">Prepare order</button>
-          <button type="button" :disabled="busy || !customer" @click="editMix">Edit in formula editor</button>
-        </form>
-        <p>Review pricing and pickup time on the order before submitting. Editing opens separately and keeps your basket.</p>
-        <p v-if="created"><a :href="created" target="_blank">Open prepared document</a></p>
       </section>
       <footer><button v-if="start" type="button" :disabled="busy" @click="search(start - 20)">Previous</button>
-        <button v-if="more" type="button" :disabled="busy" @click="search(start + 20)">More mixes</button>
-        <a href="/desk/item?mule_product_class=customer_formula" target="_blank">Full formula library</a></footer>
+        <button v-if="more" type="button" :disabled="busy" @click="search(start + 20)">More mixes</button></footer>
     </dialog>
   </Teleport>
 </template>
@@ -72,7 +62,7 @@ const practiceSite = !!window.xpos?.boot?.mule_practice_site;
 const emit = defineEmits(['pickup']);
 const dialog = ref(null), mode = ref(''), term = ref(''), mine = ref(false);
 const rows = ref([]), busy = ref(false), error = ref(''), more = ref(false), start = ref(0);
-const recipe = ref(null), details = ref(null), chosen = ref(null), qty = ref(0), date = ref(''), created = ref(''), unit = ref('Pound');
+const recipe = ref(null), details = ref(null), chosen = ref(null);
 let generation = 0;
 const api = (name, args) => props.request('mulecity_erpnext.pos_workspace.' + name, {pos_profile: props.profile, ...args});
 // Mixes come newest first; this line says which one the customer is on now.
@@ -96,24 +86,11 @@ async function search(offset = 0) {
   finally { if (token === generation) busy.value = false; }
 }
 async function preview(row) {
-  busy.value = true; error.value = ''; created.value = '';
-  try { details.value = await api('mix_details', {item_code: row.name}); chosen.value = row; unit.value = details.value.bag_weight ? 'Bag' : 'Pound'; qty.value = details.value.bag_weight ? details.value.quantity / details.value.bag_weight : details.value.quantity || 0;
+  busy.value = true; error.value = '';
+  try { details.value = await api('mix_details', {item_code: row.name}); chosen.value = row;
     await nextTick(); recipe.value?.scrollIntoView({behavior: 'smooth', block: 'start'}); }
   catch(e) { fail(e); } finally { busy.value = false; }
 }
-async function orderMix() {
-  busy.value = true; error.value = '';
-  try { const name = await api('create_mix_order', {bom: details.value.bom, customer: props.customer, qty: qty.value, uom: unit.value, pickup_date: date.value});
-    created.value = '/desk/sales-order/' + encodeURIComponent(name); window.open(created.value, '_blank');
-  } catch(e) { fail(e); } finally { busy.value = false; }
-}
-function editMix() {
-  // Open the native BOM workflow without creating records or changing the basket.
-  created.value = '/desk/new-formula?bom=' + encodeURIComponent(details.value.bom)
-    + '&customer=' + encodeURIComponent(props.customer || '');
-  window.open(created.value, '_blank', 'noopener');
-}
-
 async function pickup(row) {
   if (props.cartHasItems) return;
   busy.value = true; error.value = '';
@@ -138,6 +115,5 @@ button:disabled { opacity:.5; cursor:not-allowed; } button:focus-visible, a:focu
 .mule-search { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; align-items:center; } .mule-search>input { flex:1; min-width:220px; }
 .mule-results article { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid hsl(var(--border)); } .mule-results article>div { flex:1; } .mule-results p { font-size:14px; margin:4px 0; }
 .mule-recipe { border-top:3px solid hsl(var(--ring)); margin-top:20px; padding-top:16px; } .mule-recipe table { width:100%; border-collapse:collapse; margin:12px 0; } th,td { padding:7px; text-align:left; border-bottom:1px solid hsl(var(--border)); }
-.mule-order { display:flex; flex-wrap:wrap; gap:12px; align-items:end; } .mule-order label { display:flex; flex-direction:column; } .mule-order input { max-width:180px; }
 .mule-error { color:hsl(var(--destructive)); } .mule-workspace footer { display:flex; gap:12px; margin-top:16px; align-items:center; }
 </style>

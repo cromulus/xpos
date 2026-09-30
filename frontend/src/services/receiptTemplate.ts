@@ -96,7 +96,7 @@ export function buildReceiptHtml(snapshot: ReceiptSnapshot, ctx: ReceiptContext)
 			(tax) => `
         <div class="total-row tax">
             <span class="total-label">${esc(tax.description || "Tax")}${
-				tax.rate ? ` (${tax.rate}%)` : ""
+				tax.rate ? ` ${Number(tax.rate)}%` : ""
 			}${tax.included_in_print_rate ? ' <span style="font-size:7px;">Incl.</span>' : ""}</span>
             <span class="total-value">${money(tax.amount)}</span>
         </div>`,

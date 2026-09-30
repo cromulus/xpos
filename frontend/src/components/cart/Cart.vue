@@ -26,114 +26,90 @@
 			</Button>
 		</div>
 
-		<div class="shrink-0 px-4 pt-4 pb-3 border-b">
-			<div class="flex flex-wrap items-center justify-between mb-3 gap-2">
-				<h2 class="shrink-0 text-base font-bold text-foreground flex items-center gap-2">
+		<!-- Compact header (Bill 2026-09-29, MuleCity-nfxn.3): the cart, its customer and their
+		     account take two short lines instead of a card, a button and two big boxes.
+		     Receive on Account is a Pay option now (PaymentDialog, or the empty cart's Pay button). -->
+		<div class="shrink-0 px-4 pt-3 pb-2 border-b">
+			<div class="flex items-center gap-2">
+				<h2 class="shrink-0 text-base font-bold text-foreground flex items-center gap-1.5">
 					<ShoppingCart class="w-5 h-5 text-primary dark:text-primary" />
 					{{ __("Cart") }}
 					<Badge v-if="cartStore.itemCount > 0" variant="secondary" class="text-[10px]">
 						{{ cartStore.itemCount }}
 					</Badge>
 				</h2>
-				<div class="flex flex-1 min-w-50 items-center justify-end gap-2">
-					<Autocomplete
-						v-if="posStore.salesPersonEnabled && !cartStore.isReturnMode"
-						v-model="cartStore.salesPerson"
-						doctype="Sales Person"
-						query="xpos.api.customers.sales_person_query"
-						:filters="{ pos_profile: posStore.profileName }"
-						:placeholder="__('Sales Person')"
-						:open-on-focus="true"
-						:clearable="true"
-						:compact="true"
-						:min-chars="0"
-						class="min-w-0 flex-1 max-w-44"
-					/>
-				</div>
-			</div>
-
-			<div class="w-full flex items-center gap-2">
 				<button
-					@click="handleCustomerClick"
-					class="flex-[0.9] flex items-center gap-3 p-2.5 rounded-lg border transition-all duration-200 group"
+					type="button"
+					data-testid="cart-customer"
+					class="flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-md border transition-colors duration-200"
 					:class="
 						cartStore.isReturnMode
 							? 'border-border bg-muted/50 cursor-not-allowed'
 							: 'border-dashed border-border hover:border-primary hover:bg-primary/5 dark:hover:border-primary'
 					"
 					:disabled="cartStore.isReturnMode"
+					:title="
+						cartStore.isReturnMode
+							? __('Customer locked for return')
+							: cartStore.customer
+								? __('Click to change customer')
+								: __('Click to select customer')
+					"
+					@click="handleCustomerClick"
 				>
-					<Avatar size="sm" class="group-hover:ring-2 group-hover:ring-primary/20 transition-all">
-						<img
-							v-if="cartStore.customer && cartStore.customer.image"
-							:src="cartStore.customer.image as string"
-							:alt="cartStore.customer.customer_name"
-							class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-							loading="lazy"
-						/>
-						<AvatarFallback>
-							<User class="w-3.5 h-3.5" />
-						</AvatarFallback>
-					</Avatar>
-					<div class="text-start flex-1 min-w-0">
-						<p class="text-sm font-medium text-foreground truncate">
-							{{ cartStore.customerName }}
-						</p>
-						<template v-if="cartStore.customer">
-							<div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-								<template v-if="cartStore.customer.mobile_no">
-									<Phone class="w-3 h-3 shrink-0" />
-									<span class="truncate">{{ cartStore.customer.mobile_no }}</span>
-								</template>
-								<template v-if="cartStore.customer.email_id">
-									<Mail
-										class="w-3 h-3 shrink-0"
-										:class="{ 'ms-1': cartStore.customer.mobile_no }"
-									/>
-									<span class="truncate">{{ cartStore.customer.email_id }}</span>
-								</template>
-							</div>
-							<!-- Can take a delivery, contact on file, tax exempt: at a glance (Bill 2026-09-29). -->
-							<CustomerStatusIcons
-								class="mt-1"
-								:customer="cartStore.customer"
-								:tax-exempt-reason="cartStore.muleTaxExemptReason"
-							/>
-							<p
-								v-if="!cartStore.customer.mobile_no && !cartStore.customer.email_id"
-								class="text-[11px] text-muted-foreground"
-							>
-								{{
-									cartStore.isReturnMode
-										? __("Customer locked for return")
-										: __("Click to change customer")
-								}}
-							</p>
-						</template>
-						<p v-else class="text-[11px] text-muted-foreground">
-							{{ __("Click to select customer") }}
-						</p>
-					</div>
-					<Lock v-if="cartStore.isReturnMode" class="w-4 h-4 text-muted-foreground/50" />
-					<ChevronDown v-else class="w-4 h-4 text-muted-foreground/50" />
+					<User class="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+					<span class="text-sm font-medium text-foreground truncate">
+						{{ cartStore.customer ? cartStore.customerName : __("Select customer") }}
+					</span>
+					<Lock v-if="cartStore.isReturnMode" class="ms-auto w-3.5 h-3.5 shrink-0 text-muted-foreground/50" />
+					<ChevronDown v-else class="ms-auto w-3.5 h-3.5 shrink-0 text-muted-foreground/50" />
 				</button>
-				<button
+				<Button
 					v-if="cartStore.customer && !cartStore.isReturnMode"
-					class="flex-[0.1] flex items-center gap-3 p-4 rounded-lg border transition-all duration-200 group border-dashed border-border hover:border-primary hover:bg-primary/5 dark:hover:border-primary"
+					variant="ghost"
+					size="icon-sm"
+					class="shrink-0"
+					data-testid="edit-customer"
+					:title="__('Edit Customer')"
 					@click.stop="handleEditCustomer"
-					title="Edit Customer"
 				>
-					<Pencil class="w-full" />
-				</button>
+					<Pencil class="w-4 h-4" />
+				</Button>
+				<Autocomplete
+					v-if="posStore.salesPersonEnabled && !cartStore.isReturnMode"
+					v-model="cartStore.salesPerson"
+					doctype="Sales Person"
+					query="xpos.api.customers.sales_person_query"
+					:filters="{ pos_profile: posStore.profileName }"
+					:placeholder="__('Sales Person')"
+					:open-on-focus="true"
+					:clearable="true"
+					:compact="true"
+					:min-chars="0"
+					class="min-w-0 max-w-36"
+				/>
 			</div>
 
-			<!-- Compact (Bill 2026-09-29, MuleCity-nfxn.3): one row under the customer card,
-			     next to the status icons, instead of a full-width button and two big boxes. -->
 			<div
 				v-if="cartStore.customer && !cartStore.isReturnMode"
-				class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+				class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground"
 				data-testid="customer-account-row"
 			>
+				<!-- Can take a delivery, contact on file, tax exempt: at a glance (Bill 2026-09-29). -->
+				<CustomerStatusIcons :customer="cartStore.customer" :tax-exempt-reason="cartStore.muleTaxExemptReason" />
+				<span v-if="cartStore.customer.mobile_no" class="inline-flex items-center gap-1 truncate">
+					<Phone class="w-3 h-3 shrink-0" />{{ cartStore.customer.mobile_no }}
+				</span>
+				<template v-if="showCreditInfo">
+					<span :class="{ 'text-destructive font-semibold': isOverCreditLimit }" data-testid="customer-balance">
+						{{ __("Balance") }}
+						<strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ money(customerBalance ?? 0) }}</strong>
+					</span>
+					<span :class="{ 'text-destructive font-semibold': isOverCreditLimit }" data-testid="customer-credit-limit">
+						{{ __("Limit") }}
+						<strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ customerCreditLimit > 0 ? money(customerCreditLimit) : __("None") }}</strong>
+					</span>
+				</template>
 				<Button
 					variant="link"
 					size="sm"
@@ -143,24 +119,6 @@
 				>
 					{{ __("Recent purchases") }}
 				</Button>
-				<template v-if="showCreditInfo">
-					<span :class="isOverCreditLimit ? 'text-destructive font-semibold' : 'text-muted-foreground'" data-testid="customer-balance">
-						{{ __("Balance") }} <strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ money(customerBalance ?? 0) }}</strong>
-					</span>
-					<span :class="isOverCreditLimit ? 'text-destructive font-semibold' : 'text-muted-foreground'" data-testid="customer-credit-limit">
-						{{ __("Limit") }} <strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ customerCreditLimit > 0 ? money(customerCreditLimit) : __("None") }}</strong>
-					</span>
-					<Button
-						v-if="canReceiveOnAccount"
-						variant="link"
-						size="sm"
-						class="h-auto p-0 text-xs"
-						data-testid="receive-on-account"
-						@click="showReceiveOnAccount = true"
-					>
-						{{ __("Receive on Account") }}
-					</Button>
-				</template>
 			</div>
 			<p
 				v-if="showCreditInfo && isOverCreditLimit"
@@ -169,11 +127,20 @@
 				<AlertTriangle class="w-3.5 h-3.5 shrink-0" />
 				{{ __("This sale exceeds the credit limit by {0}", [money(projectedBalance - customerCreditLimit)]) }}
 			</p>
+			<!-- A custom mix the mill still has to make is ordered for pickup (Mule City, MuleCity-3j1m). -->
+			<label
+				v-if="cartStore.hasOrderLines"
+				class="mt-1 flex items-center gap-2 text-xs font-semibold"
+				data-testid="cart-pickup-date"
+			>
+				{{ __("Mix pickup date") }}
+				<input v-model="cartStore.pickupDate" type="date" required class="border border-input rounded px-1 py-0.5 bg-card" />
+			</label>
 			<ReceiveOnAccountDialog
-				:customer="showReceiveOnAccount ? cartStore.customer?.name || null : null"
+				:customer="customerStore.showReceiveOnAccount ? cartStore.customer?.name || null : null"
 				:customer-label="cartStore.customerName"
 				:balance="customerBalance ?? 0"
-				@close="showReceiveOnAccount = false"
+				@close="customerStore.showReceiveOnAccount = false"
 				@received="onReceivedOnAccount"
 			/>
 		</div>
@@ -278,7 +245,6 @@ import CartSummary from "./CartSummary.vue";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Autocomplete } from "@/components/ui/autocomplete";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
 	ShoppingCart,
 	User,
@@ -288,7 +254,6 @@ import {
 	Lock,
 	Gift,
 	Phone,
-	Mail,
 	Pencil,
 	AlertTriangle,
 } from "lucide-vue-next";
@@ -296,7 +261,7 @@ import __ from "@/lib/translate";
 import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
 import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
 import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
-import { isOnline } from "@/utils";
+import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { showsCreditInfo } from "@/utils/creditPanel";
 import type { ItemUOM } from "@/types/pos.types";
 
@@ -358,13 +323,7 @@ watch(
 	{ immediate: true },
 );
 
-const customerFinancials = computed(() =>
-	cartStore.customer && customerStore.selectedCustomerInfo?.name === cartStore.customer.name
-		? customerStore.selectedCustomerInfo
-		: null,
-);
-const customerBalance = computed(() => customerFinancials.value?.balance ?? null);
-const customerCreditLimit = computed(() => customerFinancials.value?.credit_limit ?? 0);
+const { balance: customerBalance, creditLimit: customerCreditLimit } = useCustomerAccount();
 const projectedBalance = computed(() => (customerBalance.value ?? 0) + Math.max(cartStore.grandTotal, 0));
 const isOverCreditLimit = computed(
 	() => customerCreditLimit.value > 0 && projectedBalance.value > customerCreditLimit.value,
@@ -379,15 +338,8 @@ const showCreditInfo = computed(() =>
 	}),
 );
 
-// A payment toward what the customer owes, when the profile and role allow it
-// (posStore.allowOutstandingSettlement) and the server can be reached.
-const showReceiveOnAccount = ref(false);
-const canReceiveOnAccount = computed(
-	() => posStore.allowOutstandingSettlement && (customerBalance.value ?? 0) > 0 && isOnline(),
-);
-
 function onReceivedOnAccount() {
-	showReceiveOnAccount.value = false;
+	customerStore.showReceiveOnAccount = false;
 	if (cartStore.customer?.name) customerStore.getCustomerInfo(cartStore.customer.name);
 }
 

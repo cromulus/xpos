@@ -1089,6 +1089,24 @@
    "width": null
   },
   {
+   "allow_on_submit": 0,
+   "default": null,
+   "depends_on": null,
+   "description": "Initials the cashier typed at Pay on a shared register login. Checked against the POS Profile's cashier list.",
+   "dt": "Sales Invoice",
+   "fieldname": "pos_cashier",
+   "fieldtype": "Data",
+   "in_list_view": 0,
+   "in_standard_filter": 1,
+   "insert_after": "xpos_local_id",
+   "label": "Cashier",
+   "module": "X POS",
+   "name": "Sales Invoice-pos_cashier",
+   "no_copy": 1,
+   "print_hide": 0,
+   "read_only": 1
+  },
+  {
    "_assign": null,
    "_comments": null,
    "_liked_by": null,

@@ -39,6 +39,7 @@ export interface POSProfile {
 	payments: POSPaymentMethod[];
 	pos_mixed_currency_tender?: boolean;
 	taxes_and_charges?: string;
+	apply_discount_on?: string;
 	write_off_account?: string;
 	write_off_cost_center?: string;
 	selling_price_list?: string;
@@ -87,7 +88,16 @@ export interface POSProfile {
 	block_sale_beyond_available_qty?: boolean;
 	purchase_taxes?: PurchaseTaxEntry[];
 	allowed_sales_persons?: { sales_person: string }[];
+	/** Ask for the cashier's initials at Pay on every sale (Mule City, MuleCity-fb00.2). */
+	xpos_require_cashier_initials?: boolean | number;
+	xpos_cashiers?: XposCashier[];
 	[key: string]: any;
+}
+
+/** A row of the POS Profile's cashier list (child doctype "XPOS Cashier"). */
+export interface XposCashier {
+	initials: string;
+	cashier_name: string;
 }
 
 export interface PurchaseTaxEntry {
@@ -188,6 +198,8 @@ export interface POSItem {
 	barcode?: string;
 	item_tax_template?: string;
 	is_stock_item?: boolean;
+	/** Made to order (a site hook names it): sold before any stock exists. */
+	is_made_to_order?: number | boolean;
 	has_variants?: boolean;
 	variant_of?: string;
 	is_template?: boolean;
@@ -300,6 +312,8 @@ export interface Customer {
 	default_price_list?: string;
 	gender?: string;
 	tax_id?: string;
+	// ERPNext's Tax Category; offline, the till taxes the customer by it (MuleCity-ispl).
+	tax_category?: string | null;
 	balance?: number;
 	credit_limit?: number;
 	[key: string]: unknown;
@@ -431,6 +445,8 @@ export interface InvoiceChangeLeg {
 
 export interface InvoiceData {
 	local_id?: string;
+	/** Initials of the cashier who rang the sale, when the POS Profile requires them. */
+	pos_cashier?: string;
 	/** The server-priced total the register showed and charged; the server refuses a different ticket. */
 	expected_total?: number;
 	name?: string;

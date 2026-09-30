@@ -19,3 +19,20 @@ export function canChargeToAccount(opts: {
 	if (!opts.allowCreditSale || !opts.online || opts.isReturnMode || !opts.customer) return false;
 	return !opts.defaultCustomer || opts.customer !== opts.defaultCustomer;
 }
+
+/**
+ * "Receive on Account" (Mule City, Bill 2026-09-29): take a payment toward what
+ * the customer owes, as a Pay option next to the tenders, or straight from the
+ * Pay button when the cart is empty. Offered when the profile and role allow
+ * settling (posStore.allowOutstandingSettlement), the till is online (it posts
+ * a Payment Entry on the server), it is not a return, and the customer owes
+ * something.
+ */
+export function canReceiveOnAccount(opts: {
+	allowSettlement: boolean;
+	online: boolean;
+	isReturnMode: boolean;
+	balance: number;
+}): boolean {
+	return opts.allowSettlement && opts.online && !opts.isReturnMode && opts.balance > 0;
+}
