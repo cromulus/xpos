@@ -1715,8 +1715,12 @@ export const useCartStore = defineStore("cart", () => {
 						pos_is_free_item: !!item.is_free_item,
 						pos_free_item_rule: item.is_free_item ? parseRuleName(item.pricing_rules) : undefined,
 						pos_pricing_rules: parsePricingRules(item.pricing_rules),
+						description: item.description,
 					} as CartItem);
 				}
+			}
+			if (result.shipping_address_name) {
+				shippingAddress.value = { name: result.shipping_address_name, address_line1: "", city: "", miles: null, miles_source: null };
 			}
 
 			if (result.additional_discount_percentage) {

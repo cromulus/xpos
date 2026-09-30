@@ -1691,9 +1691,12 @@ def get_invoice_details(invoice_name: str, doctype: str = ""):
 				"pricing_rules": getattr(i, "pricing_rules", None),
 				"serial_no": getattr(i, "serial_no", None),
 				"batch_no": getattr(i, "batch_no", None),
+				"description": i.description,
 			}
 			for i in doc.items
 		],
+		# A parked delivery keeps where it goes (MuleCity-6nb1).
+		"shipping_address_name": doc.get("shipping_address_name"),
 		"payments": [
 			{
 				"mode_of_payment": p.mode_of_payment,

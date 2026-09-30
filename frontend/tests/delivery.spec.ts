@@ -40,6 +40,8 @@ vi.mock("@/services/dbBridge", async (importOriginal) => ({
 	setSyncMeta: vi.fn(async (key: string, value: string) => void state.meta.set(key, value)),
 	getItem: vi.fn(async (code: string) => state.items.get(code) ?? null),
 	getCustomer: vi.fn(async () => null),
+	getCachedStockForItem: vi.fn(async () => null),
+	getCachedItemByCode: vi.fn(async () => null),
 }));
 vi.mock("@/stores/posStore", () => ({
 	usePosStore: vi.fn(() => ({ taxes: [], taxInclusiveMode: false, currency: "USD", tenderModeFor: vi.fn() })),
@@ -304,5 +306,23 @@ describe("the delivery belongs to the buyer", () => {
 		await flushPromises();
 		cart.setCustomer({ name: "MC-CUST-9", customer_name: "Someone else" });
 		expect(cart.getInvoiceData("Till", "SHIFT-1").shipping_address_name).toBeUndefined();
+	});
+});
+
+describe("a parked delivery sale", () => {
+	it("keeps its delivery line's wording and its shipping address when the tab is reopened", async () => {
+		state.call.mockResolvedValue({
+			name: "SINV-9",
+			customer: "MC-CUST-4112",
+			customer_name: "Albert Adkins",
+			shipping_address_name: "ADDR-FARM",
+			items: [{ item_code: "MC-ITEM-DEL", item_name: "Delivery Charge", qty: 1, rate: 105, price_list_rate: 105, amount: 105,
+				uom: "Nos", discount_percentage: 0, discount_amount: 0, description: "42 mi, band 2 (1,600 lb)" }],
+		});
+		const cart = useCartStore();
+		await cart.loadDraftInvoice("SINV-9");
+		const sale = cart.getInvoiceData("Till", "SHIFT-1");
+		expect(sale.shipping_address_name).toBe("ADDR-FARM");
+		expect(sale.items[0]).toMatchObject({ item_code: "MC-ITEM-DEL", rate: 105, description: "42 mi, band 2 (1,600 lb)" });
 	});
 });

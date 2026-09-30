@@ -181,3 +181,7 @@ class TestTheSaleCarriesItsAddressAndLineDescription(unittest.TestCase):
 		# Only saving makes an offline-typed address; the preview never does.
 		self.assertIn("resolve_new_shipping_address(data)", inspect.getsource(invoices.create_invoice))
 		self.assertNotIn("resolve_new_shipping_address", inspect.getsource(invoices._build_invoice_doc))
+		# A parked sale reopened keeps both.
+		details = inspect.getsource(invoices.get_invoice_details)
+		self.assertIn('"description": i.description', details)
+		self.assertIn('"shipping_address_name": doc.get("shipping_address_name")', details)
