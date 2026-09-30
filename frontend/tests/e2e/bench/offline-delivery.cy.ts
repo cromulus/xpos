@@ -83,11 +83,15 @@ describe("delivery while the store's internet is down", () => {
 								(posted: Array<{ name: string; shipping_address_name: string }>) => {
 									expect(posted, "one Sales Invoice").to.have.length(1);
 									cy.benchCall("frappe.client.get", { doctype: "Sales Invoice", name: posted[0].name }).then(
-										(sale: { items: Array<{ item_code: string; rate: number; description: string }> }) => {
+										(sale: { items: Array<{ item_code: string; rate: number; description: string }>; _comments?: string }) => {
 											const lines = sale.items.filter((row) => row.item_code === policy!.item!.item_code);
 											expect(lines, "one delivery line").to.have.length(1);
 											expect(Number(lines[0].rate)).to.equal(expected);
 											expect(lines[0].description).to.contain("12.5 mi").and.to.contain("miles typed offline");
+											// The review flag: Frappe keeps a sale's latest comments on it (_comments),
+											// which the cashier may read (Comment itself they may not list).
+											const comments = JSON.parse(sale._comments || "[]") as Array<{ comment: string }>;
+											expect(comments.map((c) => c.comment).join(" ")).to.contain("12.5 mi typed there (manual_offline)");
 										},
 									);
 									cy.benchCall("frappe.client.get_value", {
@@ -95,13 +99,6 @@ describe("delivery while the store's internet is down", () => {
 										filters: posted[0].shipping_address_name,
 										fieldname: "address_line1",
 									}).then((address: { address_line1: string }) => expect(address.address_line1).to.equal(street));
-									// The sale's comments as its form shows them (the cashier may read the sale, not list Comments).
-									cy.benchCall("frappe.desk.form.load.get_comments", {
-										doctype: "Sales Invoice",
-										name: posted[0].name,
-									}).then((comments: Array<{ content: string }>) =>
-										expect(comments.map((c) => c.content).join(" ")).to.contain("12.5 mi typed there (manual_offline)"),
-									);
 								},
 							);
 						},
