@@ -69,7 +69,7 @@
  * No quote ("none"): the clerk types the charge. Offline, the till prices it
  * from its cache, and a new address can be typed with its one-way miles.
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
 import { showError, showSuccess } from "@/services/api";
@@ -98,7 +98,10 @@ const busy = ref(false);
 const chosen = ref<{ address: DeliveryAddress; quote: DeliveryQuote } | null>(null);
 const typedAmount = ref<string | number>("");
 const draft = ref({ address_line1: "", city: "", miles: "" as string | number });
-const online = computed(() => isOnline());
+// navigator.onLine is not reactive: follow the browser's online/offline events,
+// and read it again when the clerk presses the button.
+const online = ref(isOnline());
+const syncOnline = () => (online.value = isOnline());
 
 const addresses = computed(() => details.value?.addresses || []);
 const draftComplete = computed(
@@ -115,7 +118,14 @@ const offered = computed(() => {
 	return (customer.xpos_address_count || 0) > 0 || !!customer.xpos_has_address || !!customer.xpos_delivery?.addresses?.length;
 });
 
+onUnmounted(() => {
+	window.removeEventListener("online", syncOnline);
+	window.removeEventListener("offline", syncOnline);
+});
+
 onMounted(async () => {
+	window.addEventListener("online", syncOnline);
+	window.addEventListener("offline", syncOnline);
 	policy.value = (await cachedDeliveryPolicy()) || (await deliveryPolicy().catch(() => null));
 });
 
@@ -130,6 +140,7 @@ function lines() {
 async function start() {
 	const customer = cartStore.customer;
 	if (!customer || !policy.value) return;
+	syncOnline();
 	busy.value = true;
 	try {
 		details.value = await customerDelivery(customer);

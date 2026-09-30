@@ -273,6 +273,20 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		expect(sale.xpos_delivery).toMatchObject({ source: "miles", amount: 85, miles: 17.4, miles_source: "manual_offline", address: "" });
 	});
 
+	it("a till that goes offline after it opened offers the new-address form (the till was open when the internet dropped)", async () => {
+		const { wrapper } = await counter({
+			xpos_has_address: true,
+			xpos_delivery: { standing_charge: 0, no_charge: false, addresses: [farm] },
+		});
+		state.online = false;
+		window.dispatchEvent(new Event("offline"));
+		await flushPromises();
+		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		expect(wrapper.find("[data-testid='delivery-new-address']").exists()).toBe(true);
+		expect(state.call).not.toHaveBeenCalledWith("xpos.api.delivery.quote_delivery", expect.anything());
+	});
+
 	it("a named customer with no address on file can still get a delivery to a new address typed offline", async () => {
 		state.online = false;
 		const { cart, wrapper } = await counter({ xpos_has_address: false, xpos_address_count: 0 });
