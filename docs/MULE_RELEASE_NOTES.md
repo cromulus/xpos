@@ -2,7 +2,7 @@
 
 ## Native formula entry candidate (2026-09-29; not released)
 
-Workstream: `codex/native-formula-entry`, reconciled with mc19 `1818d7a`.
+Workstream: `codex/native-formula-entry`, reconciled with mc20 `fe403000`.
 MuleCity-jr36.11 and MuleCity-phjf track integration.
 
 - Preserve mc19 shared-register restrictions: no formula editor or Desk
@@ -15,10 +15,25 @@ MuleCity-jr36.11 and MuleCity-phjf track integration.
   This candidate adds no second order-price or ingredient-price engine.
 - Prior candidate validation: 511 frontend tests, typecheck, build and 41 backend
   adapter tests passed before mc19 reconciliation. After reconciliation, all
-  566 frontend tests, typecheck and build pass with Node 24.8.0.
+  566 frontend tests, typecheck and build pass with Node 24.8.0. The same
+  gates passed again after the mc20 merge on 2026-09-30.
   Native backend, installed browser and combined app integration remain release
-  gates; erp2 SSH is blocked by the current execution permissions.
-  No platform pins, main/staging merges, pushes or deployment are included.
+  gates; ATC runs erp2 tests on assigned slot 6 under MuleCity-2ea0.
+  Feature branch publication is authorized; ATC owns tags, platform pins,
+  main/staging integration and deployment.
+
+## mule-v2.10.1-mc20 (2026-09-29): cash sales with change post (MuleCity-ztb9)
+
+- A cash sale paid with change posts again, online and offline. Every such sale
+  was refused with "POS Change Leg Row #1: Value missing for: Currency": the
+  change row's Currency fetched the Mode of Payment's tender currency on save,
+  and Mule City's Cash has none, so it blanked the currency the server set.
+  The field now fetches only when empty (`fetch_if_empty`), so migrate is needed.
+- Queued sales were in the right shape and need no change. Offline sales that
+  already went to "need attention" are not retried by reconnecting; retry them
+  from the pending list once this is deployed.
+- Tests: `xpos.api.tests.test_change_legs` (fork) and an offline e2e story
+  paying $50 cash for one bag in `tests/e2e/bench/offline-selling.cy.ts`.
 
 ## mule-v2.10.1-mc19 (2026-09-29): cashier initials at Pay (`feat/cashier-switching`, MuleCity-fb00.2)
 

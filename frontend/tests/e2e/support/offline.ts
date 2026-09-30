@@ -75,16 +75,23 @@ export function chooseCustomer(name: string = customer()) {
  * initials at Pay (Mule City's shared counter login, MuleCity-fb00), type listed
  * initials first: Enter in that box moves to the amount, whose Enter completes the
  * sale. A site without the flag shows no box and Enter goes to the dialog as before.
+ * With `tendered`, that amount is typed into the Tendered box before Enter (more
+ * than the total gives change, MuleCity-ztb9); without it the tender stays as filled.
  */
-export function payWithEnter(initials: string = "LE") {
+export function payWithEnter(initials: string = "LE", tendered?: number) {
 	cy.get("[role='dialog']").then(($dialog) => {
 		const field = $dialog.find("[data-testid='cashier-initials-input']");
-		if (!field.length) {
+		if (field.length) cy.wrap(field).clear().type(`${initials}{enter}`);
+		if (tendered !== undefined) {
+			cy.get("[role='dialog'] input[type='text']:not([data-testid='cashier-initials-input'])")
+				.first()
+				.clear()
+				.type(`${tendered}{enter}`);
+		} else if (field.length) {
+			cy.focused().type("{enter}");
+		} else {
 			cy.wrap($dialog).type("{enter}");
-			return;
 		}
-		cy.wrap(field).clear().type(`${initials}{enter}`);
-		cy.focused().type("{enter}");
 	});
 }
 
@@ -97,6 +104,23 @@ export function ringUpOneBag(mode: string, buyer: string = customer()) {
 	cy.get(`[data-testid='payment-method'][data-mode='${mode}']`).click();
 	// Selecting the tender fills the remaining amount; Enter is Save & Print.
 	payWithEnter();
+	cy.get("[role='dialog']").should("not.exist");
+	cy.cartRows().should("have.length", 0);
+}
+
+/**
+ * One bag for `buyer`, paid with `tendered` of `mode` typed into the Tendered
+ * box (more than the total, so the register owes change), Save & Print.
+ * ``ringUpOneBag`` is the exact-amount sibling.
+ */
+export function ringUpOneBagTendering(mode: string, tendered: number, buyer: string = customer()) {
+	chooseCustomer(buyer);
+	cy.contains(item()).first().click();
+	cy.cartRows().should("have.length", 1);
+	cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
+	cy.get(`[data-testid='payment-method'][data-mode='${mode}']`).click();
+	// Type the tender (after the cashier's initials, where asked); Enter is Save & Print.
+	payWithEnter("LE", tendered);
 	cy.get("[role='dialog']").should("not.exist");
 	cy.cartRows().should("have.length", 0);
 }
