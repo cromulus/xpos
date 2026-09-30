@@ -1,6 +1,6 @@
 # Mule City XPOS release notes
 
-## Unreleased: fix/offline-change-legs (MuleCity-ztb9)
+## mule-v2.10.1-mc20 (2026-09-29): cash sales with change post (MuleCity-ztb9)
 
 - A cash sale paid with change posts again, online and offline. Every such sale
   was refused with "POS Change Leg Row #1: Value missing for: Currency": the
