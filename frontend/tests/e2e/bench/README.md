@@ -26,7 +26,7 @@ real. The browser then fires `offline` and `navigator.onLine` turns false.
 | `XPOS_BENCH_CUSTOMER` | The customer the tickets are rung up for |
 | `XPOS_BENCH_SECOND_MODE` | The second ticket's tender (default `Cash`) |
 | `XPOS_BENCH_EXEMPT_CATEGORY` | A Tax Category whose Tax Rule charges no tax (default `Mule City Exempt`), for `offline-tax.cy.ts` |
-| `XPOS_BENCH_EXEMPT_REASON_FIELD`, `XPOS_BENCH_EXEMPT_REASON` | Optional: a Customer field and value the site requires for an exempt customer (Mule City: `mule_tax_exempt_reason` = `Farm`) |
+| `XPOS_BENCH_FARM_CUSTOMER` | An exempt customer (in that category, in a customer group the profile syncs) made by an administrator before the run, for `offline-tax.cy.ts` (default `Offline Test Farm`, which the erp2 slot's `offline_fixtures.py` seeds). The counter cashier may only read customers; `offline-delivery.cy.ts` makes its customer through the counter's own Create New Customer call (`xpos.api.customers.create_customer`) |
 
 The profile's discount cap (`max_discount_percentage_allowed`) must be under
 30% for the refused-sale story.

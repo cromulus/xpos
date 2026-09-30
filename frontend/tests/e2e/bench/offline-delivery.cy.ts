@@ -40,20 +40,19 @@ describe("delivery while the store's internet is down", () => {
 			cy.benchCall("frappe.client.get_value", { doctype: "Customer", filters: customer(), fieldname: "customer_group" })
 				.then((row: { customer_group?: string } | null) =>
 					// In the bench customer's group, so the till's customer sync includes them.
-					cy.benchCall("frappe.client.insert", {
-						doc: {
-							doctype: "Customer",
-							customer_name: name,
-							customer_type: "Individual",
-							...(row?.customer_group ? { customer_group: row.customer_group } : {}),
-						},
+					// Made the way the counter's "Create New Customer" makes one (the cashier
+					// may only read customers), with the one address on file that makes the
+					// card offer delivery.
+					cy.benchCall("xpos.api.customers.create_customer", {
+						customer_name: name,
+						customer_type: "Individual",
+						...(row?.customer_group ? { customer_group: row.customer_group } : {}),
+						address_line1: "4410 Old Fairground Rd",
+						city: "Dunn",
 					}),
 				)
 				.then((created: { name: string }) => {
-					// One address on file, so the card offers delivery.
-					cy.benchCall("xpos.api.customers.make_address", {
-						args: JSON.stringify({ customer: created.name, address_line1: "4410 Old Fairground Rd", city: "Dunn" }),
-					});
+					expect(created.name, "the cashier created the customer").to.be.a("string").and.not.be.empty;
 					cy.benchCall("frappe.client.get_value", { doctype: "Item", filters: item(), fieldname: "weight_per_unit" }).then(
 						(weight: { weight_per_unit?: number } | null) => {
 							const expected = deliveryCharge(policy!, 12.5, Number(weight?.weight_per_unit) || 0);
