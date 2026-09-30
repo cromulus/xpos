@@ -1,0 +1,155 @@
+{
+ "about": "Shared delivery-charge cases (MuleCity-l3p3): pricing/delivery_charge.py, scripts/delivery_rates.py and the XPOS fork must all give these amounts for this policy.",
+ "policy": {
+  "rate_per_mile": 5.0,
+  "round_to": 5.0,
+  "local_miles": 5.0,
+  "local_charge": 5.0,
+  "bands": [
+   {
+    "min_lb": 0.0,
+    "pct": 25.0
+   },
+   {
+    "min_lb": 1000.0,
+    "pct": 50.0
+   },
+   {
+    "min_lb": 2000.0,
+    "pct": 75.0
+   },
+   {
+    "min_lb": 4000.0,
+    "pct": 100.0
+   }
+  ]
+ },
+ "cases": [
+  {
+   "case": "Benson, local: under local_miles is the flat local charge",
+   "miles": 3.2,
+   "weight_lb": 4500,
+   "band": 4,
+   "amount": 5.0
+  },
+  {
+   "case": "local, band 1: 25% of $5 rounds to $0, floored at the local charge",
+   "miles": 0,
+   "weight_lb": 0,
+   "band": 1,
+   "amount": 5.0
+  },
+  {
+   "case": "just under local_miles",
+   "miles": 4.99,
+   "weight_lb": 1200,
+   "band": 2,
+   "amount": 5.0
+  },
+  {
+   "case": "exactly local_miles is no longer local (strict <)",
+   "miles": 5,
+   "weight_lb": 4000,
+   "band": 4,
+   "amount": 25.0
+  },
+  {
+   "case": "0 lb is band 1; $210 x 25% = $52.50 rounds up to $55",
+   "miles": 42,
+   "weight_lb": 0,
+   "band": 1,
+   "amount": 55.0
+  },
+  {
+   "case": "999.99 lb is still band 1",
+   "miles": 42,
+   "weight_lb": 999.99,
+   "band": 1,
+   "amount": 55.0
+  },
+  {
+   "case": "1000 lb starts band 2",
+   "miles": 42,
+   "weight_lb": 1000,
+   "band": 2,
+   "amount": 105.0
+  },
+  {
+   "case": "1999.99 lb is still band 2",
+   "miles": 42,
+   "weight_lb": 1999.99,
+   "band": 2,
+   "amount": 105.0
+  },
+  {
+   "case": "2000 lb starts band 3",
+   "miles": 42,
+   "weight_lb": 2000,
+   "band": 3,
+   "amount": 160.0
+  },
+  {
+   "case": "1,600 lb is band 2",
+   "miles": 42,
+   "weight_lb": 1600,
+   "band": 2,
+   "amount": 105.0
+  },
+  {
+   "case": "3999.99 lb is still band 3",
+   "miles": 42,
+   "weight_lb": 3999.99,
+   "band": 3,
+   "amount": 160.0
+  },
+  {
+   "case": "4000 lb starts band 4 (full load)",
+   "miles": 42,
+   "weight_lb": 4000,
+   "band": 4,
+   "amount": 210.0
+  },
+  {
+   "case": "full-load half rounds up: 12.5 mi x $5 = $62.50 -> $65",
+   "miles": 12.5,
+   "weight_lb": 5000,
+   "band": 4,
+   "amount": 65.0
+  },
+  {
+   "case": "band half rounds up: $50 full x 25% = $12.50 -> $15",
+   "miles": 10,
+   "weight_lb": 500,
+   "band": 1,
+   "amount": 15.0
+  },
+  {
+   "case": "$25 x 25% = $6.25 rounds to $5",
+   "miles": 5.1,
+   "weight_lb": 100,
+   "band": 1,
+   "amount": 5.0
+  },
+  {
+   "case": "long distance, full load",
+   "miles": 74.3,
+   "weight_lb": 6000,
+   "band": 4,
+   "amount": 370.0
+  },
+  {
+   "case": "long distance, band 3",
+   "miles": 74.3,
+   "weight_lb": 2500,
+   "band": 3,
+   "amount": 280.0
+  },
+  {
+   "case": "fractional miles round to the nearest $5: 17.4 mi = $87 -> $85",
+   "miles": 17.4,
+   "weight_lb": 4000,
+   "band": 4,
+   "amount": 85.0
+  }
+ ]
+}

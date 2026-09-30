@@ -192,9 +192,11 @@ async function saveChanges() {
 // The cart's "can take a delivery" icon follows an address saved here.
 function onAddressesChanged(addresses: CustomerAddress[]) {
 	if (!cartStore.customer) return;
+	const count = addresses.filter((address) => !!address.address_line1?.trim()).length;
 	cartStore.setCustomer({
 		...cartStore.customer,
-		xpos_has_address: addresses.some((address) => !!address.address_line1?.trim()),
+		xpos_has_address: count > 0,
+		xpos_address_count: count,
 	});
 }
 

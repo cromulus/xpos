@@ -110,6 +110,7 @@
 						<strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ customerCreditLimit > 0 ? money(customerCreditLimit) : __("None") }}</strong>
 					</span>
 				</template>
+				<AddDelivery />
 				<Button
 					variant="link"
 					size="sm"
@@ -261,6 +262,7 @@ import __ from "@/lib/translate";
 import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
 import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
 import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
+import AddDelivery from "@/components/cart/AddDelivery.vue";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { showsCreditInfo } from "@/utils/creditPanel";
 import type { ItemUOM } from "@/types/pos.types";

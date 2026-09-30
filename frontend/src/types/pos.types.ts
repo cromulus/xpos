@@ -1,3 +1,4 @@
+import type { CustomerDelivery, DeliveryQuote } from "@/services/delivery";
 export interface POSSearchField {
 	field: string;
 	fieldname?: string;
@@ -232,6 +233,8 @@ export interface CartItem extends POSItem {
 	pos_rate_overridden?: boolean;
 	pos_is_free_item?: boolean;
 	pos_free_item_rule?: string;
+	/** The line's own description, sent with the sale (a delivery line's quote). */
+	description?: string;
 }
 
 export interface ItemGroup {
@@ -289,6 +292,10 @@ export interface StockAvailability {
 
 export interface Customer {
 	xpos_has_address?: boolean;
+	/** How many delivery addresses the customer has (the customer card). */
+	xpos_address_count?: number;
+	/** The site's delivery details, for pricing a delivery offline (MuleCity-6nb1). */
+	xpos_delivery?: CustomerDelivery;
 	xpos_has_email?: boolean;
 	xpos_has_phone?: boolean;
 	xpos_customer_since?: string;
@@ -413,6 +420,8 @@ export interface InvoiceItem {
 	is_replace?: boolean;
 	is_free_item?: number;
 	pricing_rules?: string;
+	/** The line's own description (a delivery line's quote, MuleCity-6nb1). */
+	description?: string;
 }
 
 export interface InvoicePayment {
@@ -483,6 +492,19 @@ export interface InvoiceData {
 	pos_awaiting_settlement?: boolean;
 	pos_delivery_charges?: string;
 	pos_delivery_charges_rate?: number;
+	/** Where a quoted delivery goes (xpos.api.delivery, MuleCity-6nb1). */
+	shipping_address_name?: string;
+	/** An address typed at the till while offline; the server makes it on sync. */
+	xpos_new_shipping_address?: NewShippingAddress;
+	/** The quote the delivery line was priced from; typed miles flag the sale. */
+	xpos_delivery?: DeliveryQuote & { address: string };
+}
+
+/** A delivery address typed at the till while offline, with the one-way miles the clerk typed. */
+export interface NewShippingAddress {
+	address_line1: string;
+	city: string;
+	miles: number;
 }
 
 export interface InvoiceTax {

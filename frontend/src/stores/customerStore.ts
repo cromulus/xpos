@@ -12,6 +12,7 @@ import type {
 	CustomerLoyaltyInfo,
 } from "@/types/pos.types";
 import { isOnline } from "@/utils";
+import { refreshDeliveryPolicy } from "@/composables/useDelivery";
 
 export const useCustomerStore = defineStore("customers", () => {
 	const customers = ref<Customer[]>([]);
@@ -94,6 +95,8 @@ export const useCustomerStore = defineStore("customers", () => {
 				await cacheCustomers(result.customers.map((customer, rank) => ({ ...customer, xpos_cache_rank: rank })));
 				status.finish("Customers", posProfile || "", result.customers.length, result.complete);
 			}
+			// The rows carry each customer's delivery details; the policy prices them offline.
+			await refreshDeliveryPolicy().catch((error) => console.warn("[XPOS Offline] Failed to cache the delivery policy:", error));
 		} catch (error) {
 			status.fail("Customers");
 			console.warn("[XPOS Offline] Failed to pre-cache customers:", error);

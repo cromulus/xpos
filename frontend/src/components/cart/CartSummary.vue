@@ -211,7 +211,7 @@
 					<Trash2 class="w-4 h-4" />
 				</Button>
 			</TooltipWrapper>
-			<TooltipWrapper v-if="!cartStore.isReturnMode" :content="__('Delivery charge')">
+			<TooltipWrapper v-if="!cartStore.isReturnMode && !siteQuotesDelivery" :content="__('Delivery charge')">
 				<Button
 					variant="outline"
 					size="lg"
@@ -365,7 +365,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
+import { cachedDeliveryPolicy } from "@/composables/useDelivery";
 import { usePosStore } from "@/stores/posStore";
 import { hasPermission } from "@/services/userRights";
 import { useCartStore } from "@/stores/cartStore";
@@ -408,6 +409,12 @@ const offerStore = useOfferStore();
 const offlineStore = useOfflineStore();
 const { printInvoice, printInvoiceLocal } = usePrintInvoice();
 
+// A site that quotes delivery adds it from the customer card ("Add delivery"),
+// so the profile's fixed delivery charges are not offered too (MuleCity-6nb1).
+const siteQuotesDelivery = ref(false);
+onMounted(async () => {
+	siteQuotesDelivery.value = !!(await cachedDeliveryPolicy())?.item;
+});
 const showDiscount = ref(false);
 const showCoupon = ref(false);
 const showDelivery = ref(false);

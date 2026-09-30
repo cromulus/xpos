@@ -25,6 +25,15 @@ describe("customer status icons", () => {
 		]);
 	});
 
+	it("says how many places a customer takes delivery when there are several (MuleCity-6nb1)", () => {
+		const [address] = customerStatusDetails({ xpos_has_address: true, xpos_address_count: 3 }, "", t);
+		expect(address).toEqual({ key: "address", present: true, label: "3 addresses on file: can take delivery", count: 3 });
+		const wrapper = mount(CustomerStatusIcons, { props: { customer: { xpos_has_address: true, xpos_address_count: 3 } } });
+		expect(wrapper.get("[data-testid='address-count']").text()).toBe("3");
+		const one = mount(CustomerStatusIcons, { props: { customer: { xpos_has_address: true, xpos_address_count: 1 } } });
+		expect(one.find("[data-testid='address-count']").exists()).toBe(false);
+	});
+
 	it("leaves out what the server did not say, and shows no tax icon for a taxable customer", () => {
 		expect(customerStatusDetails({ xpos_has_address: false }, "", t)).toEqual([
 			{ key: "address", present: false, label: "Address missing: no delivery" },

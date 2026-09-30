@@ -344,6 +344,8 @@ def get_pos_items(
 			"is_stock_item",
 			"brand",
 			"max_discount",
+			# The load's weight prices a delivery offline (xpos.api.delivery).
+			"weight_per_unit",
 			# Cache the configured search values too, so aliases work offline.
 			*[
 				field for field in config["fields"]

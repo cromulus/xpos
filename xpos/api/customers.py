@@ -8,6 +8,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_months, cint, flt, today
 
+from xpos.api.delivery import customer_delivery
 from xpos.api.profiles import resolve_pos_profile
 from xpos.utils import row_value
 
@@ -230,11 +231,11 @@ def _enrich_picker_customers(customers, company):
 	# Linked profile records are the authority for imported contact completeness.
 	profiles = frappe.db.sql("""
 		SELECT c.name,
-		EXISTS (SELECT 1 FROM `tabDynamic Link` dl
+		(SELECT COUNT(DISTINCT a.name) FROM `tabDynamic Link` dl
 		 JOIN `tabAddress` a ON a.name = dl.parent
 		 WHERE dl.link_doctype = 'Customer' AND dl.link_name = c.name
 		 AND dl.parenttype = 'Address' AND IFNULL(a.disabled, 0) = 0
-		 AND TRIM(IFNULL(a.address_line1, '')) != '') AS has_address,
+		 AND TRIM(IFNULL(a.address_line1, '')) != '') AS address_count,
 		EXISTS (SELECT 1 FROM `tabDynamic Link` dl
 		 JOIN `tabContact Email` ce ON ce.parent = dl.parent
 		 WHERE dl.link_doctype = 'Customer' AND dl.link_name = c.name
@@ -244,9 +245,16 @@ def _enrich_picker_customers(customers, company):
 	""", {"names": list(by_name)}, as_dict=True)
 	for profile in profiles:
 		row = by_name[profile["name"]]
-		row["xpos_has_address"] = bool(profile["has_address"])
+		row["xpos_has_address"] = bool(profile["address_count"])
+		# How many places they take delivery (the customer card, MuleCity-6nb1).
+		row["xpos_address_count"] = cint(profile["address_count"])
 		row["xpos_has_email"] = bool(profile["has_email"] or str(row.get("email_id") or "").strip())
 		row["xpos_has_phone"] = bool(str(row.get("mobile_no") or "").strip())
+	# The site's delivery details (standing charge, addresses' miles) ride on the
+	# row, so the till can price a delivery while offline (xpos.api.delivery).
+	for name, details in customer_delivery(list(by_name)).items():
+		if name in by_name:
+			by_name[name]["xpos_delivery"] = details
 	if not company:
 		return
 	# Use permission-aware reads and company currency; returns reduce net sales.

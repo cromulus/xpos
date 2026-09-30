@@ -9,6 +9,7 @@ from frappe import _, cstr
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 from frappe.utils.background_jobs import enqueue
 
+from xpos.api.delivery import note_typed_miles, resolve_new_shipping_address
 from xpos.api.exchange import get_currency_precision
 from xpos.api.items import selling_price
 from xpos.api.profiles import resolve_pos_profile
@@ -654,6 +655,9 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 
 	invoice_doc.pos_notes = data.get("pos_notes", "")
 	invoice_doc.pos_delivery_date = data.get("pos_delivery_date", None) or None
+	# Where a quoted delivery goes (xpos.api.delivery, MuleCity-6nb1).
+	if data.get("shipping_address_name"):
+		invoice_doc.shipping_address_name = data["shipping_address_name"]
 
 	sales_person = data.get("sales_person") or None
 	if sales_person:
@@ -716,6 +720,9 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 		item.uom = item_data.get("uom") or item_data.get("stock_uom")
 		item.warehouse = item_data.get("warehouse") or pos.warehouse
 		item.update(_mule_order_fields(item_data))
+		# A line's own description, e.g. the delivery quote's "42 mi, band 3 (2,500 lb)".
+		if item_data.get("description"):
+			item.description = item_data["description"]
 
 		if is_return:
 			item.warehouse = item_data.get("warehouse") or item_data.get("source_warehouse") or item.warehouse
@@ -953,6 +960,8 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 		return {**_build_invoice_response(doc), "duplicate": True}
 
 	check_may_sell(data.get("pos_profile"))
+	# An address typed at the till while offline is made before the sale ships there.
+	resolve_new_shipping_address(data)
 
 	invoice_doc, pos, doctype, is_existing_draft = _build_invoice_doc(data, local_id)
 	# Checked here, not in _build_invoice_doc: preview_invoice shares the builder
@@ -978,6 +987,7 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 
 	if cashier_note:
 		invoice_doc.add_comment("Comment", cashier_note)
+	note_typed_miles(invoice_doc, data)
 
 	enforce_stock_availability(invoice_doc)
 
@@ -1199,6 +1209,9 @@ def save_draft_invoice(data: str | dict):
 		pass
 
 	apply_sales_person(invoice_doc, data.get("sales_person") or None, pos_profile)
+	resolve_new_shipping_address(data)
+	if data.get("shipping_address_name"):
+		invoice_doc.shipping_address_name = data["shipping_address_name"]
 
 	rate_precision = _item_field_precision(invoice_doc, "rate")
 	discount_precision = _item_field_precision(invoice_doc, "discount_amount")
@@ -1215,6 +1228,8 @@ def save_draft_invoice(data: str | dict):
 		item.uom = item_data.get("uom") or item_data.get("stock_uom")
 		item.warehouse = item_data.get("warehouse") or pos.warehouse
 		item.update(_mule_order_fields(item_data))
+		if item_data.get("description"):
+			item.description = item_data["description"]
 
 		if cint(item_data.get("is_free_item")):
 			item.is_free_item = 1

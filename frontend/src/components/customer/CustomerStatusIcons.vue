@@ -11,6 +11,7 @@
 			:class="detail.present ? 'text-primary' : 'text-muted-foreground'"
 		>
 			<component :is="detail.icon" class="w-4 h-4" aria-hidden="true" />
+			<span v-if="detail.count" class="font-semibold" data-testid="address-count">{{ detail.count }}</span>
 			<Check v-if="detail.present" class="w-3 h-3" aria-hidden="true" />
 			<Minus v-else class="w-3 h-3" aria-hidden="true" />
 		</span>

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { beforeEach, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-const mocks = vi.hoisted(() => ({ call: vi.fn(), cache: vi.fn() }));
+const mocks = vi.hoisted(() => ({ call: vi.fn(), cache: vi.fn(), setMeta: vi.fn() }));
 vi.mock("@/services/api", () => ({ call: mocks.call }));
 vi.mock("@/stores/posStore", () => ({ usePosStore: () => ({ useOfflineMode: true, profileName: "Active Counter" }) }));
 vi.mock("@/utils", () => ({ isOnline: () => true }));
@@ -9,6 +9,7 @@ vi.mock("@/services/dbBridge", () => ({
 	cacheCustomers: mocks.cache,
 	getCachedCustomers: vi.fn(),
 	searchCachedCustomers: vi.fn(),
+	setSyncMeta: mocks.setMeta,
 }));
 import { useCustomerStore } from "@/stores/customerStore";
 beforeEach(() => {
@@ -48,4 +49,13 @@ it("uses the active POS profile when the picker does not pass one", async () => 
  expect(mocks.call).toHaveBeenCalledWith("xpos.api.customers.get_customers", {
   search_term: "Southern Woods", pos_profile: "Active Counter", limit: 100,
  });
+});
+
+it("keeps the site's delivery policy with the customers, to price deliveries offline (MuleCity-6nb1)", async () => {
+	const policy = { rate_per_mile: 5, round_to: 5, local_miles: 5, local_charge: 5, bands: [], item_code: "DEL" };
+	mocks.call.mockImplementation(async (method: string) =>
+		method.endsWith("get_delivery_policy") ? policy : { customers: [{ name: "A" }], complete: true },
+	);
+	await useCustomerStore().cacheAllCustomers("Till");
+	expect(mocks.setMeta).toHaveBeenCalledWith("delivery_policy", JSON.stringify(policy));
 });

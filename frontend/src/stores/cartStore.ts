@@ -50,6 +50,7 @@ import {
 	type DiscountKind,
 } from "@/utils/discountCap";
 import { lineDiscountFromPerUnit, perUnitDiscount } from "@/utils/lineDiscount";
+import { TYPED_OFFLINE, type CustomerDelivery, type DeliveryAddress, type DeliveryPolicy, type DeliveryQuote } from "@/services/delivery";
 
 let cartRowSeq = 0;
 
@@ -153,6 +154,9 @@ export const useCartStore = defineStore("cart", () => {
 		xpos_has_address?: boolean;
 		xpos_has_email?: boolean;
 		xpos_has_phone?: boolean;
+		xpos_address_count?: number;
+		// The site's delivery details, for pricing a delivery offline (MuleCity-6nb1).
+		xpos_delivery?: CustomerDelivery;
 		// ERPNext's Tax Category, on synced rows (offline taxes, MuleCity-ispl).
 		tax_category?: string | null;
 	} | null>(null);
@@ -245,6 +249,9 @@ export const useCartStore = defineStore("cart", () => {
 	const currency = ref("");
 	const conversionRate = ref(1);
 	const selectedDeliveryCharge = ref<DeliveryCharge | null>(null);
+	// A quoted delivery (MuleCity-6nb1): where it goes, and the quote its line was priced from.
+	const shippingAddress = ref<DeliveryAddress | null>(null);
+	const deliveryQuote = ref<DeliveryQuote | null>(null);
 	const settingsStore = useSettingsStore();
 
 	const ruleDiscountPercentage = ref(0);
@@ -1038,9 +1045,16 @@ export const useCartStore = defineStore("cart", () => {
 			xpos_has_address?: boolean;
 			xpos_has_email?: boolean;
 			xpos_has_phone?: boolean;
+			xpos_address_count?: number;
+			xpos_delivery?: CustomerDelivery;
 			tax_category?: string | null;
 		} | null,
 	): void {
+		// Another buyer's delivery address never carries over.
+		if (cust?.name !== customer.value?.name) {
+			shippingAddress.value = null;
+			deliveryQuote.value = null;
+		}
 		customer.value = cust;
 	}
 
@@ -1465,6 +1479,8 @@ export const useCartStore = defineStore("cart", () => {
 		currency.value = "";
 		conversionRate.value = 1;
 		selectedDeliveryCharge.value = null;
+		shippingAddress.value = null;
+		deliveryQuote.value = null;
 	}
 
 	function clearAll(): void {
@@ -1825,6 +1841,7 @@ export const useCartStore = defineStore("cart", () => {
 					is_replace: item.pos_is_replace,
 					is_free_item: item.pos_is_free_item ? 1 : undefined,
 					pricing_rules: item.pos_free_item_rule,
+					description: item.description,
 				}),
 			),
 			pos_opening_shift: posOpeningShift,
@@ -1929,6 +1946,13 @@ export const useCartStore = defineStore("cart", () => {
 			data.pos_delivery_charges = selectedDeliveryCharge.value.name;
 			data.pos_delivery_charges_rate = selectedDeliveryCharge.value.rate;
 		}
+
+		// A quoted delivery ships to its address; one typed offline is made on sync.
+		const address = shippingAddress.value;
+		if (address?.name) data.shipping_address_name = address.name;
+		else if (address)
+			data.xpos_new_shipping_address = { address_line1: address.address_line1, city: address.city, miles: address.miles || 0 };
+		if (address && deliveryQuote.value) data.xpos_delivery = { ...deliveryQuote.value, address: address.name };
 
 		return data;
 	}
@@ -2038,6 +2062,41 @@ export const useCartStore = defineStore("cart", () => {
 		selectedDeliveryCharge.value = charge;
 	}
 
+	/**
+	 * Deliver the sale to `address` for `amount` (MuleCity-6nb1): one line of the
+	 * site's delivery item, qty 1, described by the quote. A second "Add delivery"
+	 * updates that line; it stays an ordinary line (editable within the discount cap).
+	 */
+	function setDelivery(policy: DeliveryPolicy, address: DeliveryAddress, quote: DeliveryQuote, amount: number): void {
+		const item = policy.item!;
+		const description =
+			address.miles_source === TYPED_OFFLINE && quote.source === "miles"
+				? `${quote.description}, miles typed offline`
+				: quote.description;
+		const line = items.value.find((i) => i.item_code === item.item_code);
+		if (line) {
+			Object.assign(line, { qty: 1, rate: normalizeItemRate(amount), description, discount_percentage: 0, discount_amount: 0 });
+		} else {
+			items.value.push({
+				uid: nextRowId(),
+				item_code: item.item_code,
+				item_name: item.item_name,
+				item_group: item.item_group,
+				rate: normalizeItemRate(amount),
+				qty: 1,
+				uom: item.stock_uom,
+				stock_uom: item.stock_uom,
+				conversion_factor: 1,
+				discount_percentage: 0,
+				discount_amount: 0,
+				is_stock_item: false,
+				description,
+			} as CartItem);
+		}
+		shippingAddress.value = address;
+		deliveryQuote.value = { ...quote, amount };
+	}
+
 	return {
 		items,
 		customer,
@@ -2141,6 +2200,9 @@ export const useCartStore = defineStore("cart", () => {
 		openDraftDialog,
 		closeDraftDialog,
 		setDeliveryCharge,
+		shippingAddress,
+		deliveryQuote,
+		setDelivery,
 		itemRatePrecision,
 		pickupDate,
 		mixPayMode,
