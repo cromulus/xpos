@@ -1,5 +1,19 @@
 # Mule City XPOS release notes
 
+## Unreleased (`fix/mix-labels`, MuleCity-c6dp): Customer Mixes say what the evidence is
+
+- Each mix is named by the `display_name` and `owner_name` that `find_mixes`
+  already returns ("CORN, OATS, SOYBEAN MEAL" / "Recipe of ALBERT ADKINS"), not
+  its generated "Formula A846D90316" title or the owner-search text; the
+  product's own name stays on hover and in search.
+- "Last made … · made N times" becomes "Last ordered … · ordered N times": the
+  recall index counts orders and sales, not batches. The latest submitted
+  invoice shows as "Last bought <date> by <buyer> · <bags / lb> · <amount>".
+  Nothing says "made" until the server supplies manufacture records.
+- The empty mix search no longer points to the removed formula library; the
+  cart says "Credit limit" instead of "Limit"; the product list's info button
+  has an accessible label.
+
 ## mule-v2.10.1-mc20 (2026-09-29): cash sales with change post (MuleCity-ztb9)
 
 - A cash sale paid with change posts again, online and offline. Every such sale

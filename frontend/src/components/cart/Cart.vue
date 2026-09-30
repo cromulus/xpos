@@ -106,7 +106,7 @@
 						<strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ money(customerBalance ?? 0) }}</strong>
 					</span>
 					<span :class="{ 'text-destructive font-semibold': isOverCreditLimit }" data-testid="customer-credit-limit">
-						{{ __("Limit") }}
+						{{ __("Credit limit") }}
 						<strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ customerCreditLimit > 0 ? money(customerCreditLimit) : __("None") }}</strong>
 					</span>
 				</template>

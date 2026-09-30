@@ -21,12 +21,15 @@
       </form>
       <p v-if="error" role="alert" class="mule-error">{{ error }}</p>
       <p v-if="busy" role="status">Loading…</p>
-      <p v-if="!busy && !error && !rows.length">{{ mode === 'mixes' ? 'No matching mixes. Try another name or open the formula library.' : 'No matching open orders.' }}</p>
+      <p v-if="!busy && !error && !rows.length">{{ mode === 'mixes' ? 'No matching mixes. Try another name; new recipes are set up at a desk computer, not the register.' : 'No matching open orders.' }}</p>
       <div class="mule-results">
         <article v-for="row in rows" :key="row.name">
           <template v-if="mode === 'mixes'">
-            <div><strong>{{ row.item_name }}</strong><p>{{ row.mule_mix_owner_search || 'Owner not recorded' }}</p>
-              <p>{{ madeText(row) }}</p></div>
+            <!-- Readable name the server prepared; the product's own name stays on hover and in search. -->
+            <div><strong :title="row.item_name">{{ row.display_name || row.item_name }}</strong>
+              <p>{{ row.owner_name ? 'Recipe of ' + row.owner_name : 'Owner not recorded' }}</p>
+              <p v-if="row.last_purchase">{{ boughtText(row.last_purchase) }}</p>
+              <p v-if="orderedText(row)">{{ orderedText(row) }}</p></div>
             <button type="button" :disabled="busy" @click="preview(row)">View recipe</button>
           </template>
           <template v-else>
@@ -39,7 +42,7 @@
       <p v-if="mode === 'orders'">Review production readiness before release. Loading checks finished stock; the requested pickup date alone does not mean ready.</p>
       <p v-if="mode === 'orders' && cartHasItems" class="mule-error">Finish or park the current basket before loading an order.</p>
       <section v-if="details && mode === 'mixes'" ref="recipe" class="mule-recipe">
-        <h3>{{ chosen.item_name }}</h3>
+        <h3 :title="chosen.item_name">{{ chosen.display_name || chosen.item_name }}</h3>
         <p v-if="details.bom">Recipe batch: {{ details.quantity }} {{ details.uom }}. Finished stock: {{ details.available }} {{ details.stock_uom }}.</p>
         <p v-if="details.message">{{ details.message }}</p>
         <table v-if="details.ingredients.length"><thead><tr><th>Ingredient</th><th>Quantity</th></tr></thead><tbody>
@@ -54,7 +57,7 @@
 
 <script setup>
 import { nextTick, ref, watch } from 'vue';
-import { showInfo } from '@/services/api';
+import { formatCurrency, showInfo } from '@/services/api';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
 // customer is the Customer ID (used in every call); customerName is what people read.
 const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean});
@@ -66,11 +69,18 @@ const rows = ref([]), busy = ref(false), error = ref(''), more = ref(false), sta
 const recipe = ref(null), details = ref(null), chosen = ref(null);
 let generation = 0;
 const api = (name, args) => props.request('mulecity_erpnext.pos_workspace.' + name, {pos_profile: props.profile, ...args});
-// Mixes come newest first; this line says which one the customer is on now.
-function madeText(row) {
-  if (!row.last_used) return 'No sales recorded';
+// Mixes come newest first; these lines say which one the customer is on now.
+// Both are sales evidence, never manufacture: the recall index counts orders and
+// sales (mule_feed_formula.recall), last_purchase is the latest submitted invoice.
+function orderedText(row) {
+  if (!row.last_used) return row.last_purchase ? '' : 'No orders or sales recorded';
   const times = row.usage_count === 1 ? 'once' : row.usage_count + ' times';
-  return 'Last made ' + row.last_used + ' · made ' + times;
+  return 'Last ordered ' + row.last_used + ' · ordered ' + times;
+}
+function boughtText(p) {
+  const qty = [p.bags && p.bags + ' bags', p.pounds && p.pounds + ' lb'].filter(Boolean).join(' / ');
+  const buyer = p.customer_name ? ' by ' + p.customer_name : '';
+  return 'Last bought ' + p.date + buyer + (qty ? ' · ' + qty : '') + ' · ' + formatCurrency(p.amount, p.currency);
 }
 function fail(e) { error.value = e?.message || 'Could not complete this request. Please retry.'; }
 async function open(next) { mode.value = next; term.value = ''; details.value = null; dialog.value.showModal(); await search(0); }
