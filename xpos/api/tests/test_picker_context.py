@@ -6,6 +6,12 @@ from xpos.api import customers
 
 
 class TestPickerContext(unittest.TestCase):
+	def setUp(self):
+		# The site's delivery details (a hook, xpos.api.delivery) are not under test here.
+		patcher = patch.object(customers, "customer_delivery", return_value={})
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	def test_description_keeps_distinguishing_fields_without_generic_clutter(self):
 		row = {"name": "MC-CUST-2980", "customer_name": "Southern Woods",
 			"mule_filepro_alias_codes": "2980", "alias": "2980",
