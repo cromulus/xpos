@@ -79,19 +79,19 @@ describe("delivery while the store's internet is down", () => {
 
 							cy.networkOn();
 							waitUntil(() => cy.pendingInvoices(), (rows) => rows.length === 0, "the offline sale to sync");
-							customerInvoices(created.name, ["name", "shipping_address_name"]).then(
-								(posted: Array<{ name: string; shipping_address_name: string }>) => {
+							customerInvoices(created.name, ["name", "shipping_address_name", "_comments"]).then(
+								(posted: Array<{ name: string; shipping_address_name: string; _comments?: string }>) => {
 									expect(posted, "one Sales Invoice").to.have.length(1);
+									// The review flag: Frappe keeps a sale's latest comments on it (_comments),
+									// which the cashier may read (Comment itself they may not list).
+									const comments = JSON.parse(posted[0]._comments || "[]") as Array<{ comment: string }>;
+									expect(comments.map((c) => c.comment).join(" ")).to.contain("12.5 mi typed there (manual_offline)");
 									cy.benchCall("frappe.client.get", { doctype: "Sales Invoice", name: posted[0].name }).then(
-										(sale: { items: Array<{ item_code: string; rate: number; description: string }>; _comments?: string }) => {
+										(sale: { items: Array<{ item_code: string; rate: number; description: string }> }) => {
 											const lines = sale.items.filter((row) => row.item_code === policy!.item!.item_code);
 											expect(lines, "one delivery line").to.have.length(1);
 											expect(Number(lines[0].rate)).to.equal(expected);
 											expect(lines[0].description).to.contain("12.5 mi").and.to.contain("miles typed offline");
-											// The review flag: Frappe keeps a sale's latest comments on it (_comments),
-											// which the cashier may read (Comment itself they may not list).
-											const comments = JSON.parse(sale._comments || "[]") as Array<{ comment: string }>;
-											expect(comments.map((c) => c.comment).join(" ")).to.contain("12.5 mi typed there (manual_offline)");
 										},
 									);
 									cy.benchCall("frappe.client.get_value", {
