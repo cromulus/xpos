@@ -306,10 +306,14 @@ def _sales_order_line(row):
 	so_detail = row.get("so_detail")
 	if not so_detail:
 		return None
+	fields = ["parent", "item_code", "rate", "price_list_rate", "discount_percentage", "discount_amount", "docstatus"]
+	# Mule's native order row is also the authority for the mill's instructions.
+	if frappe.get_meta("Sales Order Item").has_field("mule_processing_instructions"):
+		fields.append("mule_processing_instructions")
 	line = frappe.db.get_value(
 		"Sales Order Item",
 		so_detail,
-		["parent", "item_code", "rate", "price_list_rate", "discount_percentage", "discount_amount", "docstatus"],
+		fields,
 		as_dict=True,
 	)
 	if not line or line.docstatus != 1 or line.item_code != row.get("item_code"):
@@ -340,9 +344,8 @@ def _set_order_advances(invoice_doc) -> None:
 
 
 def _mule_order_fields(row):
-	"""Carry only source links and accepted-quote evidence across invoice transports."""
-	from mulecity_erpnext.mule_feed_formula.transaction_validation import _BOUND_ROW_FIELDS
-	return {field: row.get(field) for field in ("sales_order", "so_detail", *_BOUND_ROW_FIELDS[3:]) if row.get(field) is not None}
+	"""Carry native source links; the sales document validates the exact BOM."""
+	return {field: row.get(field) for field in ("sales_order", "so_detail", "bom_no", "mule_processing_instructions") if row.get(field) is not None}
 
 
 class TicketChangedError(frappe.ValidationError):
@@ -773,6 +776,8 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 			item.discount_percentage = flt(order_line.discount_percentage)
 			item.discount_amount = flt(order_line.discount_amount, discount_precision)
 			item.rate = flt(order_line.rate, rate_precision)
+			if "mule_processing_instructions" in order_line:
+				item.mule_processing_instructions = order_line.get("mule_processing_instructions")
 		if item_data.get("serial_no"):
 			item.serial_no = item_data.get("serial_no")
 		if item_data.get("batch_no"):
