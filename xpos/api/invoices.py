@@ -1280,6 +1280,9 @@ def save_draft_invoice(data: str | dict):
 		invoice_doc.save(ignore_permissions=True)
 	else:
 		invoice_doc.insert(ignore_permissions=True)
+	# A parked sale priced from typed miles is flagged now: the tab keeps the
+	# Comment when it is reopened and paid (MuleCity-6nb1).
+	note_typed_miles(invoice_doc, data)
 
 	return {
 		"name": invoice_doc.name,

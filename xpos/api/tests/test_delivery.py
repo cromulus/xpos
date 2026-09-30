@@ -150,12 +150,26 @@ class TestTheSaleIsFlagged(HookCase):
 	def test_a_sale_priced_from_typed_miles_gets_a_comment_with_both_values(self):
 		self.with_hooks(xpos_delivery_customers=lambda names: {"CUST": {"addresses": [{"name": "ADDR-NEW", "miles": 18.2}]}})
 		doc = self.invoice()
-		delivery.note_typed_miles(doc, {"xpos_delivery": {"source": "miles", "miles": 17.4, "miles_source": "manual_offline"}})
+		with patch.object(delivery.frappe.db, "exists", return_value=None):
+			delivery.note_typed_miles(doc, {"xpos_delivery": {"source": "miles", "miles": 17.4, "miles_source": "manual_offline"}})
 		(kind, text), _ = doc.add_comment.call_args
 		self.assertEqual(kind, "Comment")
 		self.assertIn("17.4 mi typed there (manual_offline) to ADDR-NEW", text)
 		self.assertIn("now has 18.2 mi", text)
 		self.assertIn("not repriced", text)
+
+	def test_a_parked_tab_is_flagged_when_saved_and_only_once(self):
+		import inspect
+
+		from xpos.api import invoices
+
+		self.assertIn("note_typed_miles(invoice_doc, data)", inspect.getsource(invoices.save_draft_invoice))
+		self.with_hooks()
+		doc = self.invoice()
+		quote = {"xpos_delivery": {"source": "miles", "miles": 17.4, "miles_source": "manual_offline"}}
+		with patch.object(delivery.frappe.db, "exists", return_value=True):
+			delivery.note_typed_miles(doc, quote)
+		doc.add_comment.assert_not_called()
 
 	def test_negative_looked_up_miles_standing_charges_and_no_delivery_are_not_flagged(self):
 		self.with_hooks()

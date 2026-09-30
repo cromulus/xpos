@@ -172,4 +172,8 @@ def note_typed_miles(invoice_doc, data: dict) -> None:
 	)
 	if now is not None:
 		message += _("; the address now has {0} mi. The sale is not repriced.").format(flt(now))
+	# A parked tab saved again (or paid) is flagged once.
+	if frappe.db.exists("Comment", {"reference_doctype": invoice_doc.doctype, "reference_name": invoice_doc.name,
+			"comment_type": "Comment", "content": message}):
+		return
 	invoice_doc.add_comment("Comment", message)

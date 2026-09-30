@@ -71,6 +71,7 @@
  */
 import { computed, onMounted, ref } from "vue";
 import { useCartStore } from "@/stores/cartStore";
+import { usePosStore } from "@/stores/posStore";
 import { showError, showSuccess } from "@/services/api";
 import { cachedDeliveryPolicy, customerDelivery, deliveryPolicy, quoteDelivery } from "@/composables/useDelivery";
 import {
@@ -89,6 +90,7 @@ import { Truck } from "lucide-vue-next";
 import { __ } from "@/lib/translate";
 
 const cartStore = useCartStore();
+const posStore = usePosStore();
 const policy = ref<DeliveryPolicy | null>(null);
 const details = ref<CustomerDelivery | null>(null);
 const open = ref(false);
@@ -104,9 +106,12 @@ const draftComplete = computed(
 );
 
 // Offered when the site quotes delivery and the customer has somewhere to deliver to.
+// Offline any named customer (not the walk-in default) may get one: the clerk can
+// type a new address and its miles.
 const offered = computed(() => {
 	const customer = cartStore.customer;
 	if (!policy.value?.item || !customer || cartStore.isReturnMode) return false;
+	if (!online.value) return customer.name !== posStore.defaultCustomer;
 	return (customer.xpos_address_count || 0) > 0 || !!customer.xpos_has_address || !!customer.xpos_delivery?.addresses?.length;
 });
 

@@ -44,7 +44,7 @@ vi.mock("@/services/dbBridge", async (importOriginal) => ({
 	getCachedItemByCode: vi.fn(async () => null),
 }));
 vi.mock("@/stores/posStore", () => ({
-	usePosStore: vi.fn(() => ({ taxes: [], taxInclusiveMode: false, currency: "USD", tenderModeFor: vi.fn() })),
+	usePosStore: vi.fn(() => ({ taxes: [], taxInclusiveMode: false, currency: "USD", tenderModeFor: vi.fn(), defaultCustomer: "Walk-In" })),
 }));
 vi.mock("@/lib/translate", () => {
 	const __ = (text: string, args: string[] = []) => args.reduce((out, arg, i) => out.replace(`{${i}}`, arg), text);
@@ -271,6 +271,45 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		expect(sale.shipping_address_name).toBeUndefined();
 		expect(sale.xpos_new_shipping_address).toEqual({ address_line1: "88 New Ground Rd", city: "Coats", miles: 17.4 });
 		expect(sale.xpos_delivery).toMatchObject({ source: "miles", amount: 85, miles: 17.4, miles_source: "manual_offline", address: "" });
+	});
+
+	it("a named customer with no address on file can still get a delivery to a new address typed offline", async () => {
+		state.online = false;
+		const { cart, wrapper } = await counter({ xpos_has_address: false, xpos_address_count: 0 });
+		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		expect(wrapper.findAll("[data-testid='delivery-address']")).toHaveLength(0);
+		const form = wrapper.get("[data-testid='delivery-new-address']");
+		await form.get("input[placeholder='Street address']").setValue("88 New Ground Rd");
+		await form.get("input[placeholder='City']").setValue("Coats");
+		await form.get("input[placeholder='Miles one way']").setValue("42");
+		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
+		await flushPromises();
+		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb), miles typed offline"]]);
+	});
+
+	it("negative: offline, the walk-in customer is not offered a delivery", async () => {
+		state.online = false;
+		const { wrapper } = await counter({ name: "Walk-In", customer_name: "Walk-In" });
+		expect(wrapper.find("[data-testid='add-delivery']").exists()).toBe(false);
+	});
+
+	it("a parked tab priced from typed miles carries the flag with it", async () => {
+		state.online = false;
+		const { cart, wrapper } = await counter({ xpos_has_address: false });
+		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		const form = wrapper.get("[data-testid='delivery-new-address']");
+		await form.get("input[placeholder='Street address']").setValue("88 New Ground Rd");
+		await form.get("input[placeholder='City']").setValue("Coats");
+		await form.get("input[placeholder='Miles one way']").setValue("42");
+		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
+		await flushPromises();
+		// Save as draft sends getInvoiceData(); save_draft_invoice flags the tab with a Comment
+		// (xpos.api.delivery.note_typed_miles), which stays on the invoice when the tab is paid.
+		const parked = cart.getInvoiceData("Till", "SHIFT-1");
+		expect(parked.xpos_delivery).toMatchObject({ source: "miles", miles: 42, miles_source: "manual_offline" });
+		expect(parked.xpos_new_shipping_address).toEqual({ address_line1: "88 New Ground Rd", city: "Coats", miles: 42 });
 	});
 
 	it("negative: a new address needs a street, a town and miles above zero", async () => {
