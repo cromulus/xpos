@@ -95,10 +95,10 @@ describe("delivery while the store's internet is down", () => {
 										filters: posted[0].shipping_address_name,
 										fieldname: "address_line1",
 									}).then((address: { address_line1: string }) => expect(address.address_line1).to.equal(street));
-									cy.benchCall("frappe.client.get_list", {
-										doctype: "Comment",
-										filters: { reference_doctype: "Sales Invoice", reference_name: posted[0].name, comment_type: "Comment" },
-										fields: ["content"],
+									// The sale's comments as its form shows them (the cashier may read the sale, not list Comments).
+									cy.benchCall("frappe.desk.form.load.get_comments", {
+										doctype: "Sales Invoice",
+										name: posted[0].name,
 									}).then((comments: Array<{ content: string }>) =>
 										expect(comments.map((c) => c.content).join(" ")).to.contain("12.5 mi typed there (manual_offline)"),
 									);
