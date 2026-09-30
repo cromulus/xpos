@@ -54,6 +54,7 @@
 
 <script setup>
 import { nextTick, ref, watch } from 'vue';
+import { showInfo } from '@/services/api';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
 // customer is the Customer ID (used in every call); customerName is what people read.
 const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean});
@@ -94,7 +95,12 @@ async function preview(row) {
 async function pickup(row) {
   if (props.cartHasItems) return;
   busy.value = true; error.value = '';
-  try { const doc = await api('pickup_invoice', {sales_order: row.name}); emit('pickup', doc); dialog.value.close(); }
+  try {
+    const doc = await api('pickup_invoice', {sales_order: row.name});
+    // The server says when it turned a delivery order into a pickup (and dropped its delivery charge).
+    if (doc?.mule_notice) showInfo(doc.mule_notice);
+    emit('pickup', doc); dialog.value.close();
+  }
   catch(e) { fail(e); } finally { busy.value = false; }
 }
 watch(() => props.customer, () => { if (mode.value) search(0); });
