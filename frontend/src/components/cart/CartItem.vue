@@ -260,6 +260,7 @@ import { Package, Minus, Plus, Trash2, Percent, ChevronDown } from "lucide-vue-n
 import type { ItemUOM } from "@/types/pos.types";
 import __ from "@/lib/translate";
 import { useMoney } from "@/composables/useMoney";
+import { roundTo } from "@/utils/numberFormat";
 
 const props = defineProps({
 	item: { type: Object, required: true },
@@ -328,7 +329,8 @@ const lineTotal = computed(() => {
 	const quoted = cartStore.quotedLineAmount(props.item.uid);
 	if (quoted !== null) return quoted;
 	const total = props.item.qty * props.item.rate;
-	return Math.round((total - discountAmount.value + Number.EPSILON) * 100) / 100;
+	// Half away from zero, as the invoice rounds a return's negative line (MuleCity-2un7).
+	return roundTo(total - discountAmount.value, 2);
 });
 
 onMounted(async () => {

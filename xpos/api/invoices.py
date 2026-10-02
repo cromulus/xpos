@@ -582,6 +582,62 @@ def apply_pos_cashier(invoice_doc, pos, typed, replay: bool = False) -> str | No
 	return _("Offline sale synced without cashier initials.")
 
 
+def absorb_replay_rounding(invoice_doc, pos) -> str | None:
+	"""Write off the last cent an offline sale or return was paid short of its total.
+
+	The till paid an offline sale at its own total; the invoice is totalled by
+	ERPNext on replay. Where the two round a half cent differently the payment is
+	a cent short and the sale would post a cent owing (MuleCity-2un7: a return
+	refunded $6.40 against an ERPNext total of $6.41, leaving -$0.01). The customer
+	has gone and the cash moved as the till said, so the payment stays as paid
+	and the cent goes to the POS Profile's write-off account, the way ERPNext
+	itself settles a POS shortfall (``write_off_amount``). Only one smallest
+	currency unit, only a shortfall in the invoice's own direction (an overpaid
+	sale is change, an over-refund is refused by ERPNext), and only with a
+	payment. Returns a note for the invoice's timeline, else None.
+	"""
+	if not cint(invoice_doc.get("is_pos")) or cint(invoice_doc.get("is_consolidated")):
+		return None
+	currency = invoice_currency_of(invoice_doc)
+	precision = get_currency_precision(currency)
+	step = 10.0**-precision
+	outstanding = flt(invoice_doc.get("outstanding_amount"), precision)
+	paid = flt(invoice_doc.get("paid_amount"), precision)
+	total = flt(invoice_doc.get("rounded_total") or invoice_doc.get("grand_total"), precision)
+	if not paid or not outstanding or abs(outstanding) > step + step / 10:
+		return None
+	if (outstanding > 0) != (total > 0):
+		return None
+	account = pos.get("write_off_account") or frappe.get_cached_value(
+		"Company", invoice_doc.company, "write_off_account"
+	)
+	if not account:
+		return None
+
+	invoice_doc.write_off_amount = flt(flt(invoice_doc.get("write_off_amount")) + outstanding, precision)
+	invoice_doc.write_off_account = account
+	invoice_doc.write_off_cost_center = (
+		invoice_doc.get("write_off_cost_center")
+		or pos.get("write_off_cost_center")
+		or frappe.get_cached_value("Company", invoice_doc.company, "cost_center")
+	)
+	invoice_doc.save(ignore_permissions=True)
+
+	def fmt(amount):
+		return frappe.utils.fmt_money(abs(amount), currency=currency)
+
+	return _(
+		"Offline {0} synced paid {1} against the invoice total of {2}: the {3} rounding "
+		"difference was written off to {4}."
+	).format(
+		_("return") if cint(invoice_doc.get("is_return")) else _("sale"),
+		fmt(paid),
+		fmt(total),
+		fmt(outstanding),
+		account,
+	)
+
+
 def discount_applies_on(data: dict, pos) -> str:
 	"""The cart's apply_discount_on, else the POS Profile's (as ERPNext sets it), else Grand Total."""
 	return data.get("apply_discount_on") or pos.get("apply_discount_on") or "Grand Total"
@@ -1033,8 +1089,12 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 			return {**_build_invoice_response(frappe.get_doc(dt, name)), "duplicate": True}
 		raise
 
+	rounding_note = absorb_replay_rounding(invoice_doc, pos) if replaying_offline_sale else None
+
 	if cashier_note:
 		invoice_doc.add_comment("Comment", cashier_note)
+	if rounding_note:
+		invoice_doc.add_comment("Comment", rounding_note)
 	note_typed_miles(invoice_doc, data)
 
 	enforce_stock_availability(invoice_doc)
