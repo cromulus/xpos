@@ -63,8 +63,20 @@ export const useOpenOrdersStore = defineStore("openOrders", () => {
 		return { ...cached, rows: searchOrders(cached.rows, search) };
 	}
 
+	// The till renders the cart twice (desktop and narrow layouts): one request serves both badges.
+	const inFlight = new Map<string, Promise<OrdersResult | null>>();
+
 	/** Orders in flight for a customer (none/walk-in = everyone), searched. Null = not known (offline, nothing kept). */
-	async function load(customer?: string | null, search = ""): Promise<OrdersResult | null> {
+	function load(customer?: string | null, search = ""): Promise<OrdersResult | null> {
+		const key = `${scopeOf(customer)}\u0000${(search || "").trim()}`;
+		const running = inFlight.get(key);
+		if (running) return running;
+		const request = fetchOrders(customer, search).finally(() => inFlight.delete(key));
+		inFlight.set(key, request);
+		return request;
+	}
+
+	async function fetchOrders(customer?: string | null, search = ""): Promise<OrdersResult | null> {
 		const profile = usePosStore().profileName;
 		if (!profile) return null;
 		const scope = scopeOf(customer);
