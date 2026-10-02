@@ -64,6 +64,7 @@
 					<Lock v-if="cartStore.isReturnMode" class="ms-auto w-3.5 h-3.5 shrink-0 text-muted-foreground/50" />
 					<ChevronDown v-else class="ms-auto w-3.5 h-3.5 shrink-0 text-muted-foreground/50" />
 				</button>
+				<CustomerOrdersBadge v-if="cartStore.customer && !cartStore.isReturnMode" />
 				<Button
 					v-if="cartStore.customer && !cartStore.isReturnMode"
 					variant="ghost"
@@ -258,6 +259,7 @@ import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.
 import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import AddDelivery from "@/components/cart/AddDelivery.vue";
 import ClearCustomer from "@/components/cart/ClearCustomer.vue";
+import CustomerOrdersBadge from "@/components/cart/CustomerOrdersBadge.vue";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { showsCreditInfo } from "@/utils/creditPanel";
 import type { ItemUOM } from "@/types/pos.types";
