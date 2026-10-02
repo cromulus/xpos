@@ -19,15 +19,20 @@ async function loadModules() {
 	return { idb, status };
 }
 
-/** Settles within `ms`, or reports "pending". */
-function settleWithin<T>(promise: Promise<T>, ms = 200): Promise<"resolved" | "rejected" | "pending"> {
-	return Promise.race([
-		promise.then(
-			() => "resolved" as const,
-			() => "rejected" as const,
-		),
-		new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), ms)),
-	]);
+/**
+ * Settles within `turns` event-loop turns, or reports "pending". Counted in turns, not
+ * milliseconds, so a busy test machine cannot make an at-once rejection look stuck.
+ */
+async function settleWithin<T>(promise: Promise<T>, turns = 50): Promise<"resolved" | "rejected" | "pending"> {
+	let outcome: "resolved" | "rejected" | "pending" = "pending";
+	promise.then(
+		() => (outcome = "resolved"),
+		() => (outcome = "rejected"),
+	);
+	for (let i = 0; i < turns && outcome === "pending"; i++) {
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	}
+	return outcome;
 }
 
 /** A connection at an older version that ignores versionchange, like a frozen background tab. */
