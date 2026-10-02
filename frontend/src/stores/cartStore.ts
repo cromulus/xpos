@@ -1661,7 +1661,11 @@ export const useCartStore = defineStore("cart", () => {
 			return;
 		}
 		const key = previewKey.value;
-		if (counterQuote.value?.key === key) return;
+		// Pay's own quote already checked this very cart.
+		if (counterQuote.value?.key === key) {
+			mixCheckPending.value = false;
+			return;
+		}
 		mixCheckPending.value = true;
 		try {
 			const result = await call<Omit<CounterQuote, "key">>("mulecity_erpnext.counter_mix_orders.counter_quote", {
