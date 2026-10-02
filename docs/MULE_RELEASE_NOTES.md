@@ -115,6 +115,12 @@ customer's name when they have orders in flight or ready for pickup.
   everyone), or `?customer=`; "Show all orders" / "Only <customer>" switch it.
   Each row says how far along it is (Ready for pickup / With the mill / Partly
   picked up / Waiting, from the order's Work Orders); ready rows stand out.
+- **Delivered orders are not pickups** (MuleCity-x4kb, the till never moves
+  stock twice): an order with goods on a submitted Delivery Note (all or part)
+  is listed as "Delivered — not billed" (`readiness: delivered`, its notes named),
+  Load for payment is disabled with "Already delivered on <DN>; bill it from the
+  Delivery Note at the desk", and the indicator never counts it as ready. The
+  Mule app's `pickup_invoice` refuses it too.
 - **Load for payment** does what the Mule City dialog did: `pickup_invoice` (the
   delivery-to-pickup notice, fxh advances), `cartStore.loadFromInvoice`, back to
   the till. It needs an empty basket and the internet.

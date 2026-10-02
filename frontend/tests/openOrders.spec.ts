@@ -39,6 +39,7 @@ import { ORDERS_LIMIT, orderScope, searchOrders, summarizeOrders, customerRowsFr
 
 const albertReady = { name: "SAL-ORD-1", customer: "MC-4112", customer_name: "ALBERT ADKINS", readiness: "ready", progress: "Production complete — check collection" };
 const albertWaiting = { name: "SAL-ORD-2", customer: "MC-4112", customer_name: "ALBERT ADKINS", readiness: "open" };
+const albertDelivered = { name: "SAL-ORD-4", customer: "MC-4112", customer_name: "ALBERT ADKINS", readiness: "delivered", progress: "Delivered on MAT-DN-1 – not billed", delivery_notes: ["MAT-DN-1"] };
 const bettyMill = { name: "SAL-ORD-3", customer: "MC-0007", customer_name: "BETTY BROWN", readiness: "in_production" };
 
 function findOrders(rows: object[]) {
@@ -69,7 +70,8 @@ describe("who the list is for, and searching it on the till", () => {
 		expect(searchOrders(rows, "  ")).toHaveLength(3);
 	});
 	it("counts orders in flight and ready ones", () => {
-		expect(summarizeOrders([albertReady, albertWaiting])).toEqual({ inFlight: 2, ready: 1 });
+		expect(summarizeOrders([albertReady, albertWaiting])).toEqual({ inFlight: 2, ready: 1, delivered: 0 });
+		expect(summarizeOrders([albertDelivered])).toEqual({ inFlight: 1, ready: 0, delivered: 1 });
 	});
 	it("takes one customer's rows from the everyone list only when that list was complete", () => {
 		const all = { rows: [albertReady, bettyMill], fetchedAt: 1, live: true, truncated: false };
@@ -165,6 +167,13 @@ describe("the indicator next to the customer's name", () => {
 		expect(r.currentRoute.value.name).toBe("orders");
 		expect(r.currentRoute.value.query.customer).toBe("MC-4112");
 	});
+	it("a delivered order is shown, but never as ready for pickup", async () => {
+		findOrders([albertDelivered]);
+		const { badge } = await badgeFor("MC-4112");
+		expect(badge.text()).toContain("1 order · 1 delivered");
+		expect(badge.classes()).not.toContain("bg-emerald-600");
+		expect(badge.attributes("data-ready")).toBe("0");
+	});
 	it("orders in flight but none ready: a quiet count", async () => {
 		findOrders([albertWaiting]);
 		const { badge } = await badgeFor("MC-4112");
@@ -256,6 +265,19 @@ describe("the Orders view", () => {
 		expect(api.showInfo).toHaveBeenCalledWith(notice);
 		expect(loaded).toHaveBeenCalledWith(doc);
 		expect(r.currentRoute.value.name).toBe("pos");
+	});
+	it("a delivered order says so and cannot be loaded for payment, with the reason", async () => {
+		findOrders([albertDelivered, bettyMill]);
+		const { w } = await view();
+		const rows = w.findAll("[data-testid='open-order']");
+		const delivered = rows.find((r) => r.attributes("data-readiness") === "delivered")!;
+		expect(delivered.get("[data-testid='open-order-readiness']").text()).toBe("Delivered — not billed");
+		expect(delivered.get("[data-testid='open-order-blocked']").text()).toBe(
+			"Already delivered on MAT-DN-1; bill it from the Delivery Note at the desk.",
+		);
+		expect(delivered.get("[data-testid='open-order-load']").attributes("disabled")).toBeDefined();
+		const other = rows.find((r) => r.attributes("data-readiness") === "in_production")!;
+		expect(other.get("[data-testid='open-order-load']").attributes("disabled")).toBeUndefined();
 	});
 	it("an ordinary pickup says nothing extra", async () => {
 		api.call.mockImplementation(async (method: string) => (method.endsWith("find_orders") ? [bettyMill] : { name: "ACC-SINV-2", items: [] }));
