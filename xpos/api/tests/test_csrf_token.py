@@ -90,7 +90,19 @@ class TestXposPageIsNeverWebsiteCached(unittest.TestCase):
 		from frappe.website.utils import can_cache
 
 		page = TemplatePage("xpos")
-		self.assertTrue(page.can_render())
+		if not page.can_render():
+			# www/xpos.html is the frontend build's output; a bench that has not built it still
+			# has the page module, which is what decides caching.
+			import os
+
+			page.app = "xpos"
+			page.app_path = frappe.get_app_path("xpos")
+			page.file_dir = "www"
+			page.template_path = os.path.join("www", "xpos.html")
+			page.basepath = os.path.join(page.app_path, "www")
+			page.basename = os.path.join(page.basepath, "xpos")
+			page.filename = "xpos.html"
+			page.name = "xpos"
 		page.init_context()
 		page.set_pymodule()
 		self.assertEqual(page.pymodule_name, "xpos.www.xpos")
