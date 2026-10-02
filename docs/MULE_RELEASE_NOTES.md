@@ -26,7 +26,36 @@
   the runtime caching routes after it never register; left as is here,
   follow-up bead.)
 
-## mule-v2.10.1-mc27 (unreleased)
+### A return refunds what ERPNext posts, to the cent (MuleCity-2un7, mc23 staging walk 2026-10-02)
+
+- **Cause.** ACC-SINV-49757 sold $5 + $1 at NC 6.75%: tax on the $6 net is
+  $0.405, which ERPNext (System Settings "Commercial Rounding", tax summed on
+  the net and rounded once since Accounts Settings `round_row_wise_tax` is off)
+  posts as $0.41, $6.41. Its offline return ACC-SINV-49758 refunded $6.40: the
+  cart rounded the return's -$0.405 with JS `Math.round`, which rounds half
+  toward +infinity (`Math.round(-40.5)` is -40), so -$0.40. ERPNext posted
+  -$6.41, leaving -$0.01 outstanding. Online returns had it too: a return
+  skips the server preview and pays the cart's own total.
+- **Till.** The cart rounds money half away from zero, as Frappe's Commercial
+  Rounding does (`utils/numberFormat.roundTo`, checked against
+  `frappe.utils.data._round_away_from_zero`): each line's net to the cent (as
+  the invoice line's amount), the tax rows, the Net Total discount shares, the
+  grand total and the rounded total (-$6.50 rounds to -$7 as ERPNext's
+  `rounded_total`, not -$6), the cart line's shown total and the receipt
+  snapshot. No negative zero. `tests/returnRounding.spec.ts` replays 49757/49758.
+- **Server safety net** (`invoices.absorb_replay_rounding`). An offline sale or
+  return replayed (`create_invoice` with `local_id`) exactly one smallest
+  currency unit short of the invoice's total, in the invoice's own direction,
+  writes that cent off to the POS Profile's write-off account (ERPNext's POS
+  `write_off_amount`, cost center from the profile) instead of posting a cent
+  owing (or refusing a sale as a partial payment). The payment stays what the
+  drawer took or paid out, and the timeline says so ("Offline return synced
+  paid $6.40 against the invoice total of $6.41: the $0.01 rounding difference
+  was written off to ..."). Two cents or more, online sales, credit sales (no
+  payment) and over-refunds (ERPNext refuses those) are left alone.
+  `xpos.api.tests.test_replay_rounding` sells as the shared counter login.
+
+## mule-v2.10.1-mc27 (2026-10-02, staging)
 
 ### Till mix check polish (MuleCity-ra6h, mc26 staging walk 2026-10-02)
 
@@ -66,7 +95,7 @@
   read "6,171,890 lb", not "6.17189e+06 Pound"). With an older Mule app the
   line keeps the cart's own figure (now at 9 places).
 
-## mule-v2.10.1-mc26 (unreleased)
+## mule-v2.10.1-mc26 (2026-10-02, staging)
 
 ### Google address typeahead in the till's add-address form (MuleCity-p644)
 
