@@ -69,6 +69,51 @@ class TestGetCsrfToken(unittest.TestCase):
 		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[auth.get_csrf_token], ["GET"])
 
 
+class TestGetSessionBoot(unittest.TestCase):
+	"""A till that started offline from the app shell asks for its boot and token before writing (MuleCity-q8aq)."""
+
+	@patch("xpos.api.auth.session_csrf_token", return_value="saved-token")
+	@patch("xpos.api.auth.session_boot", return_value={"user": {"name": "cashier@example.com"}})
+	@patch("xpos.api.auth.frappe")
+	def test_returns_the_session_boot_and_saved_token(self, mock_frappe, mock_boot, mock_token):
+		mock_frappe.session.user = "cashier@example.com"
+
+		self.assertEqual(
+			auth.get_session_boot(),
+			{"boot": {"user": {"name": "cashier@example.com"}}, "csrf_token": "saved-token"},
+		)
+		mock_boot.assert_called_once_with()
+		mock_token.assert_called_once_with()
+
+	@patch("xpos.api.auth.session_csrf_token")
+	@patch("xpos.api.auth.session_boot")
+	@patch("xpos.api.auth.frappe")
+	def test_refuses_guests(self, mock_frappe, mock_boot, mock_token):
+		"""An expired session is a Guest: refused, so the till shows its login and keeps the queue."""
+		mock_frappe.session.user = "Guest"
+		mock_frappe.AuthenticationError = frappe.AuthenticationError
+		mock_frappe.throw.side_effect = frappe.AuthenticationError
+
+		with self.assertRaises(frappe.AuthenticationError):
+			auth.get_session_boot()
+		mock_boot.assert_not_called()
+		mock_token.assert_not_called()
+
+	def test_is_whitelisted_for_get_only(self):
+		self.assertIn(auth.get_session_boot, frappe.whitelisted)
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[auth.get_session_boot], ["GET"])
+
+	def test_the_page_and_the_endpoint_build_the_boot_the_same_way(self):
+		"""Both use frappe.sessions.get and the saved session token, so an offline-started till ends up
+		with what a fresh /xpos load would have given it."""
+		from frappe import sessions
+
+		self.assertIs(auth.session_boot, sessions.get)
+		self.assertIs(xpos_page.get, sessions.get)
+		self.assertIs(auth.session_csrf_token, sessions.get_csrf_token)
+		self.assertIs(xpos_page.get_csrf_token, sessions.get_csrf_token)
+
+
 class TestXposPageIsNeverWebsiteCached(unittest.TestCase):
 	"""The /xpos page carries per-user boot and CSRF data, so Frappe's shared page cache must skip it."""
 

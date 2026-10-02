@@ -8,6 +8,7 @@ import { isElectron, getApiBaseUrlSync, getApiCredentialsSync } from "@/services
 import { captureError } from "@/services/errorLog";
 import { getMeta } from "./idbService";
 import { formatWithSymbol } from "@/composables/useCurrency";
+import { ensureFreshSession } from "./sessionBoot";
 
 export { isNetworkError } from "@/utils";
 
@@ -140,12 +141,22 @@ async function fetchCall<T = unknown>(
 	return handleResponse<T>(method, args, { response, data }, options);
 }
 
+/** Calls that need no logged-in session: they must go through when the session has expired. */
+const SESSION_GATE_EXEMPT = new Set(["login", "logout"]);
+
 async function postMethod(
 	method: string,
 	args: Record<string, unknown>,
 ): Promise<{ response: Response; data: Record<string, any> }> {
 	if (!isOnline()) {
 		throw new Error("__offline__");
+	}
+
+	// A page started offline (the app shell) or one that lost the network may hold an old boot
+	// and token: fetch fresh ones before anything is sent (MuleCity-q8aq). Throws "__offline__"
+	// when the server cannot be reached and SessionExpiredError when the session is gone.
+	if (!SESSION_GATE_EXEMPT.has(method)) {
+		await ensureFreshSession();
 	}
 
 	const csrfToken = getCsrfToken();

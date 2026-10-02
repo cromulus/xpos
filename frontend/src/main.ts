@@ -17,6 +17,8 @@ import {
 	type OfflineDbUnavailableError,
 } from "@/services/offlineDbStatus";
 import { useToast } from "@/composables/useToast";
+import { initSessionBoot, SESSION_EXPIRED_EVENT } from "@/services/sessionBoot";
+import { useAuthStore } from "@/stores/authStore";
 
 if (!isElectron() && import.meta.env.PROD) {
 	if ("serviceWorker" in navigator) {
@@ -107,6 +109,9 @@ async function initializeNumberFormat(): Promise<void> {
 }
 
 (async () => {
+	// First: from the offline app shell, put the last saved boot in place (no CSRF token); from
+	// the server's page, save this boot for the next offline start (MuleCity-q8aq).
+	await initSessionBoot();
 	const app = createApp(App);
 	const pinia = createPinia();
 	window.__ = translate;
@@ -152,6 +157,18 @@ async function initializeNumberFormat(): Promise<void> {
 	});
 
 	app.mount("#app");
+
+	// The server answered a refresh with "not logged in": show the login and keep the offline
+	// queue; the sales sync after the cashier signs in again (MuleCity-q8aq).
+	window.addEventListener(SESSION_EXPIRED_EVENT, () => {
+		const authStore = useAuthStore();
+		if (!authStore.isAuthenticated) return;
+		authStore.sessionExpired();
+		const current = router.currentRoute.value;
+		if (current.name !== "login") {
+			void router.push({ name: "login", query: { redirect: current.fullPath } });
+		}
+	});
 
 	// The offline database could not be opened (another tab holds it, or it timed out): say so
 	// once the toaster is mounted. The till carries on online.

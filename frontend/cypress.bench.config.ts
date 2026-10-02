@@ -37,6 +37,19 @@ export default defineConfig({
 		viewportHeight: 900,
 		defaultCommandTimeout: 15000,
 		retries: 0,
-		setupNodeEvents() {},
+		setupNodeEvents(on, config) {
+			// erp2's slot serves the site over plain http on a private host name, which is not a
+			// secure context, so Chrome would give the page no service worker and the offline
+			// reload story (offline-reload.cy.ts, MuleCity-q8aq) would test nothing. Treat the
+			// bench origin as secure, as https or localhost would be.
+			on("before:browser:launch", (browser, launchOptions) => {
+				if (browser.family === "chromium" && config.baseUrl) {
+					launchOptions.args.push(
+						`--unsafely-treat-insecure-origin-as-secure=${new URL(config.baseUrl).origin}`,
+					);
+				}
+				return launchOptions;
+			});
+		},
 	},
 });

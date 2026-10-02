@@ -20,6 +20,7 @@ import type { PendingInvoice } from "@/services/idbService";
 import type { InvoiceData, ReceiptSnapshot } from "@/types/pos.types";
 import __ from "@/lib/translate";
 import { CACHE_SYNC_INTERVAL_MS, RECONNECT_REFRESH_DELAY_MS } from "@/utils/cacheFreshness";
+import { ensureFreshSession, isSessionExpired } from "@/services/sessionBoot";
 
 export type OfflineInvoice = PendingInvoice;
 
@@ -273,6 +274,10 @@ export const useOfflineStore = defineStore("offline", () => {
 		syncErrors.value = [];
 
 		try {
+			// A fresh boot and CSRF token before anything is sent (MuleCity-q8aq). If the server
+			// cannot be reached or the session has expired, stop here with every queued row
+			// untouched: no retry is counted, nothing goes to the dead letters.
+			if (!(await sessionReadyForSync())) return;
 			// Addresses added offline go first: the sales queued after them ship there (MuleCity-qajl).
 			await replayAddresses();
 			const invoices = (await getAllPendingInvoices()) as OfflineInvoice[];
@@ -307,6 +312,12 @@ export const useOfflineStore = defineStore("offline", () => {
 					if (invoice.id) await deletePendingInvoice(invoice.id);
 					synced++;
 				} catch (error: unknown) {
+					if (isSessionExpired(error)) {
+						// The session ended mid-sync: this sale and the rest wait for the login.
+						invoice.status = "pending";
+						if (invoice.id) await updatePendingInvoice(invoice.id, { status: "pending" });
+						break;
+					}
 					invoice.error = error instanceof Error ? error.message : String(error);
 
 					const stockRejection = isStockRejection(error);
@@ -370,6 +381,21 @@ export const useOfflineStore = defineStore("offline", () => {
 		}
 	}
 
+	/** Whether the session is fresh enough to send queued work; false leaves the queue as it is. */
+	async function sessionReadyForSync(): Promise<boolean> {
+		try {
+			await ensureFreshSession();
+			return true;
+		} catch (error) {
+			if (isSessionExpired(error)) {
+				console.warn("[XPOS Offline] Session expired; queued sales wait for the login");
+			} else {
+				console.warn("[XPOS Offline] Could not refresh the session before syncing:", error);
+			}
+			return false;
+		}
+	}
+
 	/** Replay the delivery addresses added offline (services/addressQueue.ts); never blocks the sales. */
 	async function replayAddresses(): Promise<void> {
 		try {
@@ -396,6 +422,10 @@ export const useOfflineStore = defineStore("offline", () => {
 
 		if ((invoice.data as Record<string, unknown>)?.is_draft) {
 			showError(__("Cannot sync a draft invoice. Load it to cart first."));
+			return false;
+		}
+		if (!(await sessionReadyForSync())) {
+			showError(__("Cannot sync now: sign in again or check the connection."));
 			return false;
 		}
 

@@ -5,6 +5,7 @@ import { UserSession } from "@/types/pos.types";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { isOnline, isNetworkError } from "@/utils";
+import { bootUser, clearOfflineBoot, markSessionStale, startedFromShell } from "@/services/sessionBoot";
 
 function friendlyMessage(err: unknown, fallback: string): string {
 	if (isNetworkError(err)) return "Cannot reach the server. Check your connection and try again.";
@@ -74,12 +75,48 @@ export const useAuthStore = defineStore("auth", () => {
 			if (isAuthenticated.value && !isOnline()) {
 				return true;
 			}
+			if (resumeFromSavedBoot(err)) {
+				return true;
+			}
 			isAuthenticated.value = false;
 			user.value = null;
 			return false;
 		} finally {
 			isLoading.value = false;
 		}
+	}
+
+	/**
+	 * Started from the app shell with the network down (MuleCity-q8aq): carry on as the user of
+	 * the boot saved at the last online start, offline. The first write after reconnecting asks the
+	 * server for a fresh boot and token (services/sessionBoot.ts); an expired session then shows
+	 * the login, with the offline queue kept.
+	 */
+	function resumeFromSavedBoot(err: unknown): boolean {
+		if (isElectron() || !startedFromShell()) return false;
+		if (isOnline() && !isNetworkError(err)) return false;
+		const boot = window.xpos?.boot as Record<string, any> | undefined;
+		const name = bootUser(boot);
+		if (!name) return false;
+		const info = (boot?.user_info?.[name] || {}) as Record<string, string>;
+		isAuthenticated.value = true;
+		isOfflineAuth.value = true;
+		user.value = {
+			user: name,
+			user_email: info.user_email || boot?.user?.email || name,
+			user_fullname: info.user_fullname || name,
+			image: info.image || "",
+		};
+		void loadPermissions(name);
+		return true;
+	}
+
+	/** The server says nobody is logged in: back to the login, the device's data (queue) kept. */
+	function sessionExpired(): void {
+		isAuthenticated.value = false;
+		isOfflineAuth.value = false;
+		user.value = null;
+		error.value = "Your session has expired. Please sign in again.";
 	}
 
 	async function checkOfflineAuth(): Promise<boolean> {
@@ -128,6 +165,9 @@ export const useAuthStore = defineStore("auth", () => {
 				usr: username,
 				pwd: password,
 			});
+			// A new session has a new token, and the page's boot may be a Guest's or an expired
+			// one's: fetch both before the next call (MuleCity-q8aq).
+			markSessionStale();
 
 			isAuthenticated.value = true;
 			isOfflineAuth.value = false;
@@ -222,6 +262,10 @@ export const useAuthStore = defineStore("auth", () => {
 			if (!isOfflineAuth.value) {
 				await call("logout");
 			}
+			if (!isElectron()) {
+				// Nobody's boot stays on the device for an offline start after a logout.
+				await clearOfflineBoot().catch(() => {});
+			}
 
 			isAuthenticated.value = false;
 			isOfflineAuth.value = false;
@@ -277,6 +321,7 @@ export const useAuthStore = defineStore("auth", () => {
 		login,
 		sendResetPasswordEmail,
 		logout,
+		sessionExpired,
 		clearError,
 		$reset,
 	};

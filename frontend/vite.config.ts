@@ -3,6 +3,8 @@ import vue from "@vitejs/plugin-vue";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 import { fileURLToPath } from "url";
+import { offlineShellPlugin } from "./scripts/offlineShell";
+import { ASSET_PREFIX, OFFLINE_SHELL_FILE } from "./sw/policy";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,6 +13,7 @@ export default defineConfig({
 	base: "/xpos/",
 	plugins: [
 		vue(),
+		offlineShellPlugin(),
 		VitePWA({
 			registerType: "autoUpdate",
 			injectRegister: false,
@@ -65,72 +68,20 @@ export default defineConfig({
 			devOptions: {
 				enabled: false,
 			},
-			workbox: {
-				globPatterns: ["**/*.{js,css,svg,png,ico,woff,woff2,ttf,eot}"],
+			// Our own worker (sw/sw.ts) instead of a generated one: the generated navigation fallback
+			// served index.html, which is never precached (Frappe renders it with the session), and
+			// threw before any route registered (MuleCity-q8aq).
+			strategies: "injectManifest",
+			srcDir: "sw",
+			filename: "sw.ts",
+			injectManifest: {
+				rollupFormat: "iife",
+				// offline-shell.html (no boot, no CSRF) is precached; index.html, the template
+				// Frappe fills with the session's boot and token, never is.
+				globPatterns: ["**/*.{js,css,svg,png,ico,woff,woff2,ttf,eot}", OFFLINE_SHELL_FILE],
 				globIgnores: ["**/index.html"],
-				modifyURLPrefix: { "": "/assets/xpos/xpos/" },
+				modifyURLPrefix: { "": ASSET_PREFIX },
 				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
-				runtimeCaching: [
-					{
-						urlPattern: /^https?:\/\/[^/]+\/xpos\/?$/,
-						handler: "NetworkFirst",
-						options: {
-							cacheName: "xpos-html-cache",
-							expiration: {
-								maxEntries: 5,
-								maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
-							},
-							networkTimeoutSeconds: 3,
-							cacheableResponse: {
-								statuses: [0, 200],
-							},
-						},
-					},
-					{
-						urlPattern: /^https?:\/\/.*\/api\/method\//,
-						handler: "NetworkFirst",
-						method: "GET",
-						options: {
-							cacheName: "xpos-api-cache",
-							expiration: {
-								maxEntries: 200,
-								maxAgeSeconds: 60 * 60 * 24, // 24 hours
-							},
-							networkTimeoutSeconds: 5,
-							cacheableResponse: {
-								statuses: [0, 200],
-							},
-						},
-					},
-					{
-						urlPattern: /^https?:\/\/.*\/assets\//,
-						handler: "CacheFirst",
-						options: {
-							cacheName: "xpos-assets-cache",
-							expiration: {
-								maxEntries: 200,
-								maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-							},
-							cacheableResponse: {
-								statuses: [0, 200],
-							},
-						},
-					},
-					{
-						urlPattern: /^https?:\/\/.*\/files\//,
-						handler: "CacheFirst",
-						options: {
-							cacheName: "xpos-files-cache",
-							expiration: {
-								maxEntries: 100,
-								maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
-							},
-							cacheableResponse: {
-								statuses: [0, 200],
-							},
-						},
-					},
-				],
 			},
 		}),
 	],

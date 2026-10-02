@@ -1,5 +1,56 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc29 (unreleased)
+
+### The till opens and reloads with the internet down (MuleCity-q8aq)
+
+- **F5 or switching the counter PC on while offline now opens the till.**
+  Before, the browser showed "No internet": the generated service worker bound
+  its navigation route to `index.html`, which is never precached (Frappe
+  renders `/xpos` with the session's boot and CSRF token), so it threw
+  `non-precached-url` while starting up and registered none of its routes. The
+  worker is now our own (`frontend/sw/sw.ts`, vite-plugin-pwa
+  `injectManifest`).
+- **Online, `/xpos` always comes from the server.** Till navigations
+  (`/xpos`, `/xpos/*`, never Desk or other routes) go to the network; only
+  when the network cannot be reached at all does the worker answer with the
+  precached **app shell** (`/assets/xpos/xpos/offline-shell.html`: the built
+  page with no boot, no token and no template placeholder; the build fails if
+  any remain). A server answer, a 503 included, is passed through as it is.
+- **What the device now stores.** On every online start the page saves its
+  boot in IndexedDB (`xpos_offline_v3`, meta `offline_boot`) with the CSRF
+  token and every key naming a secret removed at any depth (`csrf*`,
+  `*token*`, `*secret*`, `*password*`, `api_key`, `sid`, `sentry_dsn`,
+  `ipinfo`). It still holds what the till runs on: the user's name, email and
+  roles, the user's POS rights, site defaults, POS and selling settings,
+  branding, translations. It is removed at logout and never saved for a
+  Guest. Started from the shell, the till runs offline as that boot's user
+  and sells into the queue as before.
+- **What the device does not store.** No CSRF token or session id, and no
+  page HTML: the HTML cache (`xpos-html-cache`, 7 days of `/xpos` with boot
+  and token) is gone and deleted on activate, with the old `xpos-api-cache`.
+  The GET `/api/method/` cache keeps only an allowlist, which is empty: every
+  read the till makes is a POST (not cacheable by a service worker) and comes
+  from IndexedDB offline; the only GETs are `xpos.api.auth.get_csrf_token`
+  and the new `get_session_boot`, which are never cached. The files cache now
+  takes public `/files/` only, not `/private/files/`; assets and public files
+  are cached as before, same-origin only.
+- **Before the first write after reconnecting, a fresh boot and token.** A
+  page started from the shell, or one that lost the network, marks its
+  session stale; the next call (`services/api.ts`) first GETs the new
+  `xpos.api.auth.get_session_boot` (boot + CSRF token, as `/xpos` embeds
+  them; Guests refused) and replaces `window.xpos.boot` and the token. The
+  offline sync does this before replaying addresses and sales. If the server
+  says the session has expired, nothing is sent, the till shows its login,
+  and the queue stays as it was (no retry counted, nothing to the
+  need-attention list); the sales sync after signing in.
+- **Tests.** `tests/offlineBoot.spec.ts` (no token saved, refresh before
+  writes, expiry), `tests/offlineSessionSync.spec.ts` (queue intact),
+  `tests/offlineServiceWorker.spec.ts` (worker routes and the built `sw.js`),
+  and the bench story `tests/e2e/bench/offline-reload.cy.ts`. The bench
+  Cypress config treats the bench origin as secure so the plain-http erp2
+  slot has its service worker.
+
 ## mule-v2.10.1-mc28 (unreleased)
 
 ### Status reads "in sync" soon after reconnecting (MuleCity-rcxk, mc23 staging walk 2026-10-02)

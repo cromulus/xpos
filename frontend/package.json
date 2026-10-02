@@ -18,7 +18,7 @@
     "build:electron": "vite build --config vite.config.electron.ts && node scripts/build-electron.mjs",
     "copy-html-entry": "cp ../xpos/public/xpos/index.html ../xpos/www/xpos.html",
     "preview": "vite preview",
-    "typecheck": "vue-tsc --noEmit && tsc -p tests/e2e/tsconfig.json --noEmit",
+    "typecheck": "vue-tsc --noEmit && tsc -p tests/e2e/tsconfig.json --noEmit && tsc -p sw/tsconfig.json --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
     "pack": "yarn build:electron && electron-builder --dir",
@@ -75,7 +75,12 @@
     "vite-plugin-electron-renderer": "^0.14.6",
     "vite-plugin-pwa": "^1.2.0",
     "vitest": "^3.2.4",
-    "vue-tsc": "^3.3.6"
+    "vue-tsc": "^3.3.6",
+    "workbox-cacheable-response": "7.4.0",
+    "workbox-expiration": "7.4.0",
+    "workbox-precaching": "7.4.0",
+    "workbox-routing": "7.4.0",
+    "workbox-strategies": "7.4.0"
   },
   "resolutions": {
     "builder-util-runtime": "^9.7.0",

@@ -4,6 +4,7 @@
 
 import frappe
 from frappe import _
+from frappe.sessions import get as session_boot
 from frappe.sessions import get_csrf_token as session_csrf_token
 from frappe.utils import cint, flt
 
@@ -173,6 +174,20 @@ def get_csrf_token() -> str:
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Not logged in"), frappe.AuthenticationError)
 	return session_csrf_token()
+
+
+@frappe.whitelist(methods=["GET"])
+def get_session_boot() -> dict:
+	"""The session's boot and CSRF token, as the /xpos page embeds them (xpos/www/xpos.py).
+
+	A till that started offline runs from the precached app shell with the last boot saved on the
+	device, which holds no CSRF token (MuleCity-q8aq). Before its first write after reconnecting it
+	asks for both here. GET, so a page without a valid token can ask; a Guest (expired session) is
+	refused, and the till then shows its login with the offline queue kept.
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Not logged in"), frappe.AuthenticationError)
+	return {"boot": session_boot(), "csrf_token": session_csrf_token()}
 
 
 @frappe.whitelist()

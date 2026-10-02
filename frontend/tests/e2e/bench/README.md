@@ -13,6 +13,9 @@ yarn test:e2e:bench --spec tests/e2e/bench/offline-selling.cy.ts
 Chrome is required: going offline uses the Chrome DevTools Protocol
 (`Network.emulateNetworkConditions`), which cuts the page's network for
 real. The browser then fires `offline` and `navigator.onLine` turns false.
+Chrome is started with `--unsafely-treat-insecure-origin-as-secure` for the
+bench origin (cypress.bench.config.ts), so a plain-http bench such as erp2's
+slots gets the service worker it would have on https.
 
 ## Settings (`frontend/.env.local`, never committed)
 
@@ -48,6 +51,7 @@ what offline, and what the server shows after sync":
 | `offline-selling.cy.ts` | two tickets sold offline both post; one over the discount cap waits for a manager |
 | `offline-tax.cy.ts` | a farm customer this till never saw online is rung up untaxed; the synced invoice is untaxed |
 | `offline-delivery.cy.ts` | a delivery to an address typed offline (with its miles) is priced at the till; the synced sale ships there, keeps that price and is flagged (MuleCity-6nb1); a customer with three addresses: the picker opens offline on the primary shipping one, a searched address with no miles is priced from typed miles, and the synced sale keeps the address, day and miles (MuleCity-qajl.3/.4) |
+| `offline-reload.cy.ts` | with the internet down, a reload (F5) and a cold start of another till page open the till from the service worker's app shell with the boot saved at the last online start (no CSRF token on the device); a bag sold then queues, and on reconnect the till fetches a fresh boot and token before anything is sent, and the sale posts with that token; online, a reload is always the server's page (MuleCity-q8aq) |
 | `offline-orders.cy.ts` | the Orders view, opened online, keeps its list of Sales Orders in flight; offline it shows that list marked last known with its time (never "no orders"), searchable, and cannot load an order for payment (MuleCity-zstm.23) |
 
 Shared steps live in `tests/e2e/support/offline.ts` (`openTillOnline`, which starts from
