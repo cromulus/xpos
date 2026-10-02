@@ -17,6 +17,13 @@ from xpos.api.utilities import SAFE_FIELDNAME, get_invoice_type, get_item_search
 # lacking stock; each item carries ``is_made_to_order``.
 MADE_TO_ORDER_HOOK = "xpos_made_to_order_items"
 
+# Site hook: callables(item_code, price_list, uom, conversion_factor, customer,
+# transaction_date, qty) -> list rate or None. An item the site prices itself
+# (Mule City's custom mixes, priced from their recipe and never given an Item
+# Price) answers here; None leaves the item to ERPNext's Item Price. A site that
+# cannot price its item raises, and the error says why (MuleCity-zstm.20).
+LIST_RATE_HOOK = "xpos_list_rate"
+
 
 def made_to_order_items(pos_profile: str | None) -> set[str]:
 	"""The item codes the site's ``xpos_made_to_order_items`` hooks name for this profile."""
@@ -62,6 +69,18 @@ def selling_price(
 		conversion_factor = (
 			1.0 if uom == item.stock_uom else get_conversion_factor(item_code, uom)["conversion_factor"]
 		)
+	for method in frappe.get_hooks(LIST_RATE_HOOK):
+		rate = frappe.get_attr(method)(
+			item_code=item_code,
+			price_list=price_list,
+			uom=uom,
+			conversion_factor=flt(conversion_factor) or 1.0,
+			customer=customer,
+			transaction_date=transaction_date or nowdate(),
+			qty=flt(qty) or 1.0,
+		)
+		if rate is not None:
+			return flt(rate)
 	ctx = {
 		"price_list": price_list,
 		"customer": customer,
@@ -374,9 +393,17 @@ def get_pos_items(
 		# in pounds). Tiles are cached per register, not per customer: today's
 		# generic price for that unit.
 		item.uom, item.conversion_factor = units.get(item.item_code, (item.stock_uom, 1.0))
-		item.rate = selling_price(
-			item.item_code, price_list, uom=item.uom, conversion_factor=item.conversion_factor
-		)
+		try:
+			item.rate = selling_price(
+				item.item_code, price_list, uom=item.uom, conversion_factor=item.conversion_factor
+			)
+		except frappe.ValidationError as error:
+			# A site-priced item that can't be priced today (a custom mix whose
+			# recipe needs review) is listed with the reason, never as $0.00, and
+			# one such item doesn't fail the whole page (MuleCity-zstm.20).
+			frappe.clear_last_message()
+			item.rate = 0.0
+			item.price_error = str(error)
 
 		item.actual_qty = stock.get(item.item_code, 0)
 		item.is_made_to_order = int(item.item_code in made_to_order)

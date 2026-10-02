@@ -126,7 +126,15 @@
 								</kbd>
 							</div>
 							<div v-if="item.type === 'item'" class="text-end shrink-0">
-								<p class="text-sm font-medium text-green-600">
+								<!-- A made-to-order mix the site couldn't price says so, not $0.00 (MuleCity-zstm.20). -->
+								<p
+									v-if="Number((item.meta as POSItem)?.is_made_to_order) === 1 && !(Number((item.meta as POSItem)?.rate) > 0)"
+									class="text-xs font-semibold text-destructive"
+									:title="(item.meta as POSItem)?.price_error || ''"
+								>
+									{{ __("No price") }}
+								</p>
+								<p v-else class="text-sm font-medium text-green-600">
 									{{ money((item.meta as POSItem)?.rate || 0) }}
 								</p>
 							</div>

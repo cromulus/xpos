@@ -139,6 +139,16 @@
 				{{ __("Mix pickup date") }}
 				<input v-model="cartStore.pickupDate" type="date" required class="border border-input rounded px-1 py-0.5 bg-card" />
 			</label>
+			<!-- Whether the mix can be made and what the order costs, before Pay (MuleCity-zstm.20). -->
+			<p
+				v-if="cartStore.hasOrderLines"
+				class="mt-1 text-xs"
+				:class="mixCheck.tone === 'bad' ? 'text-destructive font-semibold' : 'text-muted-foreground'"
+				data-testid="cart-mix-check"
+				role="status"
+			>
+				{{ mixCheck.text }}
+			</p>
 			<ReceiveOnAccountDialog
 				:customer="customerStore.showReceiveOnAccount ? cartStore.customer?.name || null : null"
 				:customer-label="cartStore.customerName"
@@ -269,12 +279,27 @@ import ClearCustomer from "@/components/cart/ClearCustomer.vue";
 import CustomerOrdersBadge from "@/components/cart/CustomerOrdersBadge.vue";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { showsCreditInfo } from "@/utils/creditPanel";
+import { mixCheckStatus } from "@/utils/mixCheck";
+import { useOfflineStore } from "@/stores/offlineStore";
 import type { ItemUOM } from "@/types/pos.types";
 
 const posStore = usePosStore();
 const cartStore = useCartStore();
 const customerStore = useCustomerStore();
 const { money } = useMoney();
+const offlineStore = useOfflineStore();
+const mixCheck = computed(() =>
+	mixCheckStatus(
+		{
+			online: offlineStore.isOnline,
+			pickupDate: cartStore.pickupDate,
+			pending: cartStore.mixCheckPending,
+			error: cartStore.mixCheckError,
+			ordersTotal: cartStore.counterQuote ? cartStore.counterQuote.orders_total : null,
+		},
+		money,
+	),
+);
 
 const cartScrollContainer = ref<HTMLElement | null>(null);
 

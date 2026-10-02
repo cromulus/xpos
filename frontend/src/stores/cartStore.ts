@@ -735,6 +735,27 @@ export const useCartStore = defineStore("cart", () => {
 		return cached;
 	}
 
+	/**
+	 * Why a made-to-order mix can't go in the cart, if it can't (MuleCity-zstm.20).
+	 * Its price comes from the site (its recipe), never $0.00: with none, the line
+	 * would post at nothing, so the reason is shown instead. Ordering needs the
+	 * server, so an offline till takes only made bags it has on hand.
+	 */
+	function madeToOrderRefusal(item: POSItem, qty: number, rate: number, conversionFactor = 1): string | undefined {
+		if (Number(item.is_made_to_order) !== 1 || isReturnMode.value) return undefined;
+		if (!(Number(rate) > 0)) {
+			if (item.price_error) return __("{0} can't be priced: {1}", [item.item_name, String(item.price_error)]);
+			return isOnline()
+				? __("{0} has no price. Check its recipe at the desk.", [item.item_name])
+				: __("{0} can't be priced offline. Go online to sell it.", [item.item_name]);
+		}
+		const committed = committedStockQty(item.item_code) + qty * (conversionFactor || 1);
+		if (!isOnline() && committed > Math.max(item.actual_qty ?? 0, 0) + STOCK_QTY_TOLERANCE) {
+			return __("Custom mixes can't be ordered offline. Go online, or take the order at the desk.");
+		}
+		return undefined;
+	}
+
 	function addItem(item: POSItem): { success: boolean; message?: string } {
 		if (
 			isReturnMode.value &&
@@ -743,6 +764,9 @@ export const useCartStore = defineStore("cart", () => {
 		) {
 			return { success: false, message: __("This item is not in the original invoice") };
 		}
+
+		const orderRefusal = madeToOrderRefusal(item, 1, item.rate || 0, (item as CartItem).conversion_factor || 1);
+		if (orderRefusal) return { success: false, message: orderRefusal };
 
 		const stockCheck = canAddItem(item);
 		if (!stockCheck.allowed && !isReturnMode.value) {
@@ -822,6 +846,8 @@ export const useCartStore = defineStore("cart", () => {
 		}
 
 		if (!isReturnMode.value) {
+			const orderRefusal = madeToOrderRefusal(item, qty, rate, conversionFactor || 1);
+			if (orderRefusal) return { success: false, message: orderRefusal };
 			const stockCheck = canAddItemWithDetails(item, qty, batchNo, conversionFactor || 1);
 			if (!stockCheck.allowed) {
 				return { success: false, message: stockCheck.message };
@@ -1618,6 +1644,58 @@ export const useCartStore = defineStore("cart", () => {
 	}
 
 	/**
+	 * Whether the cart's mix orders can be placed, shown while the cart is built
+	 * (Bill 2026-09-30, MuleCity-zstm.20): the same ``counter_quote`` Pay asks,
+	 * which places each order in a rolled-back savepoint, so it prices the order
+	 * the way it will be placed and refuses short ingredients (MuleCity-mxwy.16)
+	 * before any money is taken. Pay asks again; this only informs.
+	 */
+	const mixCheckPending = ref(false);
+	const mixCheckError = ref("");
+	let mixCheckRequest = 0;
+	async function checkMixOrders(): Promise<void> {
+		const request = ++mixCheckRequest;
+		mixCheckError.value = "";
+		if (!hasOrderLines.value || !pickupDate.value || !isOnline()) {
+			mixCheckPending.value = false;
+			return;
+		}
+		const key = previewKey.value;
+		// Pay's own quote already checked this very cart.
+		if (counterQuote.value?.key === key) {
+			mixCheckPending.value = false;
+			return;
+		}
+		mixCheckPending.value = true;
+		try {
+			const result = await call<Omit<CounterQuote, "key">>("mulecity_erpnext.counter_mix_orders.counter_quote", {
+				data: JSON.stringify(previewPayload()),
+			});
+			if (request !== mixCheckRequest) return;
+			if (key === previewKey.value) counterQuote.value = { ...result, key };
+		} catch (error) {
+			if (request === mixCheckRequest) mixCheckError.value = extractErrorMessage(error);
+		} finally {
+			if (request === mixCheckRequest) mixCheckPending.value = false;
+		}
+	}
+	const scheduleMixCheck = debounce(() => {
+		checkMixOrders().catch(() => {});
+	}, 600);
+	watch(
+		() => [hasOrderLines.value, previewKey.value],
+		([ordering]) => {
+			mixCheckError.value = "";
+			if (ordering) {
+				mixCheckPending.value = !!pickupDate.value && isOnline();
+				scheduleMixCheck();
+			} else {
+				mixCheckPending.value = false;
+			}
+		},
+	);
+
+	/**
 	 * Pay for a cart with custom mixes to order (Mule City, MuleCity-3j1m): the site
 	 * prices today's ticket and the orders separately, placing the orders only
 	 * inside a rolled-back savepoint (short ingredients are refused here). Orders
@@ -2307,6 +2385,8 @@ export const useCartStore = defineStore("cart", () => {
 		pickupDate,
 		mixPayMode,
 		counterQuote,
+		mixCheckPending,
+		mixCheckError,
 		hasOrderLines,
 		isOrderLine,
 	};

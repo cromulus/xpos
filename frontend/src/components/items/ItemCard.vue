@@ -71,7 +71,15 @@
 				{{ item.item_code }}
 			</p>
 			<div class="flex items-center justify-between">
-				<span class="text-sm font-bold text-primary dark:text-foreground tabular-nums">
+				<span
+					v-if="priceMissing"
+					class="text-xs font-semibold text-destructive truncate"
+					:title="priceNote"
+					data-testid="item-price-missing"
+				>
+					{{ __("No price") }}
+				</span>
+				<span v-else class="text-sm font-bold text-primary dark:text-foreground tabular-nums">
 					{{ money(item.rate) }}
 				</span>
 				<span class="text-[10px] text-muted-foreground truncate ms-1">
@@ -109,15 +117,21 @@ const allowNegativeStock = computed(() => posStore.stockSettings?.allow_negative
 const hideImages = computed(() => posStore.hideImages);
 
 const isNonStockItem = computed(() => Number(props.item.is_stock_item) === 0);
+// Made to order (a custom mix, MuleCity-zstm.20): the mill makes it for the sale,
+// so having none made is never "Out of Stock"; it is priced by the site.
+const isMadeToOrder = computed(() => Number(props.item.is_made_to_order) === 1);
+const priceMissing = computed(() => isMadeToOrder.value && !(Number(props.item.rate) > 0));
+const priceNote = computed(() => (props.item.price_error ? String(props.item.price_error) : __("No price yet")));
 
 const isOutOfStock = computed(() => {
-	if (isNonStockItem.value) return false;
+	if (isNonStockItem.value || isMadeToOrder.value) return false;
 	const qty = props.item.actual_qty;
 	return qty !== undefined && qty <= 0;
 });
 
 const stockVariant = computed(() => {
 	const qty = props.item.actual_qty || 0;
+	if (qty <= 0 && isMadeToOrder.value) return "secondary" as const;
 	if (qty <= 0) return "destructive" as const;
 	if (qty <= 5) return "warning" as const;
 	return "secondary" as const;
@@ -125,6 +139,7 @@ const stockVariant = computed(() => {
 
 const stockLabel = computed(() => {
 	const stock = props.item.actual_qty || 0;
+	if (stock <= 0 && isMadeToOrder.value) return __("Made to order");
 	if (stock <= 0) return "Out";
 	return stock > 999 ? "999+" : formatQty(stock);
 });

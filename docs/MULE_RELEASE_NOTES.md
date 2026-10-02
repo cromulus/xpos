@@ -41,7 +41,47 @@ and Close Shift closed anyway, so that sale's cash was not in the closing.
   the outward bundle.
 - Tests: `xpos.api.tests.test_batch_picker`.
 
-## mule-v2.10.1-mc23 (unreleased)
+### Custom mixes can be ordered from the item list (MuleCity-zstm.20)
+
+mc23 staging walk (2026-10-02): every custom mix showed "Out of Stock $0.00"
+and could not be put in the cart; the walk's mix orders were placed from the
+bench. Bill (2026-09-30): a mix is ordered at the till (pickup or delivery, on
+account or paid there), and the till shows whether its ingredients are there
+before ordering. **Needs the Mule app's `xpos_list_rate` hook and its Stock
+Reservation Entry grant for the till login (MuleCity-zstm.20 app commits);**
+with an older app a mix still lists as made to order but shows "No price" and
+can't be added. No migrate needed for XPOS.
+
+- Item card, list row and search: a made-to-order item (`is_made_to_order`,
+  from the site's `xpos_made_to_order_items` hook since mc13) is never "Out of
+  Stock" and can be tapped; with nothing made its badge reads "Made to order".
+  The cart already let it in (`checkAvailability`); the tiles didn't.
+- New site hook `xpos_list_rate` (`xpos.api.items.LIST_RATE_HOOK`): callables
+  `(item_code, price_list, uom, conversion_factor, customer, transaction_date,
+  qty)` returning a list rate or None. `selling_price` asks it first, so the
+  item list, `get_sale_unit` (unit change), the barcode/detail lookups, the
+  invoice price lock and Repeat all price a mix the same way. Mule City answers
+  with the mix's recipe price (`mix_price.bom_list_rate`, the base its Sales
+  Order gets). None keeps ERPNext's Item Price lookup.
+- `get_pos_items`: an item whose price raises (a mix whose recipe needs review)
+  is listed at rate 0 with `price_error` (the reason), and the rest of the page
+  still loads. The tile shows "No price" with the reason on hover, never $0.00.
+- Cart (`cartStore.addItem`, `addItemWithDetails`): a made-to-order item with no
+  price is refused with the reason. Offline, a mix is refused unless it is made
+  bags on hand at a price the till already has ("Custom mixes can't be ordered
+  offline..."); orders stay online-only, as before.
+- Cart: with a mix to order and a pickup date, the cart asks the site's
+  `counter_mix_orders.counter_quote` (debounced, the same check Pay makes) and
+  shows "Ingredients on hand. Mix order $X." or the site's refusal, e.g. "Can't
+  order yet: Short ingredients: ..." (MuleCity-mxwy.16). Pay still asks again;
+  it is the gate. No override at the till.
+- Tests: `frontend/tests/tillCustomMixes.spec.ts`,
+  `xpos.api.tests.test_made_to_order` (TestSitePricedItems), Mule
+  `test_till_custom_mixes` (as the till's own login).
+- Touched in `xpos/api/items.py`: `selling_price` and the pricing loop of
+  `get_pos_items` only (plus the `LIST_RATE_HOOK` constant).
+
+## mule-v2.10.1-mc23 (2026-10-02, staging)
 
 Bill's counter review of 2026-10-01 (epic MuleCity-qajl). **Migrate needed**
 (new custom fields on Sales Invoice and POS Invoice, and `pos_notes`,
