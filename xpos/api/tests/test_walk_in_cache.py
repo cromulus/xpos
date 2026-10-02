@@ -30,7 +30,7 @@ class TestWalkInReachesTheOfflineCache(IntegrationTestCase):
 		self.first = self._customer(f"AAA Buyer {self.run}", self.sales_group)
 		self.second = self._customer(f"AAB Buyer {self.run}", self.sales_group)
 		self.walk_in = self._customer(f"ZZ Walk-In {self.run}", self.internal_group)
-		self.internal = self._customer(f"ZZ Internal {self.run}", self.internal_group)
+		self.internal = self._customer(f"ZZ Other {self.run}", self.internal_group)
 		self.profile = frappe._dict(
 			name=f"Till {self.run}",
 			company=self.company,
@@ -103,7 +103,7 @@ class TestWalkInReachesTheOfflineCache(IntegrationTestCase):
 		found = customers.get_customers(search_term=f"walk-in {self.run}", pos_profile=self.profile.name)
 		self.assertEqual([row["name"] for row in found], [self.walk_in])
 		self.assertEqual(
-			customers.get_customers(search_term=f"internal {self.run}", pos_profile=self.profile.name), []
+			customers.get_customers(search_term=f"zz other {self.run}", pos_profile=self.profile.name), []
 		)
 
 	def test_the_sites_walk_in_accounts_come_too(self):
