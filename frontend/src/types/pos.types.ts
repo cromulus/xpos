@@ -271,6 +271,7 @@ export interface BatchInfo {
 	batch_no: string;
 	qty: number;
 	expiry_date?: string;
+	manufacturing_date?: string;
 }
 
 export interface ItemVariant {

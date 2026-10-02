@@ -673,6 +673,7 @@ def get_item_detail(
 					"batch_no": batch_no,
 					"qty": flt(b.get("batch_qty", 0)) - pending_batches.get(batch_no, 0.0),
 					"expiry_date": b.get("expiry_date"),
+					"manufacturing_date": b.get("manufacturing_date"),
 				}
 			)
 	result["batches"] = batches
@@ -1051,38 +1052,54 @@ def get_pending_pos_batch_qty_map(
 
 
 def _get_batch_data(item_code: str, warehouse: str, today: str | None = None):
-	"""Fetch available (non-expired) batches for an item in warehouse."""
+	"""Fetch available (non-expired) batches for an item in warehouse.
+
+	ERPNext v15+ moves batched stock through a Serial and Batch Bundle, so the
+	Stock Ledger Entry's own ``batch_no`` is empty and summing it found nothing
+	(MuleCity-86ea). ERPNext's ``get_batch_qty`` reads the bundle entries and the
+	legacy ``sle.batch_no`` rows together, ordered by the Stock Settings pick
+	order (FIFO / LIFO / Expiry). ``for_stock_levels`` keeps it from taking the
+	unconsolidated POS Invoice qty off: ``get_pending_batch_qty`` does that here.
+	Its queries and ``frappe.get_all`` skip permission checks, so the shared
+	cashier login sees the same lots without read on Batch or the bundle.
+	"""
+	from erpnext.stock.doctype.batch.batch import get_batch_qty
+
 	today = today or nowdate()
-	batches = frappe.db.sql(
-		"""
-		SELECT
-			sle.batch_no,
-			SUM(sle.actual_qty) AS batch_qty,
-			b.expiry_date,
-			b.manufacturing_date
-		FROM `tabStock Ledger Entry` sle
-		INNER JOIN `tabBatch` b ON b.name = sle.batch_no
-		WHERE sle.item_code = %(item_code)s
-			AND sle.warehouse = %(warehouse)s
-			AND sle.is_cancelled = 0
-			AND sle.batch_no IS NOT NULL
-		GROUP BY sle.batch_no
-		HAVING batch_qty > 0
-		ORDER BY b.expiry_date ASC, b.creation ASC
-		""",
-		{"item_code": item_code, "warehouse": warehouse},
-		as_dict=True,
-	)
+	rows = get_batch_qty(item_code=item_code, warehouse=warehouse, for_stock_levels=True) or []
+
+	qty_by_batch: dict[str, float] = {}
+	for row in rows:
+		if row.get("warehouse") and row.get("warehouse") != warehouse:
+			continue
+		batch_no = row.get("batch_no")
+		if batch_no:
+			qty_by_batch[batch_no] = qty_by_batch.get(batch_no, 0.0) + flt(row.get("qty"))
+
+	if not qty_by_batch:
+		return []
+
+	meta = {
+		b.name: b
+		for b in frappe.get_all(
+			"Batch",
+			filters={"name": ("in", list(qty_by_batch))},
+			fields=["name", "expiry_date", "manufacturing_date"],
+		)
+	}
 
 	result = []
-	for batch in batches:
+	for batch_no, batch_qty in qty_by_batch.items():
+		if batch_qty <= 0:
+			continue
+		batch = meta.get(batch_no) or frappe._dict()
 		if batch.expiry_date and getdate(batch.expiry_date) < getdate(today):
 			continue
 
 		result.append(
 			{
-				"batch_no": batch.batch_no,
-				"batch_qty": flt(batch.batch_qty),
+				"batch_no": batch_no,
+				"batch_qty": batch_qty,
 				"expiry_date": batch.expiry_date,
 				"manufacturing_date": batch.manufacturing_date,
 			}

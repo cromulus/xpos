@@ -1,5 +1,46 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc24 (unreleased)
+
+### Close Shift waits for offline sales (MuleCity-86ea)
+
+On staging (2026-10-01) a queued sale was refused at sync ("1 need attention")
+and Close Shift closed anyway, so that sale's cash was not in the closing.
+
+- `ClosingDialog.vue` reads this browser's offline queue when it opens and again
+  on Close Shift (`frontend/src/utils/closeShiftGuard.ts`). Every Close Shift
+  entry point (navbar, menu, Ctrl+Shift+O) opens this dialog.
+- Counted: every queued sale for this till's POS Profile, from any shift (a
+  stuck sale from an earlier shift is still missing money). Held drafts and
+  another profile's sales are not counted.
+- Waiting sales (pending, syncing, failed and retrying): when online the dialog
+  syncs them first; when offline it says to reconnect (closing is online-only).
+- Sales that need attention (refused or out of retries): a red list with the
+  customer, amount and error, and "Open offline invoices" to fix (Requeue) or,
+  where the profile allows deleting offline invoices, remove them.
+- Close Shift stays disabled while either list is not empty. There is no
+  "close anyway": the profile's existing `allow_delete_offline_invoice` is the
+  manager's way out.
+- Tests: `frontend/tests/closeShiftQueue.spec.ts`.
+
+### Batch picker reads Serial and Batch Bundle stock (MuleCity-86ea)
+
+- `xpos.api.items._get_batch_data` summed `Stock Ledger Entry.batch_no`, which
+  is empty when stock moves through a Serial and Batch Bundle (ERPNext v15+), so
+  `get_item_detail` returned `batches: []` for a lot with 20 on the shelf. It now
+  uses ERPNext's `get_batch_qty(item_code, warehouse, for_stock_levels=True)`,
+  which reads bundle entries and legacy `sle.batch_no` rows together, in the
+  Stock Settings pick order. `for_stock_levels` avoids taking unconsolidated POS
+  Invoice qty off twice (`get_pending_batch_qty` already does). Expired and
+  sold-out lots are still left out.
+- The picker shows "Made: <date>" when a lot has no expiry
+  (`manufacturing_date` on each `get_item_detail` batch row).
+- The shared cashier login (Mule POS Cashier + Desk User) gets the same list:
+  the helper's queries and `frappe.get_all` on Batch need no read permission.
+- A chosen lot travels as `batch_no` on the invoice row; ERPNext turns it into
+  the outward bundle.
+- Tests: `xpos.api.tests.test_batch_picker`.
+
 ## mule-v2.10.1-mc23 (unreleased)
 
 Bill's counter review of 2026-10-01 (epic MuleCity-qajl). **Migrate needed**
