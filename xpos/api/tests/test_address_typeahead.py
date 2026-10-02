@@ -88,7 +88,7 @@ class TestThePickedPointIsSaved(HookCase):
 		self.with_hooks(xpos_add_delivery_address=add)
 		with patch.object(customers, "walk_in_customers", return_value=["Walk-In"]):
 			self.assertEqual(customers.add_delivery_address("Greenview", **ADDRESS), {"name": "ADDR-NEW"})
-			self.assertEqual(customers.add_delivery_address("Greenview", **ADDRESS, latitude="", longitude=None),
+			self.assertEqual(customers.add_delivery_address("Greenview", **ADDRESS, latitude=None, longitude=None),
 				{"name": "ADDR-NEW"})
 
 	def test_an_address_queued_after_a_pick_carries_its_point_to_the_sale_fallback(self):
