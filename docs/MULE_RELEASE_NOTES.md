@@ -1,5 +1,22 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc26 (unreleased)
+
+### The cart's mix check places nothing (MuleCity-ynb9)
+
+The cart's ingredient check (debounced 600 ms on every cart change) called the
+Mule app's `counter_mix_orders.counter_quote`, which places the Sales Order, its
+Work Order and Stock Reservation Entries in a savepoint and rolls them back: Bin
+row locks and a full order on every change. It now calls the app's read-only
+`counter_mix_orders.counter_check`, same answer and shape (`orders`,
+`orders_total`, `ticket`, `ticket_due`, or the "Short ingredients" refusal).
+Pay still asks `counter_quote`, and `counter_checkout` places the order.
+
+- `cartStore.checkMixOrders` asks `counter_check`; `openMixOrderPayment` is
+  unchanged. Needs a Mule app with `counter_check` (MuleCity-ynb9).
+- vitest: `tillCustomMixes.spec.ts` checks the cart asks `counter_check` and
+  never `counter_quote`, and Pay still asks `counter_quote`.
+
 ## mule-v2.10.1-mc25 (unreleased)
 
 ### Close Shift counts the till's Payment Entries (MuleCity-49ue)
