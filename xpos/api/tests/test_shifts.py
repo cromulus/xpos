@@ -675,6 +675,52 @@ class TestSecondShiftOnTheSameDay(unittest.TestCase):
 		self.assertEqual(mock_frappe.get_all.call_count, 1)
 
 
+class TestCloseSheetByCashier(unittest.TestCase):
+	"""User story (Bill 2026-10-01, MuleCity-qajl.6): the shared counter login rings sales
+	and returns under typed initials. The Close Shift sheet shows each cashier's sales and
+	returns (count and total), and a "(none)" row for invoices saved without initials."""
+
+	INVOICES = (
+		{"name": "SINV-1", "grand_total": 21.35, "net_total": 20, "is_return": 0, "pos_cashier": "LE"},
+		{"name": "SINV-2", "grand_total": 10.0, "net_total": 10, "is_return": 0, "pos_cashier": "BI"},
+		{"name": "SINV-3", "grand_total": 5.0, "net_total": 5, "is_return": 0, "pos_cashier": "LE"},
+		{"name": "SINV-4", "grand_total": -5.0, "net_total": -5, "is_return": 1, "pos_cashier": "LE"},
+		{"name": "SINV-5", "grand_total": 7.5, "net_total": 7.5, "is_return": 0, "pos_cashier": None},
+		{"name": "SINV-6", "grand_total": -1.07, "net_total": -1, "is_return": 1, "pos_cashier": ""},
+	)
+
+	def test_summary_reads_pos_cashier(self):
+		self.assertIn("pos_cashier", shifts.SUMMARY_INVOICE_FIELDS)
+
+	@patch("xpos.api.shifts._get_shift_tax_summary", return_value=[])
+	@patch("xpos.api.shifts.get_shift_expected_amounts", return_value={})
+	@patch("xpos.api.shifts.get_shift_payment_totals", return_value={})
+	@patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice")
+	@patch("xpos.api.shifts.frappe")
+	def test_each_cashier_has_a_row_and_untagged_invoices_are_none(self, mock_frappe, *_):
+		opening = MagicMock()
+		opening.name = "POS-OS-26-0000002"
+		opening.balance_details = []
+		mock_frappe.get_doc.return_value = opening
+		mock_frappe.get_all.return_value = [dict(row) for row in self.INVOICES]
+		mock_frappe.db.get_value.return_value = "Cash"
+
+		summary = shifts.get_shift_summary("POS-OS-26-0000002")
+
+		self.assertEqual(
+			summary["by_cashier"],
+			[
+				{"cashier": "BI", "sales_count": 1, "sales_total": 10.0, "returns_count": 0, "returns_total": 0.0},
+				{"cashier": "LE", "sales_count": 2, "sales_total": 26.35, "returns_count": 1, "returns_total": -5.0},
+				{"cashier": "(none)", "sales_count": 1, "sales_total": 7.5, "returns_count": 1, "returns_total": -1.07},
+			],
+		)
+		self.assertEqual(summary["returns_count"], 2)
+
+	def test_an_empty_shift_has_no_rows(self):
+		self.assertEqual(shifts.shift_totals_by_cashier([]), [])
+
+
 class TestOpeningFloat(unittest.TestCase):
 	"""User story (MuleCity-88ck): Leslie types 150 in the Cash box under Opening Cash Balance
 	and clicks Open Shift. The shift keeps Cash = 150 so Close Shift expects float + sales."""

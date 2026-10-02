@@ -3,7 +3,8 @@
 ## mule-v2.10.1-mc23 (unreleased)
 
 Bill's counter review of 2026-10-01 (epic MuleCity-qajl). **Migrate needed**
-(new custom fields on Sales Invoice and POS Invoice). Needs the Mule app's
+(new custom fields on Sales Invoice and POS Invoice, and `pos_notes`,
+`pos_delivery_miles` and `pos_delivery_miles_source` on the Sales Order header). Needs the Mule app's
 `xpos_delivery_customers` change (address title, line 2, state, ZIP and the
 primary/shipping flags); with an older app the picker still works but has
 nothing to preselect or search by beyond street and town.
@@ -167,6 +168,70 @@ profile is."
   sync label).
 - Tests: `statusSummary.spec.ts`, `cashierInitials.spec.ts` (initials),
   `muleWorkspace*.spec.ts` (banner, dialog by event).
+
+### Delivery on the offline receipt (MuleCity-qajl.5, XPOS half)
+
+Bill: "delivery should both be a line item on the printed receipt, but also a
+section on the receipt."
+
+- `buildReceiptHtml` prints a Delivery section after the customer, from the
+  snapshot's `delivery`: the address ("Address not recorded" when none), then
+  "Miles: 12 mi · Day: Monday, October 5, 2026". Miles read "12 mi", "12 mi,
+  typed" (miles the clerk typed) or "miles not known"; the day is the prints'
+  long style, read as a local date. Same wording as the Mule City Ticket's
+  section (Mule app `print_delivery`), so offline and online prints match.
+- The DEL line still prints with the items. A pickup sale (no `delivery` on the
+  snapshot, including snapshots queued by an older till) prints no section.
+- The receipt note keeps its line breaks.
+- New custom fields `pos_delivery_miles` (Float) and `pos_delivery_miles_source`
+  (Select: `address` | `manual`) on the **Sales Order header**, defined as on
+  Sales Invoice (read-only, `no_copy`), after `delivery_date`. **Migrate
+  needed.** The till does not fill them; the Mule app writes the miles at order
+  time on counter orders for the order slip and Work Order.
+- A delivery priced by a standing charge or a no-charge exception still keeps the
+  address's miles on the sale (`pos_delivery_miles`, source `address`) whenever
+  the address has miles: the quote carries them and `apply_delivery_facts`
+  stores what the cart sends. Pinned in `frontend/tests/delivery.spec.ts`.
+- Tests: `frontend/tests/receiptTemplate.spec.ts` ("the Delivery section").
+
+### Cashier initials on returns, and the close sheet by cashier (MuleCity-qajl.6)
+
+Bill: "we should do initials for returns as well."
+
+- Returns already asked (mc22, confirmed on staging 2026-10-01: ACC-SINV-49748,
+  `pos_cashier` BI). New vitest cases pin it: a return on the shared login is
+  blocked until the initials are on the list, and sends `is_return`,
+  `pos_cashier` and its note, online and queued offline
+  (`frontend/tests/cashierInitials.spec.ts`).
+- `get_shift_summary` reads `pos_cashier` and returns `by_cashier`: one row per
+  initials (sales count and total, returns count and total; ERPNext's
+  `grand_total`, so return totals are negative), sorted by initials, then a
+  "(none)" row for invoices saved without initials (a named login). The Close
+  Shift sheet shows it as a "By Cashier" table under Returns (return totals as
+  positive amounts). Closing is online only. An older server without
+  `by_cashier` shows no table.
+- Tests: `xpos.api.tests.test_shifts` (TestCloseSheetByCashier),
+  `frontend/tests/closingByCashier.spec.ts`.
+
+### Notes on sales, orders and returns (MuleCity-qajl.7)
+
+Bill: "we should be able to add notes to sales, orders, and returns as well."
+
+- New custom field `pos_notes` (Small Text, "POS Notes", after `delivery_date`,
+  editable after submit) on the **Sales Order header**. **Migrate needed.**
+  Same fieldname as Sales Invoice / POS Invoice and never `no_copy`, so ERPNext's
+  `make_sales_invoice` carries an order's note onto its pickup invoice.
+- The cart's note box (POS Profile `display_additional_notes`, turned on by the
+  Mule app's v9 seed) shows in return mode too. The note goes as `pos_notes` with
+  a sale, a return (its own note; the sold invoice's note is not copied) and a
+  counter order (the Mule app's `counter_checkout` puts it on each Sales Order's
+  header); XPOS's own `create_sales_order` saves it on the header too.
+- An order loaded for pickup (`loadFromInvoice`) brings its note into the box.
+- The note is trimmed; a blank note is not sent and the receipt prints nothing.
+  It rides in the invoice data, so an offline sale or return keeps it through
+  the queue, and the offline receipt prints it.
+- Tests: `frontend/tests/notes.spec.ts`, `xpos.api.tests.test_order_notes`,
+  Mule `test_counter_mix_orders` (the order's note and its slip).
 
 ## mule-v2.10.1-mc22
 

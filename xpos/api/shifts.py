@@ -34,7 +34,12 @@ SUMMARY_INVOICE_FIELDS = [
 	"is_return",
 	"customer",
 	"customer_name",
+	# Who rang it (initials on a shared login, MuleCity-fb00.2); the close sheet's per-cashier table.
+	"pos_cashier",
 ]
+
+#: The per-cashier row for invoices saved without initials (a named login, or before initials).
+NO_CASHIER = "(none)"
 
 
 def resolve_cash_mode_of_payment(pos_profile: str | None) -> str:
@@ -491,6 +496,7 @@ def get_shift_summary(opening_shift: str):
 	tax_summary = _get_shift_tax_summary(invoices, doctype)
 
 	return {
+		"by_cashier": shift_totals_by_cashier(invoices),
 		"total_invoices": len(invoices),
 		"grand_total": grand_total,
 		"net_total": net_total,
@@ -512,6 +518,26 @@ def get_shift_summary(opening_shift: str):
 			for inv in invoices
 		],
 	}
+
+
+def shift_totals_by_cashier(invoices) -> list[dict]:
+	"""Sales and returns per cashier for the close sheet (Bill 2026-10-01, MuleCity-qajl.6).
+
+	One row per ``pos_cashier`` (initials typed on the shared login), sorted by
+	initials, then a ``(none)`` row for invoices saved without them. Totals are
+	ERPNext's ``grand_total``, so a return's total is negative.
+	"""
+	rows: dict[str, dict] = {}
+	for inv in invoices:
+		cashier = (row_value(inv, "pos_cashier") or "").strip() or NO_CASHIER
+		row = rows.setdefault(
+			cashier,
+			{"cashier": cashier, "sales_count": 0, "sales_total": 0.0, "returns_count": 0, "returns_total": 0.0},
+		)
+		kind = "returns" if row_value(inv, "is_return", 0) else "sales"
+		row[f"{kind}_count"] += 1
+		row[f"{kind}_total"] = flt(row[f"{kind}_total"] + flt(row_value(inv, "grand_total", 0)), 2)
+	return sorted(rows.values(), key=lambda row: (row["cashier"] == NO_CASHIER, row["cashier"]))
 
 
 def attach_tender_currencies(data: dict, profile_doc):
