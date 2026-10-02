@@ -77,7 +77,13 @@
 				v-for="row in result?.rows ?? []"
 				:key="row.name"
 				class="p-3 sm:p-4"
-				:class="row.readiness === 'ready' ? 'border-emerald-500/70 bg-emerald-500/5' : ''"
+				:class="
+					row.readiness === 'ready'
+						? 'border-emerald-500/70 bg-emerald-500/5'
+						: row.readiness === 'delivered'
+							? 'border-sky-500/60 bg-sky-500/5'
+							: ''
+				"
 				data-testid="open-order"
 				:data-readiness="row.readiness"
 			>
@@ -85,7 +91,11 @@
 					<div class="min-w-0 flex-1">
 						<div class="flex flex-wrap items-center gap-2 mb-1">
 							<span class="font-semibold text-sm text-foreground">{{ row.customer_name || row.customer }}</span>
-							<Badge :variant="row.readiness === 'ready' ? 'success' : 'secondary'" class="text-[10px]">
+							<Badge
+								:variant="row.readiness === 'ready' ? 'success' : 'secondary'"
+								:class="['text-[10px]', row.readiness === 'delivered' && 'bg-sky-500/15 text-sky-700 dark:text-sky-400']"
+								data-testid="open-order-readiness"
+							>
 								{{ __(readinessLabel(row.readiness)) }}
 							</Badge>
 						</div>
@@ -96,6 +106,13 @@
 							<template v-if="row.advance_paid"> · {{ __("Paid {0}", [money(row.advance_paid)]) }}</template>
 						</p>
 						<p v-if="row.progress" class="text-xs text-muted-foreground">{{ __(row.progress) }}</p>
+						<p
+							v-if="pickupBlockedReason(row)"
+							class="text-xs font-semibold text-sky-700 dark:text-sky-400"
+							data-testid="open-order-blocked"
+						>
+							{{ __(pickupBlockedReason(row)) }}
+						</p>
 					</div>
 					<a
 						class="text-sm text-primary underline"
@@ -107,8 +124,14 @@
 					<Button
 						size="sm"
 						data-testid="open-order-load"
-						:disabled="busy || !cartStore.isEmpty || !offline.isOnline"
-						:title="!offline.isOnline ? __('Loading an order needs the internet') : undefined"
+						:disabled="busy || !cartStore.isEmpty || !offline.isOnline || !!pickupBlockedReason(row)"
+						:title="
+							pickupBlockedReason(row)
+								? __(pickupBlockedReason(row))
+								: !offline.isOnline
+									? __('Loading an order needs the internet')
+									: undefined
+						"
 						@click="pickup(row)"
 					>
 						{{ __("Load for payment") }}
@@ -142,7 +165,7 @@ import { useOfflineStore } from "@/stores/offlineStore";
 import { useOpenOrdersStore } from "@/stores/openOrdersStore";
 import { useMoney } from "@/composables/useMoney";
 import { call, showInfo } from "@/services/api";
-import { fetchedAtText, readinessLabel, type OpenOrder, type OrdersResult } from "@/utils/openOrders";
+import { fetchedAtText, pickupBlockedReason, readinessLabel, type OpenOrder, type OrdersResult } from "@/utils/openOrders";
 import __ from "@/lib/translate";
 
 const route = useRoute();
@@ -197,7 +220,7 @@ function showCustomer() {
 
 /** The same steps as the Mule City dialog: the server maps the order (pickup, advances), the cart loads it. */
 async function pickup(row: OpenOrder) {
-	if (!cartStore.isEmpty) return;
+	if (!cartStore.isEmpty || pickupBlockedReason(row)) return;
 	busy.value = true;
 	error.value = "";
 	try {

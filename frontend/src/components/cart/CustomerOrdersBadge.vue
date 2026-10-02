@@ -46,12 +46,15 @@ const fetchedAt = computed(() => known.value?.fetchedAt ?? 0);
 const text = computed(() => {
 	const s = summary.value!;
 	if (s.ready) return s.ready === 1 ? __("1 ready") : __("{0} ready", [s.ready]);
-	return s.inFlight === 1 ? __("1 order") : __("{0} orders", [s.inFlight]);
+	const orders = s.inFlight === 1 ? __("1 order") : __("{0} orders", [s.inFlight]);
+	// Delivered on a Delivery Note: shown, never as ready (billed at the desk, MuleCity-x4kb).
+	return s.delivered ? orders + " · " + __("{0} delivered", [s.delivered]) : orders;
 });
 const title = computed(() => {
 	const s = summary.value!;
 	const parts = [__("{0} in flight", [s.inFlight])];
 	if (s.ready) parts.push(__("{0} ready for pickup", [s.ready]));
+	if (s.delivered) parts.push(__("{0} delivered, to bill at the desk", [s.delivered]));
 	if (!live.value) parts.push(__("last known, as of {0}", [fetchedAtText(fetchedAt.value)]));
 	return parts.join(" · ") + " — " + __("open their orders");
 });

@@ -22,9 +22,11 @@ export interface OpenOrder {
 	status?: string;
 	per_billed?: number;
 	per_delivered?: number;
-	/** draft | ready | in_production | partly_picked_up | open */
+	/** draft | delivered | ready | in_production | partly_picked_up | open */
 	readiness?: string;
 	progress?: string;
+	/** Submitted Delivery Notes against it (readiness "delivered"). */
+	delivery_notes?: string[];
 }
 
 export interface OrdersResult {
@@ -64,11 +66,27 @@ export function customerRowsFromAll(all: OrdersResult | null, customer: string):
 
 export interface OrdersSummary {
 	inFlight: number;
+	/** Ready for pickup only: a delivered order is never "ready" (it is billed at the desk). */
 	ready: number;
+	delivered: number;
 }
 
 export function summarizeOrders(rows: OpenOrder[]): OrdersSummary {
-	return { inFlight: rows.length, ready: rows.filter((row) => row.readiness === "ready").length };
+	const count = (key: string) => rows.filter((row) => row.readiness === key).length;
+	return { inFlight: rows.length, ready: count("ready"), delivered: count("delivered") };
+}
+
+/**
+ * Why the till cannot load this order for payment, or "" when it can. A delivered
+ * order (all or part, on a Delivery Note) is billed from the note at the desk: the
+ * till's pickup invoice moves stock and would move it twice (MuleCity-x4kb).
+ */
+export function pickupBlockedReason(row: OpenOrder): string {
+	if (row.readiness !== "delivered") return "";
+	const notes = (row.delivery_notes ?? []).join(", ");
+	return notes
+		? `Already delivered on ${notes}; bill it from the Delivery Note at the desk.`
+		: "Already delivered; bill it from the Delivery Note at the desk.";
 }
 
 /** "Ready for pickup" stands out; the rest say how far along they are. */
@@ -76,6 +94,8 @@ export function readinessLabel(readiness: string | undefined): string {
 	switch (readiness) {
 		case "ready":
 			return "Ready for pickup";
+		case "delivered":
+			return "Delivered — not billed";
 		case "in_production":
 			return "With the mill";
 		case "partly_picked_up":
