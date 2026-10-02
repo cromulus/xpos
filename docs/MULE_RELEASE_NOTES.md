@@ -16,6 +16,20 @@
 - **Tests.** `localDate.spec.ts` runs in `America/New_York` and first asserts
   the old parse shows Sep 30.
 
+### Saved dates are the till's day, not UTC's (MuleCity-jh8j, coordinator)
+
+- **Expense, Bank Drop, purchase invoices and the desktop opening shift saved
+  tomorrow's date after 8pm Eastern.** They took "today" from
+  `new Date().toISOString().slice(0, 10)`, which is the UTC day. They now use
+  `nowDate()` (`utils/datetime`), the same as the cart's `posting_date`: the
+  boot's user or system time zone, else the browser's. Also the date pickers'
+  Today/Now (`DateTimePicker`, `DateTimeInput`) and the offline pricing
+  engine's validity date. The desktop (Electron) SQLite fallbacks for
+  posting/opening dates use the machine's local day (`localToday`). Download
+  file names still use UTC (nothing saved).
+- **Tests.** `savedDatesLocal.spec.ts` runs at 21:00 America/New_York (UTC
+  already Oct 2) and fails on the old code.
+
 ### The cart's mix check answers in amber (MuleCity-ra6h follow-up)
 
 - "Can't order yet: Short ingredients ..." and a mix with no price are the

@@ -8,6 +8,7 @@
  */
 
 import { getCachedPricingRules } from "@/services/dbBridge";
+import { nowDate } from "@/utils/datetime";
 
 export interface PricingRuleSnapshot {
 	name: string;
@@ -135,7 +136,7 @@ function round(value: number, precision = 2): number {
 }
 
 function today(): string {
-	return new Date().toISOString().slice(0, 10);
+	return nowDate();
 }
 
 export async function loadPricingRuleSnapshot(posProfile: string): Promise<PricingRuleSnapshot[]> {

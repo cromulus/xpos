@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nowDate } from "@/utils/datetime";
 import { ref, onMounted, computed, reactive, watch } from "vue";
 import { useRouter } from "vue-router";
 import { usePurchaseStore } from "@/stores/purchaseStore";
@@ -36,7 +37,7 @@ const posStore = usePosStore();
 const { money, qty, percent, decimal } = useMoney();
 
 function today(): string {
-	return new Date().toISOString().split("T")[0];
+	return nowDate();
 }
 
 interface InvoiceItem {

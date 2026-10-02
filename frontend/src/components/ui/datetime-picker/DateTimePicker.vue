@@ -4,6 +4,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock, X } from "lucide-vue-ne
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContentStyled } from "@/components/ui/popover";
 import { __, cn } from "@/lib/utils";
+import { nowDate } from "@/utils/datetime";
 
 type DateTimeMode = "date" | "time" | "datetime";
 
@@ -309,7 +310,7 @@ const calendarDays = computed((): CalendarDay[] => {
 		startDow = startDow === 0 ? 6 : startDow - 1;
 	}
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = nowDate();
 	const days: CalendarDay[] = [];
 
 	const prevMonthLast = new Date(year, month, 0).getDate();
@@ -524,7 +525,7 @@ function setNow() {
 	validationError.value = "";
 	const now = new Date();
 	if (props.mode !== "time") {
-		selectedDate.value = now.toISOString().slice(0, 10);
+		selectedDate.value = nowDate();
 		viewYear.value = now.getFullYear();
 		viewMonth.value = now.getMonth();
 	}
@@ -537,7 +538,7 @@ function setNow() {
 function setToday() {
 	validationError.value = "";
 	const now = new Date();
-	selectedDate.value = now.toISOString().slice(0, 10);
+	selectedDate.value = nowDate();
 	viewYear.value = now.getFullYear();
 	viewMonth.value = now.getMonth();
 	emitValue();

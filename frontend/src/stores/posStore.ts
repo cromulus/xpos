@@ -19,6 +19,7 @@ import {
 	type ReceiptContext,
 } from "@/types/pos.types";
 import { isOnline } from "@/utils";
+import { nowDate } from "@/utils/datetime";
 import { initialsRequiredFor, normalizeInitials } from "@/utils/cashierInitials";
 import { useAuthStore } from "@/stores/authStore";
 import { symbolFor } from "@/composables/useCurrency";
@@ -398,7 +399,7 @@ export const usePosStore = defineStore("pos", () => {
 					pos_profile: profileName,
 					company: companyName,
 					user: authStore.userName,
-					opening_date: new Date().toISOString().slice(0, 10),
+					opening_date: nowDate(),
 					opening_amounts: balanceDetails,
 				});
 				const result = (await window.electronAPI!.db.checkOpenShift(

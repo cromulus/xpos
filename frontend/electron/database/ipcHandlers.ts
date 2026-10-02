@@ -25,6 +25,16 @@ import { packCustomerRows, unpackCustomerRow } from "./customerRows";
 
 const log = createLogger("DB-IPC");
 
+/**
+ * Today on this machine's calendar, YYYY-MM-DD (MuleCity-jh8j). `toISOString()`
+ * is UTC: after 8pm US Eastern it is already tomorrow, and a saved date moved
+ * a day ahead.
+ */
+function localToday(): string {
+	const now = new Date();
+	return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 const DEFAULT_LOCAL_SEARCH_COLUMNS = ["item_code", "item_name", "local_item_name", "description"];
 const SAFE_COLUMN = /^[a-z_][a-z0-9_]*$/;
 
@@ -970,7 +980,7 @@ export function registerDbHandlers(): void {
 				shift.pos_profile,
 				shift.user,
 				shift.company,
-				shift.opening_date || new Date().toISOString().slice(0, 10),
+				shift.opening_date || localToday(),
 			],
 		);
 		const shiftId = result.insertId;
@@ -1126,8 +1136,8 @@ export function registerDbHandlers(): void {
 				entry.user,
 				entry.company,
 				openingEntryId,
-				entry.posting_date || entry.closing_date || new Date().toISOString().slice(0, 10),
-				entry.period_end_date || entry.posting_date || new Date().toISOString().slice(0, 10),
+				entry.posting_date || entry.closing_date || localToday(),
+				entry.period_end_date || entry.posting_date || localToday(),
 			],
 		);
 		const payments = entry.payment_details as
@@ -1200,7 +1210,7 @@ export function registerDbHandlers(): void {
 				invoice.customer,
 				invoice.customer_name,
 				invoice.pos_profile,
-				invoice.posting_date || new Date().toISOString().slice(0, 10),
+				invoice.posting_date || localToday(),
 				invoice.grand_total || 0,
 				invoice.net_total || 0,
 				invoice.total_taxes_and_charges || 0,
@@ -1406,7 +1416,7 @@ export function registerDbHandlers(): void {
 			[
 				expense.expense_type || expense.to_account || "General",
 				expense.amount || 0,
-				expense.posting_date || new Date().toISOString().slice(0, 10),
+				expense.posting_date || localToday(),
 				expense.description || expense.remarks || null,
 				expense.user || expense.owner || null,
 				openingEntryId,
@@ -1475,7 +1485,7 @@ export function registerDbHandlers(): void {
 			[
 				drop.mode_of_payment || drop.to_account || "Cash",
 				drop.amount || 0,
-				drop.posting_date || new Date().toISOString().slice(0, 10),
+				drop.posting_date || localToday(),
 				drop.description || drop.remarks || null,
 				drop.user || drop.owner || null,
 				openingEntryId,
@@ -1594,7 +1604,7 @@ export function registerDbHandlers(): void {
 				localId,
 				quotation.customer,
 				quotation.customer_name,
-				quotation.posting_date || new Date().toISOString().slice(0, 10),
+				quotation.posting_date || localToday(),
 				quotation.grand_total || 0,
 				quotation.net_total || 0,
 				quotation.status || "Draft",
