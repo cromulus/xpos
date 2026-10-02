@@ -182,3 +182,37 @@ it("opens online payment for a capped pickup when offline preparation returns un
   expect(cart.showPaymentDialog).toBe(true);
   expect(vi.mocked(call).mock.calls.some(([method]) => method === 'mulecity_erpnext.vfd_offline.prepare')).toBe(true);
 });
+
+/**
+ * mc33 offline-reload (erp2, 2026-10-02): Pay pressed just after choosing a buyer,
+ * while their tax was still loading, was dropped and nothing opened. It now waits
+ * for the tax to settle; a failed tax lookup still keeps payment closed.
+ */
+describe("Pay while the buyer's tax is loading", () => {
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		vi.mocked(call).mockReset();
+		server(() => Promise.resolve(PREVIEW));
+	});
+
+	it("opens once the tax settles", async () => {
+		const cart = await depositorCart();
+		cart.muleTaxPending = true;
+		const opening = cart.openPaymentDialog();
+		await nextTick();
+		expect(cart.showPaymentDialog).toBe(false);
+		cart.muleTaxPending = false;
+		await opening;
+		expect(cart.showPaymentDialog).toBe(true);
+	});
+
+	it("stays closed when the tax lookup failed", async () => {
+		const cart = await depositorCart();
+		cart.muleTaxPending = true;
+		const opening = cart.openPaymentDialog();
+		cart.muleTaxError = "Tax lookup failed.";
+		cart.muleTaxPending = false;
+		await opening;
+		expect(cart.showPaymentDialog).toBe(false);
+	});
+});

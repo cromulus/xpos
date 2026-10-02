@@ -29,6 +29,23 @@
   `offline-cold-start.cy.ts` starts offline on the walk-in, finds it by
   "walk", sells for cash and checks the sale posts to it.
 
+### Pay waits for the buyer's tax (mc33 erp2 offline run, 2026-10-02)
+
+- **Pay pressed while the buyer's tax is still loading now opens once it
+  settles.** Before, `openPaymentDialog` returned without a word while the
+  tax context was pending (just after choosing a customer; offline the
+  server call has to fail first). The Pay button is disabled then, but the
+  Pay key and the `xpos:process-payment` event were dropped. One erp2 run of
+  the merged mc33 failed `offline-reload.cy.ts` this way (Pay never opened; a
+  rerun of the same build passed). A failed tax lookup still keeps payment
+  closed.
+
+### Deploying this build
+
+- **Reload each till once after the update.** The old service-worker cache
+  is purged on the load after the new worker activates, not on the first
+  load. Until that second load the old cache is still on the device.
+
 ## mule-v2.10.1-mc32 (2026-10-02, staging)
 
 ### No fixed-name file under /assets, and no logged-in page in the precache (MuleCity-68mo, staging audit 2026-10-02)

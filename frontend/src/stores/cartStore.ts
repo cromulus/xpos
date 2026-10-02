@@ -1639,7 +1639,20 @@ export const useCartStore = defineStore("cart", () => {
 		serverPreviewError.value = message;
 	}
 
+	/** Resolves once the buyer's tax context has settled (or after `ms`). */
+	function taxSettled(ms = 20000): Promise<void> {
+		if (!muleTaxPending.value) return Promise.resolve();
+		return new Promise((resolve) => {
+			const timer = setTimeout(done, ms);
+			const stop = watch(muleTaxPending, (pending) => { if (!pending) done(); });
+			function done() { clearTimeout(timer); stop(); resolve(); }
+		});
+	}
+
 	async function openPaymentDialog(): Promise<void> {
+		// Pay pressed (key or event) while the buyer's tax is still loading, e.g. just after
+		// choosing them offline: wait for it rather than drop the press (mc33 offline-reload).
+		if (muleTaxPending.value) await taxSettled();
 		if (muleTaxPending.value || muleTaxError.value || serverPreviewPending.value) return;
 		if (hasOrderLines.value) {
 			await openMixOrderPayment();
