@@ -17,6 +17,7 @@ import { flushPromises, mount, shallowMount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { defineComponent, h } from "vue";
 import type { InvoiceData, XposCashier } from "@/types/pos.types";
+import { initialsOf, tillInitials } from "@/utils/cashierInitials";
 
 const mocks = vi.hoisted(() => ({
 	online: true,
@@ -275,5 +276,22 @@ describe("Pay with cashier initials", () => {
 		await saveOnly(wrapper);
 		expect(sentPayload()).not.toHaveProperty("pos_cashier");
 		wrapper.unmount();
+	});
+});
+
+/** Bill 2026-10-01 (MuleCity-qajl.1): "we do need the initials of the current user where the profile is." */
+
+describe("initials in the top bar's avatar", () => {
+	it("a named login shows its own initials", () => {
+		expect(initialsOf("Leslie Ann Smith")).toBe("LS");
+		expect(initialsOf("bill cromie")).toBe("BC");
+		expect(initialsOf("Administrator")).toBe("A");
+		expect(initialsOf("  ")).toBe("");
+		expect(initialsOf(null)).toBe("");
+		expect(tillInitials(false, "LE", "Madison Brown")).toBe("MB");
+	});
+	it("the shared register login shows the initials last accepted at Pay, a neutral mark before the first sale", () => {
+		expect(tillInitials(true, "", "Mule City Register")).toBe("");
+		expect(tillInitials(true, " le ", "Mule City Register")).toBe("LE");
 	});
 });
