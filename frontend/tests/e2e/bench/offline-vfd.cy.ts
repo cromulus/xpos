@@ -43,6 +43,7 @@ describe('the medicated pickup sold before expiry reconnects later', () => {
       cy.networkOff();
       cy.queueInvoice({ local_id: data.local_id, data, status: 'pending', retry_count: 0,
         customer_name: data.customer, created_at: new Date().toISOString() });
+      cy.pendingInvoices().should('have.length', 1);
       cy.networkOn();
       waitUntil(queueState, rows => rows.length === 0, 'duplicate VFD pickup replay');
       cy.benchCall('frappe.client.get_list', { doctype: 'Sales Invoice', filters,

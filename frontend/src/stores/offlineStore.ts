@@ -97,10 +97,13 @@ export const useOfflineStore = defineStore("offline", () => {
 		stopPeriodicSync();
 	}
 
-	function handleOnline() {
+	async function handleOnline() {
 		isOnline.value = true;
 		showSuccess(__("Internet connection restored"));
 
+		// Recount first: a sale queued just before reconnecting may not be counted
+		// yet (the count refresh is async), and a stale 0 would skip this sync.
+		await refreshPendingCount();
 		if (offlineModeEnabled.value && pendingCount.value > 0) {
 			syncPendingInvoices();
 		}
