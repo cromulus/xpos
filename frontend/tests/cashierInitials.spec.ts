@@ -265,6 +265,65 @@ describe("Pay with cashier initials", () => {
 		wrapper.unmount();
 	});
 
+	/**
+	 * Bill (2026-10-01, MuleCity-qajl.6): "we should do initials for returns as well."
+	 * A return on the shared login goes through the same Pay dialog: it cannot be
+	 * saved without listed initials, and the return carries them as pos_cashier.
+	 */
+	function ringUpReturn() {
+		const cart = ringUp(true);
+		cart.items[0].qty = -1;
+		cart.enterReturnMode("ACC-SINV-2026-00001", ["LAYER-PELLET"]);
+		cart.orderNotes = "Torn bag";
+		return cart;
+	}
+
+	it("a return asks for initials, is blocked until they are on the list, and sends them", async () => {
+		ringUpReturn();
+		const wrapper = await openPay();
+
+		expect(wrapper.findComponent(CashierInitialsField).exists()).toBe(true);
+		expect(saveButton(wrapper).attributes("disabled")).toBe("true");
+
+		await type(wrapper, "zz");
+		expect(saveButton(wrapper).attributes("disabled")).toBe("true");
+
+		await type(wrapper, "le");
+		expect(saveButton(wrapper).attributes("disabled")).toBe("false");
+
+		await saveOnly(wrapper);
+		const sent = sentPayload();
+		expect([sent.is_return, sent.return_against, sent.pos_cashier, sent.pos_notes]).toEqual([
+			true,
+			"ACC-SINV-2026-00001",
+			"LE",
+			"Torn bag",
+		]);
+		wrapper.unmount();
+	});
+
+	it("negative: a return with no initials is never sent", async () => {
+		ringUpReturn();
+		const wrapper = await openPay();
+		await saveOnly(wrapper);
+		expect(mocks.call.mock.calls.some(([method]) => method === "xpos.api.invoices.create_invoice")).toBe(false);
+		wrapper.unmount();
+	});
+
+	it("keeps the initials and the note on a return queued while offline", async () => {
+		ringUpReturn();
+		mocks.online = false;
+		const wrapper = await openPay();
+		await type(wrapper, "LE");
+
+		await saveOnly(wrapper);
+
+		expect(mocks.completeOfflineSale).toHaveBeenCalledTimes(1);
+		const queued = (mocks.completeOfflineSale.mock.calls[0] as unknown[])[0] as InvoiceData;
+		expect([queued.is_return, queued.pos_cashier, queued.pos_notes]).toEqual([true, "LE", "Torn bag"]);
+		wrapper.unmount();
+	});
+
 	it("is not shown to a named login, which pays without initials", async () => {
 		ringUp(true, NAMED_LOGIN);
 		const wrapper = await openPay();

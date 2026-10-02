@@ -81,6 +81,53 @@
 						</Card>
 					</div>
 
+					<div v-if="summary.by_cashier?.length" data-testid="close-by-cashier">
+						<h3 class="text-sm font-semibold text-foreground mb-2">
+							{{ __("By Cashier") }}
+						</h3>
+						<div class="border border-border rounded-lg overflow-hidden">
+							<div class="overflow-x-auto">
+								<table class="w-full text-sm">
+									<thead class="bg-muted">
+										<tr>
+											<th class="text-start px-4 py-2 text-muted-foreground font-medium">
+												{{ __("Cashier") }}
+											</th>
+											<th class="text-end px-4 py-2 text-muted-foreground font-medium">
+												{{ __("Sales") }}
+											</th>
+											<th class="text-end px-4 py-2 text-muted-foreground font-medium">
+												{{ __("Sales Total") }}
+											</th>
+											<th class="text-end px-4 py-2 text-muted-foreground font-medium">
+												{{ __("Returns") }}
+											</th>
+											<th class="text-end px-4 py-2 text-muted-foreground font-medium">
+												{{ __("Returns Total") }}
+											</th>
+										</tr>
+									</thead>
+									<tbody>
+										<tr
+											v-for="row in summary.by_cashier"
+											:key="row.cashier"
+											class="border-t border-border"
+											data-testid="close-by-cashier-row"
+										>
+											<td class="px-4 py-2 font-medium text-foreground">{{ row.cashier }}</td>
+											<td class="px-4 py-2 text-end">{{ row.sales_count }}</td>
+											<td class="px-4 py-2 text-end">{{ money(row.sales_total ?? 0) }}</td>
+											<td class="px-4 py-2 text-end">{{ row.returns_count }}</td>
+											<td class="px-4 py-2 text-end">
+												{{ row.returns_count ? money(Math.abs(row.returns_total ?? 0)) : "" }}
+											</td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+						</div>
+					</div>
+
 					<div v-if="summary.tax_summary?.length">
 						<h3 class="text-sm font-semibold text-foreground mb-2">
 							{{ __("Tax Breakdown") }}
@@ -230,7 +277,7 @@ import { useMoney } from "@/composables/useMoney";
 import { showSuccess, showError } from "@/services/api";
 import { hasPermission } from "@/services/userRights";
 import { formatFor, precisionFor, roundFor } from "@/composables/useCurrency";
-import type { POSClosingShiftTax, ShiftModeTotal } from "@/types/pos.types";
+import type { POSClosingShiftTax, ShiftCashierTotals, ShiftModeTotal } from "@/types/pos.types";
 import {
 	Dialog,
 	DialogScrollContent,
@@ -254,6 +301,8 @@ interface ClosingSummary {
 	expected_amounts?: Record<string, ShiftModeTotal>;
 	// get_shift_summary returns each tax row's total under `amount`.
 	tax_summary?: POSClosingShiftTax[];
+	// Sales and returns per cashier initials, "(none)" last (MuleCity-qajl.6).
+	by_cashier?: ShiftCashierTotals[];
 	[key: string]: unknown;
 }
 

@@ -878,11 +878,23 @@ export interface ShiftModeTotal {
 	currency: string;
 }
 
+/** One cashier's sales and returns in a shift (get_shift_summary by_cashier, MuleCity-qajl.6). */
+export interface ShiftCashierTotals {
+	/** The initials typed at Pay, or "(none)" for invoices saved without them. */
+	cashier: string;
+	sales_count: number;
+	sales_total: number;
+	returns_count: number;
+	/** ERPNext's grand_total: negative for returns. */
+	returns_total: number;
+}
+
 export interface ShiftSummary {
 	net_total: number;
 	grand_total: number;
 	total_invoices: number;
 	returns_count: number;
+	by_cashier?: ShiftCashierTotals[];
 	payment_summary: Record<string, ShiftModeTotal>;
 	opening_balances: Record<string, ShiftModeTotal>;
 	expected_amounts: Record<string, ShiftModeTotal>;
