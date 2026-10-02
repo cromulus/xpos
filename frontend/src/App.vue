@@ -189,7 +189,7 @@ import { isElectron } from "@/services/electronBridge";
 import ErrorInspector from "@/components/errors/ErrorInspector.vue";
 import { unseenCount as errorUnseenCount } from "@/services/errorLog";
 import { get_full_url } from "@/utils";
-import { getCustomer } from "./utils";
+import { selectDefaultCustomer } from "@/services/defaultCustomer";
 
 const route = useRoute();
 const posStore = usePosStore();
@@ -233,10 +233,7 @@ function confirmClearCart() {
 
 async function doClearCart() {
 	cartStore.clearCart();
-	if (!cartStore.customer && posStore.defaultCustomer) {
-		const customer = await getCustomer(posStore.defaultCustomer);
-		cartStore.setCustomer(customer as any);
-	}
+	await selectDefaultCustomer();
 }
 
 function handleProcessPayment() {
@@ -465,10 +462,8 @@ watch(
 			cartStore.clearAll();
 		}
 		if (ready && !wasReady) {
-			if (!cartStore.customer && posStore.defaultCustomer) {
-				const customer = await getCustomer(posStore.defaultCustomer);
-				cartStore.setCustomer(customer as any);
-			}
+			// From the till's cache when offline (MuleCity-yn4b).
+			await selectDefaultCustomer();
 		}
 	},
 );

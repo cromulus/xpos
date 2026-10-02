@@ -3,6 +3,7 @@ import { useOfflineStore } from "@/stores/offlineStore";
 import { usePosStore } from "@/stores/posStore";
 import { usePrintInvoice } from "@/composables/usePrintInvoice";
 import { showInfo } from "@/services/api";
+import { selectDefaultCustomer } from "@/services/defaultCustomer";
 import type { InvoiceData } from "@/types/pos.types";
 import { __ } from "@/lib/translate";
 
@@ -43,6 +44,8 @@ export function useOfflineSale() {
 		showInfo(__("Invoice saved offline ({0}). It will sync when you're back online.", [name]));
 
 		cartStore.clearAll();
+		// The walk-in's full row (its tax category) for the next sale (MuleCity-yn4b).
+		void selectDefaultCustomer();
 		if (options.withPrint) {
 			await printReceiptOffline({ ...receipt, name });
 		}

@@ -61,9 +61,10 @@ class TestGetCustomers(unittest.TestCase):
 		# Verify search term is in the query parameters
 		self.assertIn("John", str(call_args))
 
+	@patch("xpos.api.customers._profile_walk_ins", return_value=[])
 	@patch("xpos.api.customers._get_child_groups")
 	@patch("xpos.api.customers.frappe")
-	def test_get_customers_respects_pos_profile_groups(self, mock_frappe, mock_get_groups):
+	def test_get_customers_respects_pos_profile_groups(self, mock_frappe, mock_get_groups, _walk_ins):
 		"""Test that customer search respects POS profile customer groups."""
 		mock_pos = MagicMock()
 		mock_pos.get.return_value = [SimpleNamespace(customer_group="Retail")]

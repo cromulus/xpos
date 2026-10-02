@@ -128,6 +128,7 @@ def get_customers(
 			values["company"] = profile.company
 			order_by = f"history.{metrics[ranking]} DESC, {order_by}"
 
+	walk_ins = _profile_walk_ins(profile) if pos_profile else []
 	if pos_profile:
 		try:
 			pos = frappe.get_cached_doc("POS Profile", pos_profile)
@@ -144,7 +145,13 @@ def get_customers(
 					for idx, g in enumerate(allowed_groups):
 						group_params[f"grp_{idx}"] = g
 					in_clause = ", ".join([f"%(grp_{i})s" for i in range(len(allowed_groups))])
-					conditions += f" AND c.customer_group IN ({in_clause})"
+					# The walk-in account sits outside the sale groups (Mule City keeps it under
+					# its internal references), yet the till sells to it, offline too (MuleCity-yn4b).
+					if walk_ins:
+						conditions += f" AND (c.customer_group IN ({in_clause}) OR c.name IN %(walk_ins)s)"
+						values["walk_ins"] = walk_ins
+					else:
+						conditions += f" AND c.customer_group IN ({in_clause})"
 					values.update(group_params)
 		except Exception:
 			pass
@@ -208,14 +215,39 @@ def get_customers(
 		values,
 		as_dict=True,
 	)
+	complete = not limit_sql or len(customers) <= selected_limit
+	if cint(with_metadata) and not complete:
+		customers = customers[:selected_limit]
+	if pos_profile and cint(preload) and not search_term:
+		# A capped preload still carries the walk-in: the till starts offline on it (MuleCity-yn4b).
+		listed = {row["name"] for row in customers}
+		missing = [name for name in walk_ins if name not in listed]
+		if missing:
+			customers.extend(frappe.db.sql(  # nosemgrep: frappe-sql-format-injection — same validated columns as above, values parameterized
+				f"""
+				SELECT {list_columns} {extra_columns}
+				FROM `tabCustomer` c
+				WHERE c.disabled = 0 AND c.name IN %(missing)s
+				ORDER BY c.customer_name ASC, c.name ASC
+				""",
+				{"missing": missing},
+				as_dict=True,
+			))
 	_enrich_picker_customers(customers, profile.company if pos_profile else None)
 	for customer in customers:
 		customer["xpos_search_description"] = _search_description(customer, extra_fields)
 
 	if cint(with_metadata):
-		complete = not limit_sql or len(customers) <= selected_limit
-		return {"customers": customers if complete else customers[:selected_limit], "complete": complete}
+		return {"customers": customers, "complete": complete}
 	return customers
+
+
+def _profile_walk_ins(profile) -> list[str]:
+	"""The profile's default customer and the site's walk-in accounts (``xpos_walk_in_customers``)."""
+	names = set(walk_in_customers())
+	if profile.get("customer"):
+		names.add(profile.get("customer"))
+	return sorted(names)
 
 
 def _enrich_picker_customers(customers, company):

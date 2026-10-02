@@ -1,5 +1,34 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc33 (unreleased)
+
+### Walk-in cash sales offline (MuleCity-yn4b, mc31 staging check 2026-10-02)
+
+- **The walk-in account reaches the offline customer cache.** On staging the
+  POS Profile "Mule City Retail" syncs only the "Mule City Customers" group,
+  while its default customer, "Walk-In Customer", sits under "Mule City
+  Internal References". `get_customers` applied the group filter to it, so the
+  till never cached it, and offline the search could not find it. The group
+  filter now lets through the profile's default customer and the site's
+  walk-in accounts (`xpos_walk_in_customers`, i.e. Mule City's FilePro 338),
+  if enabled, and nothing else from outside the groups. A preload that the
+  profile's cap cuts short still carries them. Online search finds them too.
+- **An offline start is on the walk-in customer.** The till put the profile's
+  default customer on the cart by asking the server (`frappe.client.get`), at
+  start and on "clear cart"; offline that call failed and the cart had no
+  customer. Start, clear cart, clear customer and the ticket after an offline
+  sale now share one helper (`services/defaultCustomer.ts`): the customer by
+  ID at once, then its full row (tax category, group, territory) from the
+  till's cache, from the server only when online.
+- **Unchanged:** walk-in customers still get no delivery (mc23).
+- **A till that cached customers before this build** gets the walk-in at its
+  next online start or sync.
+- **Tests.** Python `test_walk_in_cache` (a profile restricted to one group,
+  capped at one customer, as a cashier-only login); vitest
+  `walkInOffline.spec.ts` (the IndexedDB cache, offline); the bench story
+  `offline-cold-start.cy.ts` starts offline on the walk-in, finds it by
+  "walk", sells for cash and checks the sale posts to it.
+
 ## mule-v2.10.1-mc31 (unreleased)
 
 ### Offline starts run this build's code, and a page the server sent keeps the till (MuleCity-q8aq, mc30 staging walk 2026-10-02)

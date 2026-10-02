@@ -25,6 +25,12 @@
  *   switch for a page does not cover its worker): the worker returns the server's page, whose
  *   calls then fail. It must carry on as the till, not drop to the login.
  *
+ * MuleCity-yn4b (mc31 staging, pos@, 2026-10-02): started offline in a new tab, the till had no
+ * customer and its search did not find "Walk-In Customer" (the profile syncs only its sale group;
+ * the walk-in sits outside it), so the test sale went to a named customer. A walk-in cash sale
+ * must work offline: the cold start is on the profile's walk-in, "walk" finds it, the sale queues
+ * and posts to it on reconnect, and it is never offered a delivery.
+ *
  * Runs against a real bench (tests/e2e/bench/README.md).
  */
 import {
@@ -35,6 +41,7 @@ import {
 	internetBackAndSynced,
 	internetDown,
 	item,
+	payWithEnter,
 	restoreNetworkAfterEach,
 	ringUpOneBag,
 	savedBoot,
@@ -121,6 +128,63 @@ describe("starting the till while the store's internet is down", () => {
 				customerInvoices().then((after: Array<{ name: string }>) => {
 					expect(after.filter((i) => !known.has(i.name)), "the offline sale posted").to.have.length(1);
 				});
+			});
+		});
+
+		it(`opens ${entry} offline on the walk-in customer, finds it by "walk", and its cash sale syncs to it`, function () {
+			cy.benchCall("frappe.client.get_value", {
+				doctype: "POS Profile",
+				filters: Cypress.env("profile"),
+				fieldname: "customer",
+			}).then((profile: { customer?: string } | null) => {
+				if (!profile?.customer) this.skip();
+				const walkIn = profile!.customer!;
+				cy.benchCall("frappe.client.get_value", { doctype: "Customer", filters: walkIn, fieldname: "customer_name" }).then(
+					(row: { customer_name?: string } | null) => {
+						const shown = row?.customer_name || walkIn;
+						const server = interceptServer();
+						customerInvoices(walkIn).then((before: Array<{ name: string }>) => {
+							const known = new Set(before.map((i) => i.name));
+
+							firstRunOnline(entry);
+							cy.contains(item(), { timeout: 30000 }).should("exist");
+							cy.wait(3000); // warm-up: the customer cache must carry the walk-in
+
+							internetDown(server);
+							coldStart(entry);
+							cy.contains(item(), { timeout: 30000 }).should("exist");
+							cy.get("[data-testid='cart-customer']:visible", { timeout: 15000 })
+								.first()
+								.should("contain", shown);
+
+							// The offline search finds it by "walk"; picking it keeps it.
+							cy.get("[data-testid='cart-customer']:visible").first().click();
+							cy.get("[role='dialog'] input").first().type("walk");
+							cy.contains("[role='dialog'] *", shown, { timeout: 15000 }).first().click();
+							cy.get("[role='dialog']").should("not.exist");
+							cy.get("[data-testid='cart-customer']:visible").first().should("contain", shown);
+
+							cy.contains(item()).first().click();
+							cy.cartRows().should("have.length", 1);
+							cy.get("[data-testid='add-delivery']").should("not.exist"); // mc23: no delivery for walk-ins
+							cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
+							cy.get("[data-testid='payment-method'][data-mode='Cash']").click();
+							payWithEnter();
+							cy.get("[role='dialog']").should("not.exist");
+							cy.cartRows().should("have.length", 0);
+							cy.pendingInvoices().should((rows) => {
+								expect(rows.map((r) => r.status)).to.deep.equal(["pending"]);
+							});
+							// The next ticket starts on the walk-in again.
+							cy.get("[data-testid='cart-customer']:visible").first().should("contain", shown);
+
+							internetBackAndSynced(server);
+							customerInvoices(walkIn).then((after: Array<{ name: string }>) => {
+								expect(after.filter((i) => !known.has(i.name)), "the walk-in sale posted to the walk-in").to.have.length(1);
+							});
+						});
+					},
+				);
 			});
 		});
 

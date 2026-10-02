@@ -10,7 +10,7 @@ from xpos.api.customers import get_customers
 
 class TestCustomerPreload(unittest.TestCase):
 	def query(self, order="Alphabetical", cap=5, **kwargs):
-		with patch("xpos.api.customers.frappe") as api:
+		with patch("xpos.api.customers.frappe") as api, patch("xpos.api.customers._profile_walk_ins", return_value=[]):
 			api.get_cached_doc.return_value = frappe._dict(
 				company="Shop", xpos_customer_order=order, xpos_customer_preload_limit=cap
 			)
