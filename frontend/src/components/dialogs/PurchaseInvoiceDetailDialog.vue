@@ -284,6 +284,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatLocalDate } from "@/utils/localDate";
 import { computed } from "vue";
 import {
 	Dialog,
@@ -316,7 +317,7 @@ function getField(item: PurchaseItem, field: string): any {
 
 function formatDate(date: string): string {
 	if (!date) return "-";
-	return new Date(date).toLocaleDateString();
+	return formatLocalDate(date) || "-";
 }
 
 function getGross(item: PurchaseItem): number {

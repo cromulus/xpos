@@ -131,6 +131,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatLocalDate } from "@/utils/localDate";
 import { Edit } from "lucide-vue-next";
 import {
 	Dialog,
@@ -166,7 +167,7 @@ function formatCurrency(value: number): string {
 
 function formatDate(date: string): string {
 	if (!date) return "-";
-	return new Date(date).toLocaleDateString();
+	return formatLocalDate(date) || "-";
 }
 
 function statusVariant(

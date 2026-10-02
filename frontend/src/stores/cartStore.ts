@@ -1693,6 +1693,8 @@ export const useCartStore = defineStore("cart", () => {
 	 */
 	const mixCheckPending = ref(false);
 	const mixCheckError = ref("");
+	/** The check's error is the site's answer ("Short ingredients", no price), not a failure (MuleCity-ra6h). */
+	const mixCheckAnswered = ref(false);
 	let mixCheckRequest = 0;
 
 	/** The site's check or quote still prices this very cart. */
@@ -1788,6 +1790,7 @@ export const useCartStore = defineStore("cart", () => {
 	async function checkMixOrders(): Promise<void> {
 		const request = ++mixCheckRequest;
 		mixCheckError.value = "";
+		mixCheckAnswered.value = false;
 		if (!hasOrderLines.value || !pickupDate.value || !isOnline()) {
 			mixCheckPending.value = false;
 			return;
@@ -1810,7 +1813,10 @@ export const useCartStore = defineStore("cart", () => {
 			if (request !== mixCheckRequest) return;
 			if (key === previewKey.value) counterQuote.value = { ...result, key };
 		} catch (error) {
-			if (request === mixCheckRequest) mixCheckError.value = extractErrorMessage(error);
+			if (request === mixCheckRequest) {
+				mixCheckError.value = extractErrorMessage(error);
+				mixCheckAnswered.value = !!(error as { answered?: boolean } | null)?.answered;
+			}
 		} finally {
 			if (request === mixCheckRequest) mixCheckPending.value = false;
 		}
@@ -1822,6 +1828,7 @@ export const useCartStore = defineStore("cart", () => {
 		() => [hasOrderLines.value, previewKey.value],
 		([ordering]) => {
 			mixCheckError.value = "";
+			mixCheckAnswered.value = false;
 			if (ordering) {
 				mixCheckPending.value = !!pickupDate.value && isOnline();
 				scheduleMixCheck();
@@ -2527,6 +2534,7 @@ export const useCartStore = defineStore("cart", () => {
 		counterQuote,
 		mixCheckPending,
 		mixCheckError,
+		mixCheckAnswered,
 		quotedLineAmount,
 		lineChecking,
 		mixPriceChecking,

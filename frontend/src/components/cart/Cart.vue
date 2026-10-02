@@ -143,7 +143,11 @@
 			<p
 				v-if="cartStore.hasOrderLines"
 				class="mt-1 text-xs"
-				:class="mixCheck.tone === 'bad' ? 'text-destructive font-semibold' : 'text-muted-foreground'"
+				:class="{
+					'text-destructive font-semibold': mixCheck.tone === 'bad',
+					'text-amber-700 dark:text-amber-400 font-semibold': mixCheck.tone === 'answer',
+					'text-muted-foreground': mixCheck.tone === 'info',
+				}"
 				data-testid="cart-mix-check"
 				role="status"
 			>
@@ -295,6 +299,7 @@ const mixCheck = computed(() =>
 			pickupDate: cartStore.pickupDate,
 			pending: cartStore.mixCheckPending,
 			error: cartStore.mixCheckError,
+			errorAnswered: cartStore.mixCheckAnswered,
 			ordersTotal: cartStore.counterQuote ? cartStore.counterQuote.orders_total : null,
 		},
 		money,

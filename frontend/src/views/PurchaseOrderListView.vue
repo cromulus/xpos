@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatLocalDate } from "@/utils/localDate";
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { usePurchaseStore } from "@/stores/purchaseStore";
@@ -74,7 +75,7 @@ function editSubmittedOrder(order: PurchaseOrder): void {
 
 function formatDate(date: string): string {
 	if (!date) return "-";
-	return new Date(date).toLocaleDateString();
+	return formatLocalDate(date) || "-";
 }
 
 function statusVariant(

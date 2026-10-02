@@ -1,6 +1,7 @@
 import { formatFor, formatWithSymbol } from "@/composables/useCurrency";
 import type { ReceiptContext, ReceiptSnapshot } from "@/types/pos.types";
 import { formatFloat, formatQty } from "@/utils/numberFormat";
+import { formatLocalDate } from "@/utils/localDate";
 
 function esc(value: unknown): string {
 	return String(value ?? "")
@@ -52,10 +53,9 @@ export function deliveryMilesLabel(miles: number | null | undefined, source?: st
  * UTC midnight, the day before in US time zones.
  */
 export function deliveryDayLabel(date: string | null | undefined): string {
-	const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ""));
-	if (!match) return "";
-	const day = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-	return day.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+	const prefix = String(date || "").slice(0, 10);
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(prefix)) return "";
+	return formatLocalDate(prefix, { weekday: "long", month: "long", day: "numeric", year: "numeric" }, "en-US");
 }
 
 /**

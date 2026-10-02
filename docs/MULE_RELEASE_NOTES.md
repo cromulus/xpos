@@ -1,5 +1,37 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc35 (unreleased)
+
+### Sale dates on their own day (MuleCity-jh8j)
+
+- **Date-only values read as local days.** The Orders list showed
+  ACC-SINV-49747/49748 (posting_date 2026-10-01, rung ~22:45 EDT) as
+  "Sep 30, 2026": `new Date("2026-10-01")` is UTC midnight, the evening before
+  in US Eastern. One helper, `utils/localDate` (`parseLocalDate`,
+  `formatLocalDate`), reads a `YYYY-MM-DD` value as local midnight and leaves
+  anything with a time to `new Date`. Used by the Orders, Cashier, Expense,
+  Bank Drop and purchase lists/dialogs, Stock Receiving and the receipt's
+  delivery day (`deliveryDayLabel`, mc23). The printed receipt's date was
+  already string-based and is unchanged.
+- **Tests.** `localDate.spec.ts` runs in `America/New_York` and first asserts
+  the old parse shows Sep 30.
+
+### The cart's mix check answers in amber (MuleCity-ra6h follow-up)
+
+- "Can't order yet: Short ingredients ..." and a mix with no price are the
+  site's answers (417 refusals), now amber in the cart as under Pay. A check
+  that failed for another reason (5xx, bad response) stays red. The store keeps
+  `mixCheckAnswered` from the call's `answered` flag. Offline stays red in the
+  cart (unchanged).
+- **Tests.** `tillCustomMixes.spec.ts`.
+
+### Close Shift shows its Done screen (MuleCity-yn4b mc33 walk note)
+
+- After a close the till jumped straight to Open Shift: `posStore.closeShift`
+  hid the Close Shift sheet itself, so its Done screen (Print Summary, Done)
+  never showed. The sheet now stays up after the close; Done closes it onto
+  Open Shift. **Tests.** `shiftManagement.spec.ts`.
+
 ## mule-v2.10.1-mc34 (unreleased)
 
 ### Close Shift lists each tax account once (MuleCity-uimf, 50i proof 2026-10-02)

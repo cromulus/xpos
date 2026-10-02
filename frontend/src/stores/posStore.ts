@@ -513,7 +513,9 @@ export const usePosStore = defineStore("pos", () => {
 			disableRoundedTotal.value = false;
 			printSettings.value = null;
 			isReady.value = false;
-			showClosingDialog.value = false;
+			// The Close Shift sheet stays up on its Done screen (Print Summary, Done);
+			// Done closes it onto Open Shift (MuleCity-yn4b mc33 walk: the till went
+			// straight back to Open Shift with no Done screen).
 			showOpeningDialog.value = true;
 			printFormats.value = [];
 			lastInvoiceName.value = "";

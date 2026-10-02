@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatLocalDate } from "@/utils/localDate";
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useMoney } from "@/composables/useMoney";
@@ -37,7 +38,7 @@ function createNewInvoice(): void {
 
 function formatDate(date: string): string {
 	if (!date) return "-";
-	return new Date(date).toLocaleDateString();
+	return formatLocalDate(date) || "-";
 }
 
 function statusVariant(

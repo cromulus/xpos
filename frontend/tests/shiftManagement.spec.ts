@@ -209,6 +209,21 @@ describe("Shift Management", () => {
 			expect(result.pos_closing_shift).toBeDefined();
 			expect(result.pos_closing_shift.name).toBe("POS-CLOSE-001");
 		});
+		it("keeps the Close Shift sheet up on its Done screen after closing (MuleCity-yn4b)", async () => {
+			const mockedCall = call as ReturnType<typeof vi.fn>;
+			const posStore = usePosStore();
+			posStore.posOpeningShift = { name: "POS-OPEN-001" } as typeof posStore.posOpeningShift;
+			posStore.showClosingDialog = true;
+			mockedCall.mockResolvedValueOnce({ name: "POS-CLOSE-001" });
+
+			const result = await posStore.closeShift([]);
+
+			expect(result).toEqual({ name: "POS-CLOSE-001" });
+			expect(posStore.posOpeningShift).toBeNull();
+			// Done (in the sheet) closes it onto Open Shift, which is already behind it.
+			expect(posStore.showClosingDialog).toBe(true);
+			expect(posStore.showOpeningDialog).toBe(true);
+		});
 	});
 
 	describe("Shift Summary", () => {

@@ -222,7 +222,10 @@ describe("the cart says whether the mix can be made before Pay", () => {
 		vi.useFakeTimers();
 		mockedCall.mockImplementation(async (method: string) => {
 			if (method === "mulecity_erpnext.counter_mix_orders.counter_check") {
-				throw new Error("Short ingredients: MC-CORN: 40 lb at Main - MCSF");
+				throw Object.assign(new Error("Short ingredients: MC-CORN: 40 lb at Main - MCSF"), {
+					status: 417,
+					answered: true,
+				});
 			}
 			return undefined;
 		});
@@ -231,7 +234,24 @@ describe("the cart says whether the mix can be made before Pay", () => {
 		cart.addItem(mix());
 		await vi.advanceTimersByTimeAsync(700);
 		expect(cart.mixCheckError).toContain("Short ingredients: MC-CORN: 40 lb");
+		expect(cart.mixCheckAnswered).toBe(true);
 		expect(cart.counterQuote).toBeNull();
+	});
+
+	it("a check that failed (not the site's answer) stays an error", async () => {
+		vi.useFakeTimers();
+		mockedCall.mockImplementation(async (method: string) => {
+			if (method === "mulecity_erpnext.counter_mix_orders.counter_check") {
+				throw Object.assign(new Error("Server error"), { status: 500 });
+			}
+			return undefined;
+		});
+		const cart = useCartStore();
+		cart.pickupDate = "2026-10-05";
+		cart.addItem(mix());
+		await vi.advanceTimersByTimeAsync(700);
+		expect(cart.mixCheckError).toBe("Server error");
+		expect(cart.mixCheckAnswered).toBe(false);
 	});
 
 	it("the cart's line reads the check", () => {
@@ -245,10 +265,12 @@ describe("the cart says whether the mix can be made before Pay", () => {
 			text: "Ingredients on hand. Mix order $16.00.",
 			tone: "info",
 		});
-		expect(mixCheckStatus({ ...base, error: "Short ingredients: corn" }, money)).toEqual({
+		// Short ingredients / no price are the site's answers: amber, like Pay's refusal (MuleCity-ra6h).
+		expect(mixCheckStatus({ ...base, error: "Short ingredients: corn", errorAnswered: true }, money)).toEqual({
 			text: "Can't order yet: Short ingredients: corn",
-			tone: "bad",
+			tone: "answer",
 		});
+		expect(mixCheckStatus({ ...base, error: "Server error", errorAnswered: false }, money).tone).toBe("bad");
 		expect(mixCheckStatus({ ...base, online: false }, money).tone).toBe("bad");
 	});
 });
