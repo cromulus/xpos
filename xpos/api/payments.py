@@ -193,6 +193,27 @@ def get_unallocated_payments(
 	return payments
 
 
+def stamp_till_payment(pe, pos_profile: str | None, pos_opening_shift: str, typed_cashier: str | None = None) -> None:
+	"""Mark a Payment Entry taken at the till so the shift's close counts it (MuleCity-49ue).
+
+	``reference_no`` is the POS Opening Shift: the tag ``shifts.get_shift_till_payments``
+	(and the desk closing's ``get_payments_entries``) reads. ``pos_cashier`` follows the
+	invoice rule (``invoices.apply_pos_cashier``): a named login records its full name; on
+	the shared login the typed initials must be on the profile's cashier list. A shared-login
+	payment with no initials typed (the Receive on Account and Settle dialogs don't ask yet)
+	is saved without, and counts under "(none)" on the close sheet.
+	"""
+	from xpos.api.invoices import apply_pos_cashier, is_shared_login, normalize_initials
+
+	pe.reference_no = pos_opening_shift
+	if not pos_profile or not frappe.get_meta("Payment Entry").has_field("pos_cashier"):
+		return
+	pos = frappe.get_cached_doc("POS Profile", pos_profile)
+	if is_shared_login(pos, frappe.session.user) and not normalize_initials(typed_cashier):
+		return
+	apply_pos_cashier(pe, pos, typed_cashier)
+
+
 def create_payment_entry(data: str | dict) -> dict:
 	"""Create (and optionally submit) a Payment Entry for a customer."""
 	if isinstance(data, str):
@@ -224,6 +245,8 @@ def create_payment_entry(data: str | dict) -> dict:
 	pe.posting_date = nowdate()
 	pe.reference_no = data.get("reference_no", "POS Payment")
 	pe.reference_date = nowdate()
+	if data.get("pos_opening_shift"):
+		stamp_till_payment(pe, data.get("pos_profile"), data["pos_opening_shift"], data.get("pos_cashier"))
 
 	if data.get("reference_doctype") and data.get("reference_name"):
 		pe.append(
@@ -254,6 +277,7 @@ def settle_outstanding_invoice(
 	mode_of_payment: str,
 	pos_opening_shift: str,
 	pos_profile: str | None = None,
+	pos_cashier: str | None = None,
 ) -> dict:
 	"""Collect payment against a past submitted invoice from the POS.
 
@@ -301,6 +325,9 @@ def settle_outstanding_invoice(
 			"reference_doctype": "Sales Invoice",
 			"reference_name": invoice,
 			"reference_no": pos_opening_shift,
+			"pos_opening_shift": pos_opening_shift,
+			"pos_profile": pos_profile,
+			"pos_cashier": pos_cashier,
 			"submit": True,
 		}
 	)
@@ -319,6 +346,7 @@ def receive_on_account(
 	mode_of_payment: str,
 	pos_opening_shift: str,
 	pos_profile: str | None = None,
+	pos_cashier: str | None = None,
 ) -> dict:
 	"""Take a payment toward what a customer owes, the standard ERPNext way.
 
@@ -353,7 +381,7 @@ def receive_on_account(
 	pe.paid_to = get_bank_cash_account(mode_of_payment, company).get("account")
 	pe.paid_amount = amount
 	pe.received_amount = amount
-	pe.reference_no = pos_opening_shift
+	stamp_till_payment(pe, pos_profile, pos_opening_shift, pos_cashier)
 	pe.reference_date = nowdate()
 	pe.setup_party_account_field()
 	pe.set_missing_values()

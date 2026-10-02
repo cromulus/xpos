@@ -896,6 +896,17 @@ export interface ShiftCashierTotals {
 	returns_count: number;
 	/** ERPNext's grand_total: negative for returns. */
 	returns_total: number;
+	/** Payment Entries taken at the till (order prepayments, payments on account; MuleCity-49ue). */
+	payments_count?: number;
+	payments_total?: number;
+}
+
+/** Payment Entries the till took in a shift, per mode (get_shift_summary till_payments, MuleCity-49ue). */
+export interface ShiftTillPayments {
+	count: number;
+	/** In the mode's currency; already part of expected_amounts. */
+	amount: number;
+	currency: string;
 }
 
 export interface ShiftSummary {
@@ -907,6 +918,7 @@ export interface ShiftSummary {
 	payment_summary: Record<string, ShiftModeTotal>;
 	opening_balances: Record<string, ShiftModeTotal>;
 	expected_amounts: Record<string, ShiftModeTotal>;
+	till_payments?: Record<string, ShiftTillPayments>;
 	tax_summary: POSClosingShiftTax[];
 	pos_profile: string;
 	company: string;

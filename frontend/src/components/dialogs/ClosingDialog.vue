@@ -182,6 +182,18 @@
 											<th class="text-end px-4 py-2 text-muted-foreground font-medium">
 												{{ __("Returns Total") }}
 											</th>
+											<th
+												v-if="hasTillPayments"
+												class="text-end px-4 py-2 text-muted-foreground font-medium"
+											>
+												{{ __("Payments") }}
+											</th>
+											<th
+												v-if="hasTillPayments"
+												class="text-end px-4 py-2 text-muted-foreground font-medium"
+											>
+												{{ __("Payments Total") }}
+											</th>
 										</tr>
 									</thead>
 									<tbody>
@@ -198,9 +210,35 @@
 											<td class="px-4 py-2 text-end">
 												{{ row.returns_count ? money(Math.abs(row.returns_total ?? 0)) : "" }}
 											</td>
+											<td v-if="hasTillPayments" class="px-4 py-2 text-end">
+												{{ row.payments_count ?? 0 }}
+											</td>
+											<td v-if="hasTillPayments" class="px-4 py-2 text-end">
+												{{ row.payments_count ? money(row.payments_total ?? 0) : "" }}
+											</td>
 										</tr>
 									</tbody>
 								</table>
+							</div>
+						</div>
+					</div>
+
+					<div v-if="hasTillPayments" data-testid="close-till-payments">
+						<h3 class="text-sm font-semibold text-foreground mb-1">
+							{{ __("Payments received") }}
+						</h3>
+						<p class="text-xs text-muted-foreground mb-2">
+							{{ __("Order prepayments and payments on account taken at this till. Included in Expected.") }}
+						</p>
+						<div class="space-y-1">
+							<div
+								v-for="(row, mode) in summary.till_payments"
+								:key="mode"
+								class="flex items-center justify-between text-sm bg-muted rounded-lg px-3 py-2"
+								data-testid="close-till-payment-row"
+							>
+								<span class="text-muted-foreground">{{ mode }} &middot; {{ row.count }}</span>
+								<span class="font-medium text-foreground">{{ formatFor(row.currency, row.amount) }}</span>
 							</div>
 						</div>
 					</div>
@@ -357,7 +395,12 @@ import { useMoney } from "@/composables/useMoney";
 import { showSuccess, showError } from "@/services/api";
 import { hasPermission } from "@/services/userRights";
 import { formatFor, precisionFor, roundFor } from "@/composables/useCurrency";
-import type { POSClosingShiftTax, ShiftCashierTotals, ShiftModeTotal } from "@/types/pos.types";
+import type {
+	POSClosingShiftTax,
+	ShiftCashierTotals,
+	ShiftModeTotal,
+	ShiftTillPayments,
+} from "@/types/pos.types";
 import {
 	Dialog,
 	DialogScrollContent,
@@ -383,6 +426,8 @@ interface ClosingSummary {
 	tax_summary?: POSClosingShiftTax[];
 	// Sales and returns per cashier initials, "(none)" last (MuleCity-qajl.6).
 	by_cashier?: ShiftCashierTotals[];
+	// Payment Entries taken at the till, per mode; already in expected_amounts (MuleCity-49ue).
+	till_payments?: Record<string, ShiftTillPayments>;
 	[key: string]: unknown;
 }
 
@@ -411,6 +456,7 @@ const closingDetails = ref<ClosingDetail[]>([]);
 const queue = ref<CloseShiftQueue>({ pending: [], attention: [] });
 const checkingQueue = ref(false);
 const closeBlocked = computed(() => queueBlocksClose(queue.value));
+const hasTillPayments = computed(() => Object.keys(summary.value?.till_payments || {}).length > 0);
 const SYNC_WAIT_MS = 500;
 const SYNC_WAIT_TRIES = 120;
 

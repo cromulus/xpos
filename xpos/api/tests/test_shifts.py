@@ -348,6 +348,7 @@ class TestShiftExpectedAmounts(MigratedSchemaMixin, unittest.TestCase):
 			[{"parent": "INV-001", "mode_of_payment": "Cash", "amount": 1000}],  # payments
 			[],  # POS Change Leg
 			[{"amount": 250}, {"amount": 150}],  # POS Cash Movement
+			[],  # Payment Entries taken at the till
 		]
 		mock_frappe.db.get_value.return_value = "Cash"
 
@@ -363,7 +364,7 @@ class TestShiftExpectedAmounts(MigratedSchemaMixin, unittest.TestCase):
 	@patch("xpos.api.shifts.frappe")
 	def test_expected_amount_includes_opening_float_for_unused_modes(self, mock_frappe):
 		"""A mode with an opening float but no sales still reports that float."""
-		mock_frappe.get_all.side_effect = [[], []]
+		mock_frappe.get_all.side_effect = [[], [], []]
 		mock_frappe.db.get_value.return_value = "Cash LBP"
 
 		expected = shifts.get_shift_expected_amounts(
@@ -402,6 +403,7 @@ class TestShiftExpectedAmounts(MigratedSchemaMixin, unittest.TestCase):
 					"amount": 407700,
 				},
 			],
+			[],
 			[],
 		]
 		mock_frappe.db.get_value.return_value = "Cash LBP"
@@ -692,6 +694,7 @@ class TestCloseSheetByCashier(unittest.TestCase):
 	def test_summary_reads_pos_cashier(self):
 		self.assertIn("pos_cashier", shifts.SUMMARY_INVOICE_FIELDS)
 
+	@patch("xpos.api.shifts.get_shift_till_payments", return_value=[])
 	@patch("xpos.api.shifts._get_shift_tax_summary", return_value=[])
 	@patch("xpos.api.shifts.get_shift_expected_amounts", return_value={})
 	@patch("xpos.api.shifts.get_shift_payment_totals", return_value={})
@@ -710,15 +713,169 @@ class TestCloseSheetByCashier(unittest.TestCase):
 		self.assertEqual(
 			summary["by_cashier"],
 			[
-				{"cashier": "BI", "sales_count": 1, "sales_total": 10.0, "returns_count": 0, "returns_total": 0.0},
-				{"cashier": "LE", "sales_count": 2, "sales_total": 26.35, "returns_count": 1, "returns_total": -5.0},
-				{"cashier": "(none)", "sales_count": 1, "sales_total": 7.5, "returns_count": 1, "returns_total": -1.07},
+				{"cashier": "BI", "sales_count": 1, "sales_total": 10.0, "returns_count": 0, "returns_total": 0.0,
+				 "payments_count": 0, "payments_total": 0.0},
+				{"cashier": "LE", "sales_count": 2, "sales_total": 26.35, "returns_count": 1, "returns_total": -5.0,
+				 "payments_count": 0, "payments_total": 0.0},
+				{"cashier": "(none)", "sales_count": 1, "sales_total": 7.5, "returns_count": 1, "returns_total": -1.07,
+				 "payments_count": 0, "payments_total": 0.0},
 			],
 		)
 		self.assertEqual(summary["returns_count"], 2)
 
 	def test_an_empty_shift_has_no_rows(self):
 		self.assertEqual(shifts.shift_totals_by_cashier([]), [])
+
+
+class TestTillPaymentsInTheShift(unittest.TestCase):
+	"""User story (MuleCity-49ue, mc24 walk 2026-10-02): Leslie (LE on the shared counter login)
+	takes $40 cash for a custom mix order paid now. That is an advance Payment Entry, not an
+	invoice payment row, and the drawer is $40 over unless the close counts it. The Payment
+	Entry carries the shift in ``reference_no`` (the desk closing's tag); the close sheet adds
+	it to expected cash, lists it under "Payments received" and under LE, and the saved closing
+	lists it in ``pos_payments``. The pickup invoice that later uses the advance has no cash
+	row for it, so a later shift never counts that $40 again."""
+
+	SHIFT = "POS-OS-26-0000009"
+	ENTRIES = (
+		{"name": "ACC-PAY-05006", "payment_type": "Receive", "mode_of_payment": "Cash",
+		 "paid_amount": 40, "received_amount": 40, "paid_from_account_currency": "USD",
+		 "paid_to_account_currency": "USD", "party": "Steve", "posting_date": "2026-10-02",
+		 "pos_cashier": "LE"},
+		{"name": "ACC-PAY-05007", "payment_type": "Receive", "mode_of_payment": "Card",
+		 "paid_amount": 12.5, "received_amount": 12.5, "paid_from_account_currency": "USD",
+		 "paid_to_account_currency": "USD", "party": "Ada", "posting_date": "2026-10-02",
+		 "pos_cashier": None},
+		{"name": "ACC-PAY-05008", "payment_type": "Pay", "mode_of_payment": "Cash",
+		 "paid_amount": 5, "received_amount": 5, "paid_from_account_currency": "USD",
+		 "paid_to_account_currency": "USD", "party": "Steve", "posting_date": "2026-10-02",
+		 "pos_cashier": "LE"},
+	)
+
+	def _opening(self):
+		opening = MagicMock()
+		opening.name = self.SHIFT
+		opening.pos_profile = "Mule City Retail"
+		opening.company = "Mule City Specialty Feeds"
+		opening.posting_date = "2026-10-02"
+		opening.period_start_date = "2026-10-02 07:00:00"
+		opening.user = "pos@mulecity.com"
+		opening.balance_details = [SimpleNamespace(mode_of_payment="Cash", amount=150, currency="USD")]
+		return opening
+
+	def _fake_get_all(self, invoices=(), payment_rows=(), entries=None):
+		entries = self.ENTRIES if entries is None else entries
+		calls = []
+
+		def get_all(doctype, filters=None, fields=None, **kwargs):
+			calls.append((doctype, filters))
+			if doctype == "Payment Entry":
+				return [dict(row) for row in entries if row["payment_type"] in filters["payment_type"][1]
+					and filters["reference_no"] == self.SHIFT]
+			if doctype in ("Sales Invoice", "POS Invoice"):
+				return [dict(row) for row in invoices]
+			if doctype == "Sales Invoice Payment":
+				return [dict(row) for row in payment_rows]
+			return []
+
+		get_all.calls = calls
+		return get_all
+
+	@patch("xpos.api.shifts.frappe")
+	def test_till_payments_are_read_by_the_shift_tag_and_signed(self, mock_frappe):
+		mock_frappe.get_all.side_effect = fake = self._fake_get_all()
+		payments = shifts.get_shift_till_payments(self.SHIFT)
+		(doctype, filters), = fake.calls
+		self.assertEqual(doctype, "Payment Entry")
+		self.assertEqual(filters, {"docstatus": 1, "reference_no": self.SHIFT,
+			"payment_type": ["in", ["Receive", "Pay"]]})
+		self.assertEqual([(p["name"], p["mode_of_payment"], p["amount"], p["pos_cashier"]) for p in payments], [
+			("ACC-PAY-05006", "Cash", 40.0, "LE"),
+			("ACC-PAY-05007", "Card", 12.5, None),
+			("ACC-PAY-05008", "Cash", -5.0, "LE"),
+		])
+		self.assertEqual(shifts.till_payments_by_mode(payments), {
+			"Cash": {"count": 2, "amount": 35.0, "currency": "USD"},
+			"Card": {"count": 1, "amount": 12.5, "currency": "USD"},
+		})
+
+	@patch("xpos.api.shifts.frappe")
+	def test_negative_no_shift_reads_nothing(self, mock_frappe):
+		self.assertEqual(shifts.get_shift_till_payments(""), [])
+		mock_frappe.get_all.assert_not_called()
+
+	@patch("xpos.api.shifts.payment_tender_fields_exist", return_value=False)
+	@patch("xpos.api.shifts.change_leg_table_exists", return_value=False)
+	@patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice")
+	@patch("xpos.api.shifts.frappe")
+	def test_summary_expects_the_prepaid_cash_and_shows_it(self, mock_frappe, *_):
+		"""$150 float + $10.37 ticket + $40 prepaid - $5 paid out = $195.37 cash; $12.50 card."""
+		mock_frappe.get_doc.return_value = self._opening()
+		mock_frappe.db.get_value.return_value = "Cash"
+		mock_frappe.get_all.side_effect = self._fake_get_all(
+			invoices=[{"name": "SINV-1", "currency": "USD", "grand_total": 10.37, "net_total": 10.37,
+				"change_amount": 0, "is_return": 0, "pos_cashier": "BI"}],
+			payment_rows=[{"parent": "SINV-1", "mode_of_payment": "Cash", "amount": 10.37}],
+		)
+
+		summary = shifts.get_shift_summary(self.SHIFT)
+
+		self.assertEqual(round(summary["expected_amounts"]["Cash"]["amount"], 2), 195.37)
+		self.assertEqual(summary["expected_amounts"]["Card"], {"amount": 12.5, "currency": "USD"})
+		# The invoice legs alone, as before: what the tickets collected.
+		self.assertEqual(summary["payment_summary"], {"Cash": {"amount": 10.37, "currency": "USD"}})
+		self.assertEqual(summary["till_payments"]["Cash"], {"count": 2, "amount": 35.0, "currency": "USD"})
+		self.assertEqual(
+			[(r["cashier"], r["sales_count"], r["payments_count"], r["payments_total"]) for r in summary["by_cashier"]],
+			[("BI", 1, 0, 0.0), ("LE", 0, 2, 35.0), ("(none)", 0, 1, 12.5)],
+		)
+
+	@patch("xpos.api.shifts.payment_tender_fields_exist", return_value=False)
+	@patch("xpos.api.shifts.change_leg_table_exists", return_value=False)
+	@patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice")
+	@patch("xpos.api.shifts.frappe")
+	def test_negative_a_pickup_using_the_advance_adds_no_cash(self, mock_frappe, *_):
+		"""Friday's shift: the pickup ticket ($40, all paid by Tuesday's advance) has a $0 cash
+		row and no Payment Entry tagged with Friday's shift, so only the float is expected."""
+		mock_frappe.get_doc.return_value = self._opening()
+		mock_frappe.db.get_value.return_value = "Cash"
+		mock_frappe.get_all.side_effect = self._fake_get_all(
+			invoices=[{"name": "SINV-2", "currency": "USD", "grand_total": 40, "net_total": 40,
+				"change_amount": 0, "is_return": 0, "pos_cashier": "LE"}],
+			payment_rows=[{"parent": "SINV-2", "mode_of_payment": "Cash", "amount": 0}],
+			entries=(),
+		)
+
+		summary = shifts.get_shift_summary(self.SHIFT)
+
+		self.assertEqual(summary["expected_amounts"]["Cash"]["amount"], 150)
+		self.assertEqual(summary["till_payments"], {})
+
+	@patch("xpos.api.shifts.can_close_shift", return_value=True)
+	@patch("xpos.api.shifts.payment_tender_fields_exist", return_value=False)
+	@patch("xpos.api.shifts.change_leg_table_exists", return_value=False)
+	@patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice")
+	@patch("xpos.api.shifts.frappe")
+	def test_the_saved_closing_expects_and_lists_the_till_payments(self, mock_frappe, *_):
+		closing = MagicMock()
+		closing.name = "POS-CS-26-0000009"
+		appended = []
+		closing.append.side_effect = lambda table, row: appended.append((table, row))
+		opening = self._opening()
+		mock_frappe.get_doc.side_effect = lambda *a, **kw: opening if a and a[0] == "POS Opening Shift" else closing
+		mock_frappe.db.get_value.return_value = "Cash"
+		mock_frappe.get_all.side_effect = self._fake_get_all()
+		mock_frappe.session.user = "pos@mulecity.com"
+
+		shifts.close_shift(self.SHIFT, '[{"mode_of_payment": "Cash", "closing_amount": 185}]')
+
+		(cash,) = [row for table, row in appended if table == "payment_reconciliation"]
+		self.assertEqual((cash["expected_amount"], cash["difference"]), (185.0, 0))
+		self.assertEqual(
+			[(row["payment_entry"], row["paid_amount"], row["customer"]) for table, row in appended
+				if table == "pos_payments"],
+			[("ACC-PAY-05006", 40.0, "Steve"), ("ACC-PAY-05007", 12.5, "Ada"), ("ACC-PAY-05008", -5.0, "Steve")],
+		)
 
 
 class TestOpeningFloat(unittest.TestCase):

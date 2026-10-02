@@ -1,5 +1,44 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc25 (unreleased)
+
+### Close Shift counts the till's Payment Entries (MuleCity-49ue)
+
+On the mc24 staging walk (2026-10-02) a custom mix order paid now in cash
+(advance Payment Entry ACC-PAY-05006, $0.28) was not in the shift's expected
+cash, so the drawer was over. The pickup ticket later uses the advance and takes
+no cash, so that money was never expected in any shift. Payments on account and
+settled tickets (also Payment Entries) were missing from the till's close the
+same way.
+
+- A Payment Entry taken at the till carries its POS Opening Shift in
+  `reference_no`, the tag `receive_on_account` and `settle_outstanding_invoice`
+  already set and the desk closing (`closing_processing.data.get_payments_entries`)
+  already reads. The Mule app's mix-order prepayment now sets it too (it used
+  the cart id; the cart id stays on the Sales Order and in the remarks).
+- `xpos.api.shifts.get_shift_till_payments(shift)`: submitted Payment Entries
+  with `reference_no` = the shift, Receive counted in, Pay counted out, in the
+  cash account's currency. `get_shift_expected_amounts` adds them, so the close
+  sheet's Expected and the saved POS Closing Shift's `payment_reconciliation`
+  include them; `close_shift` also lists them in the closing's `pos_payments`.
+- No double counting: the pickup ticket's advance is in its `advances` table,
+  not a payment row, so the later shift expects only the cash that ticket took.
+- New custom field `Payment Entry.pos_cashier` (Cashier). The helper
+  `xpos.api.payments.stamp_till_payment(pe, pos_profile, shift, initials)` sets
+  the shift tag and the cashier the invoice way (`apply_pos_cashier`); the Mule
+  app's prepayment passes the initials typed at Pay. `receive_on_account` and
+  `settle_outstanding_invoice` take an optional `pos_cashier`; their dialogs
+  don't ask yet, so on the shared login those payments count under "(none)".
+- `get_shift_summary` returns `till_payments` (`{mode: {count, amount,
+  currency}}`) and `by_cashier` rows gain `payments_count`/`payments_total`.
+  `payment_summary` stays the invoice payment rows only.
+- Close Shift shows "Payments received" (mode, count, amount) and, when there
+  are any, Payments and Payments Total columns in By Cashier.
+- Tests: `xpos/api/tests/test_shifts.py` (`TestTillPaymentsInTheShift`),
+  `frontend/tests/closingTillPayments.spec.ts`; Mule app
+  `test_counter_mix_orders` (prepay in one shift, pickup in a later shift and in
+  the same shift) and `test_xpos_counter_settings` (payment on account).
+
 ## mule-v2.10.1-mc24 (unreleased)
 
 ### Close Shift waits for offline sales (MuleCity-86ea)

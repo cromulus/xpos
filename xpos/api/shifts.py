@@ -41,6 +41,9 @@ SUMMARY_INVOICE_FIELDS = [
 #: The per-cashier row for invoices saved without initials (a named login, or before initials).
 NO_CASHIER = "(none)"
 
+#: Payment Entry types a till takes in (+) or hands out (-) of the drawer.
+TILL_PAYMENT_TYPES = ("Receive", "Pay")
+
 
 def resolve_cash_mode_of_payment(pos_profile: str | None) -> str:
 	"""The mode of payment whose drawer change is physically handed back out of."""
@@ -158,14 +161,94 @@ def get_shift_payment_totals(
 	return totals
 
 
-def get_shift_expected_amounts(opening, doctype: str, invoices: list) -> dict[str, dict]:
+def get_shift_till_payments(opening_shift: str) -> list[dict]:
+	"""Payment Entries the till took in this shift, outside any invoice (MuleCity-49ue).
+
+	A counter mix order paid now (``counter_mix_orders._prepay``), a payment on
+	account (``receive_on_account``) and a settled ticket
+	(``settle_outstanding_invoice``) each post a Payment Entry, not an invoice
+	payment row, so the drawer holds that money but no invoice says so. XPOS
+	tags these entries with the shift in ``reference_no``, the convention the
+	desk closing already reads (``closing_processing.data.get_payments_entries``).
+
+	Each row is ``{name, mode_of_payment, amount, currency, party, posting_date,
+	pos_cashier, payment_type}``: ``amount`` is in the cash account's currency,
+	positive for Receive, negative for Pay. A pickup invoice that later uses one
+	of these advances adds no payment row of its own for it, so that money is
+	counted once, in the shift that took it.
+	"""
+	if not opening_shift:
+		return []
+	fields = [
+		"name",
+		"payment_type",
+		"mode_of_payment",
+		"paid_amount",
+		"received_amount",
+		"paid_from_account_currency",
+		"paid_to_account_currency",
+		"party",
+		"posting_date",
+	]
+	has_cashier = frappe.get_meta("Payment Entry").has_field("pos_cashier")
+	if has_cashier:
+		fields.append("pos_cashier")
+	rows = frappe.get_all(
+		"Payment Entry",
+		filters={
+			"docstatus": 1,
+			"reference_no": opening_shift,
+			"payment_type": ["in", list(TILL_PAYMENT_TYPES)],
+		},
+		fields=fields,
+		order_by="creation asc",
+	)
+	payments = []
+	for row in rows:
+		received = row_value(row, "payment_type") == "Receive"
+		payments.append(
+			{
+				"name": row_value(row, "name"),
+				"payment_type": row_value(row, "payment_type"),
+				"mode_of_payment": row_value(row, "mode_of_payment"),
+				"amount": flt(row_value(row, "received_amount" if received else "paid_amount", 0))
+				* (1 if received else -1),
+				"currency": row_value(
+					row, "paid_to_account_currency" if received else "paid_from_account_currency"
+				)
+				or "",
+				"party": row_value(row, "party"),
+				"posting_date": row_value(row, "posting_date"),
+				"pos_cashier": row_value(row, "pos_cashier") if has_cashier else None,
+			}
+		)
+	return payments
+
+
+def till_payments_by_mode(payments: list[dict]) -> dict[str, dict]:
+	"""``{mode: {"count", "amount", "currency"}}`` for the close sheet's "Payments received"."""
+	totals: dict[str, dict] = {}
+	for payment in payments:
+		mode = payment.get("mode_of_payment")
+		if not mode:
+			continue
+		entry = totals.setdefault(mode, {"count": 0, "amount": 0.0, "currency": payment.get("currency") or ""})
+		entry["count"] += 1
+		entry["amount"] = flt(entry["amount"] + flt(payment.get("amount")), 2)
+	return totals
+
+
+def get_shift_expected_amounts(
+	opening, doctype: str, invoices: list, till_payments: list[dict] | None = None
+) -> dict[str, dict]:
 	"""Return the expected closing amount per mode of payment, computed server-side.
 
-	Expected = opening float + payments collected - cash taken out of the drawer by submitted
-	POS Cash Movements, each in that mode's own tender currency. The opening float is already
-	recorded per mode, so once "Cash USD" is its own mode every figure here is natively
-	per-currency. This must never be taken from the client: it is the figure the counted cash is
-	reconciled against.
+	Expected = opening float + payments collected on invoices + Payment Entries the till
+	took in this shift (``get_shift_till_payments``) - cash taken out of the drawer by
+	submitted POS Cash Movements, each in that mode's own tender currency. The opening float
+	is already recorded per mode, so once "Cash USD" is its own mode every figure here is
+	natively per-currency. This must never be taken from the client: it is the figure the
+	counted cash is reconciled against.
 	"""
 	expected: dict[str, dict] = {}
 
@@ -195,6 +278,11 @@ def get_shift_expected_amounts(opening, doctype: str, invoices: list) -> dict[st
 	)
 	if movement_total:
 		collect(cash_mode, None, -movement_total)
+
+	if till_payments is None:
+		till_payments = get_shift_till_payments(opening.name)
+	for payment in till_payments:
+		collect(payment.get("mode_of_payment"), payment.get("currency"), payment.get("amount"))
 
 	return expected
 
@@ -407,8 +495,10 @@ def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
 		}
 	)
 
+	till_payments = get_shift_till_payments(opening.name)
+
 	if closing_details:
-		expected_amounts = get_shift_expected_amounts(opening, doctype, invoices)
+		expected_amounts = get_shift_expected_amounts(opening, doctype, invoices, till_payments)
 		opening_amounts = {detail.mode_of_payment: flt(detail.amount) for detail in opening.balance_details}
 
 		for detail in closing_details:
@@ -453,6 +543,19 @@ def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
 		}
 		closing_shift.append("pos_transactions", row)
 
+	# The Payment Entries counted in the expected amounts, as the desk closing lists them.
+	for payment in till_payments:
+		closing_shift.append(
+			"pos_payments",
+			{
+				"payment_entry": payment["name"],
+				"mode_of_payment": payment["mode_of_payment"],
+				"paid_amount": payment["amount"],
+				"posting_date": payment["posting_date"],
+				"customer": payment["party"],
+			},
+		)
+
 	closing_shift.insert(ignore_permissions=True)
 	closing_shift.submit()
 
@@ -494,16 +597,19 @@ def get_shift_summary(opening_shift: str):
 		}
 
 	tax_summary = _get_shift_tax_summary(invoices, doctype)
+	till_payments = get_shift_till_payments(opening.name)
 
 	return {
-		"by_cashier": shift_totals_by_cashier(invoices),
+		"by_cashier": shift_totals_by_cashier(invoices, till_payments),
 		"total_invoices": len(invoices),
 		"grand_total": grand_total,
 		"net_total": net_total,
 		"returns_count": returns_count,
 		"payment_summary": payment_summary,
 		"opening_balances": opening_balances,
-		"expected_amounts": get_shift_expected_amounts(opening, doctype, invoices),
+		"expected_amounts": get_shift_expected_amounts(opening, doctype, invoices, till_payments),
+		# Money taken at the till outside an invoice (order prepayments, payments on account).
+		"till_payments": till_payments_by_mode(till_payments),
 		"tax_summary": tax_summary,
 		"pos_profile": opening.pos_profile,
 		"company": opening.company,
@@ -520,23 +626,41 @@ def get_shift_summary(opening_shift: str):
 	}
 
 
-def shift_totals_by_cashier(invoices) -> list[dict]:
-	"""Sales and returns per cashier for the close sheet (Bill 2026-10-01, MuleCity-qajl.6).
+def shift_totals_by_cashier(invoices, till_payments=()) -> list[dict]:
+	"""Sales, returns and payments received per cashier for the close sheet
+	(Bill 2026-10-01, MuleCity-qajl.6; payments MuleCity-49ue).
 
 	One row per ``pos_cashier`` (initials typed on the shared login), sorted by
-	initials, then a ``(none)`` row for invoices saved without them. Totals are
-	ERPNext's ``grand_total``, so a return's total is negative.
+	initials, then a ``(none)`` row for documents saved without them. Sales and
+	returns are ERPNext's ``grand_total`` (a return's is negative); payments are
+	the till's Payment Entries (``get_shift_till_payments``).
 	"""
 	rows: dict[str, dict] = {}
-	for inv in invoices:
-		cashier = (row_value(inv, "pos_cashier") or "").strip() or NO_CASHIER
-		row = rows.setdefault(
+
+	def row_for(cashier):
+		cashier = (cashier or "").strip() or NO_CASHIER
+		return rows.setdefault(
 			cashier,
-			{"cashier": cashier, "sales_count": 0, "sales_total": 0.0, "returns_count": 0, "returns_total": 0.0},
+			{
+				"cashier": cashier,
+				"sales_count": 0,
+				"sales_total": 0.0,
+				"returns_count": 0,
+				"returns_total": 0.0,
+				"payments_count": 0,
+				"payments_total": 0.0,
+			},
 		)
+
+	for inv in invoices:
+		row = row_for(row_value(inv, "pos_cashier"))
 		kind = "returns" if row_value(inv, "is_return", 0) else "sales"
 		row[f"{kind}_count"] += 1
 		row[f"{kind}_total"] = flt(row[f"{kind}_total"] + flt(row_value(inv, "grand_total", 0)), 2)
+	for payment in till_payments or ():
+		row = row_for(payment.get("pos_cashier"))
+		row["payments_count"] += 1
+		row["payments_total"] = flt(row["payments_total"] + flt(payment.get("amount")), 2)
 	return sorted(rows.values(), key=lambda row: (row["cashier"] == NO_CASHIER, row["cashier"]))
 
 
