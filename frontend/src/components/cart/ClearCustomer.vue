@@ -32,8 +32,7 @@ import { Button } from "@/components/ui/button";
 import ConfirmDialog from "@/components/dialogs/ConfirmDialog.vue";
 import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
-import { getCustomer as getCachedCustomer } from "@/services/dbBridge";
-import { getCustomer } from "@/utils";
+import { selectDefaultCustomer } from "@/services/defaultCustomer";
 import { canClearCustomer, clearNeedsConfirm } from "@/utils/clearCustomer";
 import __ from "@/lib/translate";
 
@@ -63,23 +62,7 @@ function confirm() {
 /** clearAll puts back the walk-in by ID at once; its full row comes from the till's cache, else the server. */
 async function clear() {
 	cartStore.clearAll();
-	const name = posStore.defaultCustomer ? String(posStore.defaultCustomer) : "";
-	if (!name) return;
-	let row: Record<string, unknown> | null = null;
-	try {
-		row = ((await getCachedCustomer(name)) as Record<string, unknown> | null) ?? null;
-	} catch {
-		row = null;
-	}
-	if (!row && navigator.onLine) {
-		try {
-			row = (await getCustomer(name)) as Record<string, unknown>;
-		} catch {
-			row = null;
-		}
-	}
-	// Only if nobody was chosen in the meantime.
-	if (row && cartStore.customer?.name === name) cartStore.setCustomer(row as never);
+	await selectDefaultCustomer();
 }
 
 defineExpose({ clear });
