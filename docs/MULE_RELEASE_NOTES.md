@@ -31,6 +31,16 @@
   `/assets/xpos/xpos/`, when a manifest icon is not, or when a new
   fixed-name file appears at the top level. `tests/assetNames.spec.ts` runs
   it against mc31's real build (fixture), which it rejects.
+- **No cache holds the session.** `tests/swNoSessionCache.spec.ts` resolves
+  every entry of the built precache the way the worker fetches it (against
+  `/xpos/sw.js`). Each must come from a static file under `/assets/xpos/xpos/`,
+  never `/xpos/<anything>`, `/app` or `/api`. No precached body may contain a
+  CSRF token or the boot. It also checks that the runtime routes cache none
+  of those URLs. The bench story `offline-no-session-cache.cy.ts` (in
+  `yarn test:offline`) runs the till logged in, reads back every entry of
+  every cache, and checks the same: `/assets` or `/files` only, and no body
+  with the page's CSRF token or the boot.
+- mc32 is this fix only.
 
 ## mule-v2.10.1-mc31 (unreleased)
 
