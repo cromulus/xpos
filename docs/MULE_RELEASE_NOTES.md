@@ -289,6 +289,49 @@ Bill: "we should be able to add notes to sales, orders, and returns as well."
 - Tests: `frontend/tests/notes.spec.ts`, `xpos.api.tests.test_order_notes`,
   Mule `test_counter_mix_orders` (the order's note and its slip).
 
+### /xpos is never website-cached (MuleCity-urx9, P0 security)
+
+- `xpos/www/xpos.py` sets `no_cache = 1` (and `sitemap = 0`). The page renders
+  `window.xpos.boot` and the session CSRF token, and Frappe's website cache
+  (keyed by path, shared by every visitor, 30 min) served one visitor's copy to
+  everyone: a cached logged-out copy broke login with CSRFTokenError, and a
+  cached logged-in copy leaked that user's boot and token. Both route rules
+  (`/xpos`, `/xpos/<path>`) render this one page; there are no other XPOS www
+  pages. The fix does not depend on the site's `disable_website_cache` (the
+  2026-10-02 mitigation on staging and prod, which can be removed after
+  deploying this).
+- Tests: `xpos.api.tests.test_csrf_token` (TestXposPageIsNeverWebsiteCached:
+  the module flags, the routes, and Frappe's `TemplatePage` reading `no_cache`
+  so `can_cache()` refuses the page).
+
+### Offline database open can no longer hang the till (MuleCity-pg10)
+
+Bill's Safari stopped after loading tax_context and never asked for items:
+opening the offline IndexedDB (`xpos_offline_v3`) waited forever.
+
+- `XPosDB.open()` (also Dexie's implicit auto-open behind every table access)
+  gives up when the open is blocked (another tab or window holds an older
+  version and does not let go) or takes longer than `DB_OPEN_TIMEOUT_MS`
+  (8 s). It rejects with `OfflineDbUnavailableError` (`reason`: `blocked` |
+  `timeout`, `userMessage`) and closes the database with auto-open off, so every
+  later offline-data call fails at once instead of queueing behind the stuck
+  open. The till does not retry on its own, and never deletes the database in
+  that state (the old "reset on open error" path could delete and block too;
+  its delete is now under the same timeout).
+- The till carries on online: `posStore.useOfflineMode` is off while the
+  database is unavailable, and a 30 s error toast tells the cashier what to do:
+  blocked: "Offline data is locked by another X POS tab or window. Close the
+  other X POS tabs, then reload this page. The till keeps working online;
+  offline sales are off until then." Timeout: the same advice, plus "if it
+  keeps happening, clear this site's data in the browser settings (offline
+  sales not yet synced from this device would be lost)". Clear Cached Data
+  (Ctrl+Shift+R) needs the database open, so it is not offered there.
+- `versionchange`: Dexie already closes the connection so another tab can
+  upgrade (its default handler); unchanged.
+- Tests: `frontend/tests/offlineDbOpen.spec.ts` (fake-indexeddb, new dev
+  dependency: a blocking older-version connection, a never-answering open, the
+  implicit open, `useOfflineMode`).
+
 ## mule-v2.10.1-mc22
 
 ### Named logins (MuleCity-1p4i): initials only on a shared login
