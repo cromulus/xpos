@@ -59,6 +59,7 @@
 				</button>
 			</div>
 		</nav>
+		<PracticeSiteBanner />
 	</div>
 </template>
 
@@ -66,6 +67,7 @@
 import Navbar from "@/components/Navbar.vue";
 import Sidebar from "@/components/Sidebar.vue";
 import MenuBar from "@/components/MenuBar.vue";
+import PracticeSiteBanner from "@/components/PracticeSiteBanner.vue";
 import { isElectron } from "@/services/electronBridge";
 import { useRoute } from "vue-router";
 import { LayoutGrid, FileText, BarChart3, AlignJustify } from "lucide-vue-next";
