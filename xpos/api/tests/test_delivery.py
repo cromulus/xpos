@@ -40,7 +40,8 @@ class TestThePolicy(HookCase):
 	def test_the_site_policy_comes_with_its_delivery_item(self):
 		self.with_hooks(xpos_delivery_policy=lambda: dict(POLICY), xpos_delivery_quote=lambda *a: {})
 		item = frappe._dict(name="DEL", item_name="Delivery Charge", stock_uom="Nos", item_group="Services")
-		with patch.object(delivery.frappe.db, "get_value", return_value=item):
+		with patch.object(delivery.frappe.db, "get_value", return_value=item), \
+				patch.object(delivery, "walk_in_customers", return_value=[]):
 			policy = delivery.get_delivery_policy()
 		self.assertEqual(policy["rate_per_mile"], 5.0)
 		self.assertEqual(policy["item"], {"item_code": "DEL", "item_name": "Delivery Charge",
@@ -318,8 +319,10 @@ class TestTheSaleKeepsItsDeliveryFacts(unittest.TestCase):
 		from xpos.api import invoices
 
 		doc = frappe._dict()
-		with patch("frappe.contacts.doctype.address.address.get_address_display", return_value="12 Mill Rd<br>Angier") as display:
-			invoices.apply_delivery_facts(doc, data)
+		# A named customer's sale (a walk-in's is refused: TestNoDeliveryForWalkIns).
+		with patch("frappe.contacts.doctype.address.address.get_address_display", return_value="12 Mill Rd<br>Angier") as display, \
+				patch.object(invoices, "refuse_walk_in_delivery"):
+			invoices.apply_delivery_facts(doc, {"customer": "Greenview", **data})
 		return doc, display
 
 	def test_address_day_and_miles_from_the_address(self):
