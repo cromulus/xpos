@@ -51,7 +51,16 @@ vi.mock("@/lib/translate", () => {
 	return { __, default: __ };
 });
 
-import { bandOf, cartWeight, deliveryCharge, quoteOffline, type DeliveryPolicy } from "@/services/delivery";
+import {
+	autoDeliveryAddress,
+	bandOf,
+	cartWeight,
+	deliveryCharge,
+	deliveryOffered,
+	isWalkInCustomer,
+	quoteOffline,
+	type DeliveryPolicy,
+} from "@/services/delivery";
 import { useCartStore } from "@/stores/cartStore";
 import AddDelivery from "@/components/cart/AddDelivery.vue";
 
@@ -217,21 +226,148 @@ describe("Add delivery at the counter (online: the site quotes)", () => {
 		expect(deliveryLines(cart)).toEqual([[1, 60, "Delivery (typed)"]]);
 	});
 
-	it("negative: not offered for a customer with no address, or when the site quotes no delivery", async () => {
-		serve({ standing_charge: 0, no_charge: false, addresses: [] });
-		const { wrapper } = await counter({ xpos_has_address: false, xpos_address_count: 0 });
-		expect(wrapper.find("[data-testid='add-delivery']").exists()).toBe(false);
-
-		setActivePinia(createPinia());
+	it("negative: not offered when the site quotes no delivery", async () => {
 		state.meta = new Map([["delivery_policy", "null"]]);
 		state.call.mockResolvedValue(null);
-		const other = await counter({ xpos_has_address: true, xpos_address_count: 1 });
-		expect(other.wrapper.find("[data-testid='add-delivery']").exists()).toBe(false);
+		const { wrapper } = await counter({ xpos_has_address: true, xpos_address_count: 1 });
+		expect(wrapper.find("[data-testid='add-delivery']").exists()).toBe(false);
+	});
+});
+
+/** Fill the add-address form (street, line 2, city, state, ZIP, name, miles). */
+async function fillNewAddress(wrapper: Awaited<ReturnType<typeof counter>>["wrapper"], fields: Record<string, string>) {
+	const form = wrapper.get("[data-testid='delivery-new-address']");
+	for (const [key, value] of Object.entries(fields)) await form.get(`[data-testid='delivery-new-${key}']`).setValue(value);
+}
+
+const NEW_FARM = { line1: "88 New Ground Rd", city: "Coats", state: "NC", zip: "27521" };
+
+describe("Bill's address rule (2026-10-01 22:52, MuleCity-qajl)", () => {
+	const shipping = (address: Record<string, unknown>) => ({ ...address, address_type: "Shipping" });
+	const billing = (address: Record<string, unknown>) => ({ ...address, address_type: "Billing" });
+
+	it("the choice: the only address; else the only Shipping address; else the clerk picks", () => {
+		expect(autoDeliveryAddress([farm])).toBe(farm);
+		expect(autoDeliveryAddress([billing(farm), shipping(barn)])).toMatchObject({ name: "ADDR-BARN" });
+		expect(autoDeliveryAddress([shipping(farm), shipping(barn)])).toBeNull();
+		expect(autoDeliveryAddress([billing(farm), billing(barn)])).toBeNull();
+		expect(autoDeliveryAddress([])).toBeNull();
+	});
+
+	it("a delivery needs a real customer: no customer, the profile's walk-in and the site's walk-ins get none", () => {
+		const site = { ...policy, walk_in_customers: ["CASH 338"] };
+		expect(isWalkInCustomer("", site, "Walk-In")).toBe(true);
+		expect(isWalkInCustomer("Walk-In", site, "Walk-In")).toBe(true);
+		expect(isWalkInCustomer("CASH 338", site, "Walk-In")).toBe(true);
+		expect(isWalkInCustomer("MC-CUST-4112", site, "Walk-In")).toBe(false);
+		expect(deliveryOffered({ policy: site, customer: "MC-CUST-4112", defaultCustomer: "Walk-In" })).toBe(true);
+		expect(deliveryOffered({ policy: site, customer: "MC-CUST-4112", isReturnMode: true })).toBe(false);
+		expect(deliveryOffered({ policy: null, customer: "MC-CUST-4112" })).toBe(false);
+	});
+
+	for (const online of [true, false]) {
+		const mode = online ? "online" : "offline";
+
+		it(`${mode}: the walk-in accounts never see Add delivery`, async () => {
+			state.meta = new Map([["delivery_policy", JSON.stringify({ ...policy, walk_in_customers: ["CASH 338"] })]]);
+			state.online = online;
+			for (const name of ["Walk-In", "CASH 338"]) {
+				setActivePinia(createPinia());
+				const { wrapper } = await counter({ name, customer_name: name, xpos_has_address: true, xpos_address_count: 1 });
+				expect(wrapper.find("[data-testid='add-delivery']").exists()).toBe(false);
+			}
+		});
+	}
+
+	it("online: the one Shipping address among several is quoted and added without asking", async () => {
+		serve({ standing_charge: 0, no_charge: false, addresses: [billing(farm), shipping(barn)] },
+			siteQuote({ amount: 45, miles: 17.4, description: "17.4 mi, band 2 (1,600 lb)" }));
+		const { cart, wrapper } = await counter({ xpos_has_address: true, xpos_address_count: 2 });
+		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		expect(wrapper.find("[data-testid='delivery-dialog']").exists()).toBe(false);
+		expect(cart.getInvoiceData("Till", "SHIFT-1").shipping_address_name).toBe("ADDR-BARN");
+		// "Change delivery" shows the list, with "Add new address".
+		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		expect(wrapper.findAll("[data-testid='delivery-address']")).toHaveLength(2);
+		expect(wrapper.find("[data-testid='delivery-add-address']").exists()).toBe(true);
+	});
+
+	it("online: a named customer with no address gets the button; it opens the add form; the site makes it with Google's miles", async () => {
+		const added = { name: "Albert Adkins-Shipping", title: null, address_type: "Shipping", address_line1: "88 New Ground Rd",
+			address_line2: null, city: "Coats", state: "NC", pincode: "27521", miles: 42, miles_source: "routes",
+			is_primary_address: true, is_shipping_address: true, miles_pending: false, quote: siteQuote({ band: 1 }) };
+		state.call.mockImplementation(async (method: string) => {
+			if (method.endsWith("get_customer_delivery")) return { standing_charge: 0, no_charge: false, addresses: [] };
+			if (method.endsWith("add_delivery_address")) return added;
+			if (method.endsWith("quote_delivery")) return siteQuote();
+			throw new Error(`unexpected ${method}`);
+		});
+		const { cart, wrapper } = await counter({ xpos_has_address: false, xpos_address_count: 0 });
+		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		expect(wrapper.findAll("[data-testid='delivery-address']")).toHaveLength(0);
+		await fillNewAddress(wrapper, NEW_FARM);
+		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
+		await flushPromises();
+		expect(state.call).toHaveBeenCalledWith("xpos.api.customers.add_delivery_address", {
+			customer: "MC-CUST-4112", address_line1: "88 New Ground Rd", address_line2: null, city: "Coats", state: "NC",
+			pincode: "27521", title: null, delivery_miles: null, miles_source: "manual",
+		});
+		// The cart's quote weighs this cart (the add's own quote has no cart).
+		expect(state.call).toHaveBeenCalledWith("xpos.api.delivery.quote_delivery", expect.objectContaining({ address: "Albert Adkins-Shipping" }));
+		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb)"]]);
+		expect(cart.getInvoiceData("Till", "SHIFT-1").shipping_address_name).toBe("Albert Adkins-Shipping");
+		// The picker (and the cached row) know it at once.
+		expect(cart.customer?.xpos_delivery?.addresses.map((a) => a.name)).toEqual(["Albert Adkins-Shipping"]);
+	});
+
+	it("online: Google finds no miles: the form asks; the typed miles go on the address and price it", async () => {
+		const base = { name: "Albert Adkins-Shipping", address_type: "Shipping", address_line1: "88 New Ground Rd", city: "Coats",
+			state: "NC", pincode: "27521", is_primary_address: true, is_shipping_address: true };
+		const adds: Array<Record<string, unknown>> = [];
+		state.call.mockImplementation(async (method: string, args: Record<string, unknown>) => {
+			if (method.endsWith("get_customer_delivery")) return { standing_charge: 0, no_charge: false, addresses: [] };
+			if (method.endsWith("add_delivery_address")) {
+				adds.push(args);
+				return args.delivery_miles
+					? { ...base, miles: 42, miles_source: "manual", miles_pending: false, quote: siteQuote({ miles_source: "manual" }) }
+					: { ...base, miles: null, miles_source: null, miles_pending: true, quote: siteQuote({ amount: null, source: "none", miles: null }) };
+			}
+			if (method.endsWith("quote_delivery")) return siteQuote({ miles_source: "manual" });
+			throw new Error(`unexpected ${method}`);
+		});
+		const { cart, wrapper } = await counter({ xpos_has_address: false });
+		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		await fillNewAddress(wrapper, NEW_FARM);
+		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
+		await flushPromises();
+		expect(wrapper.find("[data-testid='delivery-new-miles-asked']").exists()).toBe(true);
+		expect(deliveryLines(cart)).toEqual([]);
+		await fillNewAddress(wrapper, { miles: "42" });
+		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
+		await flushPromises();
+		expect(adds.map((a) => [a.delivery_miles, a.miles_source])).toEqual([[null, "manual"], [42, "manual"]]);
+		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb)"]]);
+	});
+
+	it("the picker always offers Add new address, online too", async () => {
+		serve({ standing_charge: 0, no_charge: false, addresses: [farm, barn] });
+		const { wrapper } = await counter({ xpos_has_address: true, xpos_address_count: 2 });
+		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		expect(wrapper.find("[data-testid='delivery-new-address']").exists()).toBe(false);
+		await wrapper.get("[data-testid='delivery-add-address']").trigger("click");
+		expect(wrapper.find("[data-testid='delivery-new-address']").exists()).toBe(true);
+		await wrapper.get("[data-testid='delivery-new-address-back']").trigger("click");
+		expect(wrapper.findAll("[data-testid='delivery-address']")).toHaveLength(2);
 	});
 });
 
 describe("Add delivery with the till offline (priced from the cache)", () => {
-	it("prices a known address from its cached miles, the cached policy and cached item weights", async () => {
+	it("one cached address with miles is priced from the cache and added at once", async () => {
 		state.online = false;
 		const { cart, wrapper } = await counter({
 			xpos_has_address: true,
@@ -239,10 +375,8 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		});
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
-		expect(wrapper.get("[data-testid='delivery-address']").attributes("data-selected")).toBe("true");
-		await wrapper.get("[data-testid='delivery-use']").trigger("click");
-		await flushPromises();
 		expect(state.call).not.toHaveBeenCalled();
+		expect(wrapper.find("[data-testid='delivery-dialog']").exists()).toBe(false);
 		// 32 bags x 50 lb = 1,600 lb, band 2; 42 mi x $5 = $210 x 50% = $105 (a shared vector).
 		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb)"]]);
 		expect(cart.getInvoiceData("Till", "SHIFT-1").shipping_address_name).toBe("ADDR-FARM");
@@ -256,109 +390,87 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		});
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
-		await wrapper.get("[data-testid='delivery-use']").trigger("click");
-		await flushPromises();
 		expect(deliveryLines(cart)).toEqual([[1, 80, "Standing rate"]]);
 	});
 
-	it("a new address typed offline is priced from the typed miles, and the sale and address are flagged", async () => {
+	it("a new address added offline is queued, priced from the typed miles, and the sale names it by its local id", async () => {
 		state.online = false;
 		state.items.set("FEED-50", { item_code: "FEED-50", weight_per_unit: 125 }); // 32 x 125 = 4,000 lb, band 4
 		const { cart, wrapper } = await counter({
 			xpos_has_address: true,
 			xpos_delivery: { standing_charge: 0, no_charge: false, addresses: [farm] },
 		});
-		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await wrapper.get("[data-testid='add-delivery']").trigger("click"); // the farm, at once
 		await flushPromises();
-		const form = wrapper.get("[data-testid='delivery-new-address']");
-		await form.get("input[placeholder='Street address']").setValue("88 New Ground Rd");
-		await form.get("input[placeholder='City']").setValue("Coats");
-		await form.get("input[placeholder='Miles one way']").setValue("17.4");
+		await wrapper.get("[data-testid='add-delivery']").trigger("click"); // Change delivery: the list
+		await flushPromises();
+		await wrapper.get("[data-testid='delivery-add-address']").trigger("click");
+		await fillNewAddress(wrapper, { ...NEW_FARM, line2: "Back gate", miles: "17.4" });
 		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
 		await flushPromises();
+		expect(state.call).not.toHaveBeenCalled();
 		// 17.4 mi x $5 = $87 -> $85 at full load (a shared vector).
 		expect(deliveryLines(cart)).toEqual([[1, 85, "17.4 mi, band 4 (4,000 lb), miles typed offline"]]);
+		const [queued] = JSON.parse(state.meta.get("pending_delivery_addresses")!);
+		expect(queued).toMatchObject({ customer: "MC-CUST-4112", address_line1: "88 New Ground Rd", address_line2: "Back gate",
+			city: "Coats", state: "NC", pincode: "27521", miles: 17.4 });
+		expect(queued.local_id).toMatch(/^LOCAL-ADDR-/);
 		const sale = cart.getInvoiceData("Till", "SHIFT-1");
 		expect(sale.shipping_address_name).toBeUndefined();
-		expect(sale.xpos_new_shipping_address).toEqual({ address_line1: "88 New Ground Rd", city: "Coats", miles: 17.4 });
-		expect(sale.xpos_delivery).toMatchObject({ source: "miles", amount: 85, miles: 17.4, miles_source: "manual_offline", address: "" });
+		expect(sale.xpos_new_shipping_address).toEqual({ address_line1: "88 New Ground Rd", address_line2: "Back gate", city: "Coats",
+			state: "NC", pincode: "27521", miles: 17.4, local_id: queued.local_id });
+		expect(sale.xpos_delivery).toMatchObject({ source: "miles", amount: 85, miles: 17.4, miles_source: "manual_offline", address: queued.local_id });
+		expect([sale.pos_delivery_miles, sale.pos_delivery_miles_source]).toEqual([17.4, "manual"]);
+		// The picker shows it for the next sale.
+		expect(cart.customer?.xpos_delivery?.addresses.map((a) => a.name)).toEqual(["ADDR-FARM", queued.local_id]);
 	});
 
-	it("a till that goes offline after it opened offers the new-address form (the till was open when the internet dropped)", async () => {
-		const { wrapper } = await counter({
-			xpos_has_address: true,
-			xpos_delivery: { standing_charge: 0, no_charge: false, addresses: [farm] },
-		});
-		state.online = false;
-		window.dispatchEvent(new Event("offline"));
-		await flushPromises();
-		await wrapper.get("[data-testid='add-delivery']").trigger("click");
-		await flushPromises();
-		expect(wrapper.find("[data-testid='delivery-new-address']").exists()).toBe(true);
-		expect(state.call).not.toHaveBeenCalledWith("xpos.api.delivery.quote_delivery", expect.anything());
-	});
-
-	it("a named customer with no address on file can still get a delivery to a new address typed offline", async () => {
+	it("a named customer with no address on file goes straight to the add form offline; a parked tab carries the flag", async () => {
 		state.online = false;
 		const { cart, wrapper } = await counter({ xpos_has_address: false, xpos_address_count: 0 });
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
 		expect(wrapper.findAll("[data-testid='delivery-address']")).toHaveLength(0);
-		const form = wrapper.get("[data-testid='delivery-new-address']");
-		await form.get("input[placeholder='Street address']").setValue("88 New Ground Rd");
-		await form.get("input[placeholder='City']").setValue("Coats");
-		await form.get("input[placeholder='Miles one way']").setValue("42");
+		await fillNewAddress(wrapper, { ...NEW_FARM, miles: "42" });
 		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
 		await flushPromises();
 		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb), miles typed offline"]]);
+		// Save as draft sends getInvoiceData(); save_draft_invoice flags the tab with a Comment.
+		const parked = cart.getInvoiceData("Till", "SHIFT-1");
+		expect(parked.xpos_delivery).toMatchObject({ source: "miles", miles: 42, miles_source: "manual_offline" });
+		expect(parked.xpos_new_shipping_address).toMatchObject({ address_line1: "88 New Ground Rd", miles: 42 });
 	});
 
-	it("negative: offline, the walk-in customer is not offered a delivery", async () => {
-		state.online = false;
-		const { wrapper } = await counter({ name: "Walk-In", customer_name: "Walk-In" });
-		expect(wrapper.find("[data-testid='add-delivery']").exists()).toBe(false);
-	});
-
-	it("a parked tab priced from typed miles carries the flag with it", async () => {
+	it("offline with no miles typed, the clerk types the charge", async () => {
 		state.online = false;
 		const { cart, wrapper } = await counter({ xpos_has_address: false });
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
-		const form = wrapper.get("[data-testid='delivery-new-address']");
-		await form.get("input[placeholder='Street address']").setValue("88 New Ground Rd");
-		await form.get("input[placeholder='City']").setValue("Coats");
-		await form.get("input[placeholder='Miles one way']").setValue("42");
+		await fillNewAddress(wrapper, NEW_FARM);
 		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
 		await flushPromises();
-		// Save as draft sends getInvoiceData(); save_draft_invoice flags the tab with a Comment
-		// (xpos.api.delivery.note_typed_miles), which stays on the invoice when the tab is paid.
-		const parked = cart.getInvoiceData("Till", "SHIFT-1");
-		expect(parked.xpos_delivery).toMatchObject({ source: "miles", miles: 42, miles_source: "manual_offline" });
-		expect(parked.xpos_new_shipping_address).toEqual({ address_line1: "88 New Ground Rd", city: "Coats", miles: 42 });
+		await wrapper.get("[data-testid='delivery-amount']").setValue("60");
+		await wrapper.get("[data-testid='delivery-amount-use']").trigger("click");
+		expect(deliveryLines(cart)).toEqual([[1, 60, "Delivery (typed)"]]);
+		expect(cart.getInvoiceData("Till", "SHIFT-1").xpos_new_shipping_address).toMatchObject({ miles: 0 });
 	});
 
-	it("negative: a new address needs a street, a town and miles above zero", async () => {
+	it("negative: a new address needs a street, a city, a state and a ZIP; typed miles must be above zero", async () => {
 		state.online = false;
-		const { cart, wrapper } = await counter({
-			xpos_has_address: true,
-			xpos_delivery: { standing_charge: 0, no_charge: false, addresses: [farm] },
-		});
+		const { cart, wrapper } = await counter({ xpos_has_address: false });
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
-		const form = wrapper.get("[data-testid='delivery-new-address']");
-		await form.get("input[placeholder='Street address']").setValue("88 New Ground Rd");
-		await form.get("input[placeholder='City']").setValue("Coats");
-		await form.get("input[placeholder='Miles one way']").setValue("0");
-		expect(wrapper.get("[data-testid='delivery-new-address-use']").attributes("disabled")).toBeDefined();
+		const use = () => wrapper.get("[data-testid='delivery-new-address-use']").attributes("disabled");
+		await fillNewAddress(wrapper, { line1: "88 New Ground Rd", city: "Coats" });
+		await fillNewAddress(wrapper, { state: "" });
+		expect(use()).toBeDefined();
+		await fillNewAddress(wrapper, { state: "NC" });
+		expect(use()).toBeDefined(); // no ZIP
+		await fillNewAddress(wrapper, { zip: "27521", miles: "0" });
+		expect(use()).toBeDefined();
+		await fillNewAddress(wrapper, { miles: "" });
+		expect(use()).toBeUndefined();
 		expect(deliveryLines(cart)).toEqual([]);
-	});
-
-	it("the online picker offers no typed new address (Edit Customer adds addresses online)", async () => {
-		serve({ standing_charge: 0, no_charge: false, addresses: [farm, barn] });
-		const { wrapper } = await counter({ xpos_has_address: true, xpos_address_count: 2 });
-		await wrapper.get("[data-testid='add-delivery']").trigger("click");
-		await flushPromises();
-		expect(wrapper.find("[data-testid='delivery-new-address']").exists()).toBe(false);
 	});
 });
 

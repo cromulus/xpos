@@ -36,12 +36,13 @@
 				<DialogDescription class="text-xs">{{ cartStore.customerName }}</DialogDescription>
 			</DialogHeader>
 
-			<!-- Several places: the primary shipping address is chosen; search, pick another. -->
-			<div v-if="!chosen" class="space-y-2" data-testid="delivery-addresses">
-				<label class="flex items-center gap-2 text-xs font-semibold">
-					{{ __("Delivery day") }}
-					<input v-model="day" type="date" class="border border-input rounded px-1 py-0.5 bg-card" data-testid="delivery-day" />
-				</label>
+			<label v-if="mode !== 'typed'" class="flex items-center gap-2 text-xs font-semibold">
+				{{ __("Delivery day") }}
+				<input v-model="day" type="date" class="border border-input rounded px-1 py-0.5 bg-card" data-testid="delivery-day" />
+			</label>
+
+			<!-- Several places: the primary shipping address is chosen; search, pick another, or add one. -->
+			<div v-if="mode === 'pick'" class="space-y-2" data-testid="delivery-addresses">
 				<Input
 					v-if="addresses.length > 1"
 					v-model="search"
@@ -86,26 +87,69 @@
 					/>
 					<span class="text-xs text-muted-foreground whitespace-nowrap">{{ __("or leave empty to type the charge") }}</span>
 				</div>
-				<Button v-if="selected" size="sm" data-testid="delivery-use" :disabled="busy" @click="useSelected">
-					{{ __("Add delivery") }}
-				</Button>
+				<div class="flex flex-wrap gap-2">
+					<Button v-if="selected" size="sm" data-testid="delivery-use" :disabled="busy" @click="useSelected">
+						{{ __("Add delivery") }}
+					</Button>
+					<Button variant="outline" size="sm" data-testid="delivery-add-address" :disabled="busy" @click="startNewAddress">
+						{{ __("Add new address") }}
+					</Button>
+				</div>
+			</div>
 
-				<!-- Offline, a new place: the clerk types the one-way miles; the sale and address are flagged. -->
-				<div v-if="!online" class="space-y-2 rounded-md border border-dashed border-border p-2.5" data-testid="delivery-new-address">
-					<p class="text-xs text-muted-foreground">{{ __("New address (offline): type the one-way driving miles.") }}</p>
-					<Input v-model="draft.address_line1" :placeholder="__('Street address')" />
-					<div class="grid grid-cols-2 gap-2">
-						<Input v-model="draft.city" :placeholder="__('City')" />
-						<Input v-model="draft.miles" type="number" min="0" step="0.1" :placeholder="__('Miles one way')" />
-					</div>
-					<Button size="sm" data-testid="delivery-new-address-use" :disabled="!draftComplete || busy" @click="chooseNew">
+			<!-- A new place for this customer (Bill 2026-10-01 22:52): online the site looks
+			     up its miles; offline it is saved when the till syncs, before the sale. -->
+			<div v-else-if="mode === 'new'" class="space-y-2" data-testid="delivery-new-address">
+				<p class="text-xs text-muted-foreground">
+					{{ online ? __("New address for this customer.") : __("New address (offline): saved for this customer when the till is back online.") }}
+				</p>
+				<Input v-model="draft.address_line1" :placeholder="__('Street address')" data-testid="delivery-new-line1" />
+				<Input v-model="draft.address_line2" :placeholder="__('Address line 2 (optional)')" data-testid="delivery-new-line2" />
+				<div class="grid grid-cols-3 gap-2">
+					<Input v-model="draft.city" :placeholder="__('City')" data-testid="delivery-new-city" />
+					<Input v-model="draft.state" :placeholder="__('State')" data-testid="delivery-new-state" />
+					<Input v-model="draft.pincode" :placeholder="__('ZIP')" data-testid="delivery-new-zip" />
+				</div>
+				<div class="grid grid-cols-2 gap-2">
+					<Input v-model="draft.title" :placeholder="__('Name for this place (optional)')" data-testid="delivery-new-title" />
+					<Input
+						v-model="draft.miles"
+						type="number"
+						min="0"
+						step="0.1"
+						:placeholder="__('Miles one way')"
+						data-testid="delivery-new-miles"
+					/>
+				</div>
+				<p v-if="milesAsked" class="text-xs font-semibold text-amber-700" data-testid="delivery-new-miles-asked">
+					{{ __("The miles to this address could not be found. Type the one-way miles, or leave them empty to type the charge.") }}
+				</p>
+				<p v-else class="text-xs text-muted-foreground">
+					{{
+						online
+							? __("The miles are looked up when it is saved; type them only if you know them.")
+							: __("Type the one-way miles to price it now, or leave them empty to type the charge.")
+					}}
+				</p>
+				<div class="flex flex-wrap gap-2">
+					<Button size="sm" data-testid="delivery-new-address-use" :disabled="!draftComplete || busy" @click="saveNewAddress">
 						{{ __("Deliver here") }}
+					</Button>
+					<Button
+						v-if="addresses.length"
+						variant="outline"
+						size="sm"
+						data-testid="delivery-new-address-back"
+						:disabled="busy"
+						@click="mode = 'pick'"
+					>
+						{{ __("Back to addresses") }}
 					</Button>
 				</div>
 			</div>
 
 			<!-- No standing charge and no miles: the clerk types the charge. -->
-			<div v-else class="space-y-2" data-testid="delivery-typed">
+			<div v-else-if="chosen" class="space-y-2" data-testid="delivery-typed">
 				<p class="text-sm">{{ fullAddress(chosen.address) }}</p>
 				<p class="text-xs text-muted-foreground">{{ chosen.quote.description }}</p>
 				<Input v-model="typedAmount" type="number" min="0" step="0.01" :placeholder="__('Delivery charge')" data-testid="delivery-amount" />
@@ -120,31 +164,47 @@
 <script setup lang="ts">
 /**
  * "Add delivery" on the customer card (Bill 2026-09-29, MuleCity-6nb1; picker
- * 2026-10-01, MuleCity-qajl.3).
+ * 2026-10-01, MuleCity-qajl.3; the address rule, Bill 2026-10-01 22:52).
  *
- * One address (online): quoted and added at once. Several: a dialog opens on the
- * primary shipping address, with a search box (street, town, name) and each
- * address's miles and cost; the clerk can pick another. The cost per row is the
- * till's own quote from the cached policy (`quoteOffline`); the chosen address is
- * quoted by the site when online, as before. A standing charge or free delivery
- * shows that amount on every row. An address with no miles says "no miles": the
- * clerk types the miles (priced by the policy, kept on the sale as typed) or,
- * leaving them empty, types the charge. The clerk picks the delivery day here
- * (default: the day already chosen, else today) and can change it on the card.
- * Offline it works the same from the cache, and a new address can be typed with
- * its one-way miles.
+ * Offered for a named customer that is not the walk-in account, on a sale (not a
+ * return), when the site quotes delivery, online or offline. A delivery needs a
+ * real customer; the server refuses one on a walk-in sale too.
+ *
+ * Which address: the customer's only address; else their only Shipping address;
+ * else the clerk picks (the dialog opens on the primary shipping address, with a
+ * search box and each address's miles and cost); or adds a new one right here.
+ * A customer with no address goes straight to the add form. The chosen address
+ * is quoted at once when it has a price (miles, or a standing / free charge);
+ * one with no miles opens the dialog for the clerk to type them. "Change
+ * delivery" always opens the picker.
+ *
+ * A new address (street, line 2, city, state, ZIP, an optional name and miles):
+ * online the site makes it and looks up its miles; if it cannot, the form asks
+ * for typed miles. Offline it is queued and made at sync, before the sale
+ * (services/addressQueue.ts). Either way the customer's cached addresses get it.
+ * The clerk picks the delivery day here (default: the day already chosen, else
+ * today) and can change it on the card.
  */
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
 import { showError, showSuccess } from "@/services/api";
-import { cachedCartWeight, cachedDeliveryPolicy, customerDelivery, deliveryPolicy, quoteDelivery } from "@/composables/useDelivery";
+import {
+	addDeliveryAddress,
+	cachedCartWeight,
+	cachedDeliveryPolicy,
+	customerDelivery,
+	deliveryPolicy,
+	quoteDelivery,
+} from "@/composables/useDelivery";
 import { useMoney } from "@/composables/useMoney";
 import {
-	TYPED_OFFLINE,
+	autoDeliveryAddress,
 	defaultDeliveryAddress,
+	deliveryOffered,
 	describeAddress,
 	fullAddress,
+	isLocalAddress,
 	quoteOffline,
 	searchAddresses,
 	type CustomerDelivery,
@@ -153,6 +213,7 @@ import {
 	type DeliveryPolicy,
 	type DeliveryQuote,
 } from "@/services/delivery";
+import { cachedAddress, withAddress, type AddedAddress } from "@/services/addressQueue";
 import { extractErrorMessage, isOnline } from "@/utils";
 import { nowDate } from "@/utils/datetime";
 import { Button } from "@/components/ui/button";
@@ -161,6 +222,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Truck } from "lucide-vue-next";
 import { __ } from "@/lib/translate";
 
+type Mode = "pick" | "new" | "typed";
+const EMPTY_DRAFT = { address_line1: "", address_line2: "", city: "", state: "NC", pincode: "", title: "", miles: "" as string | number };
+
 const cartStore = useCartStore();
 const posStore = usePosStore();
 const { money } = useMoney();
@@ -168,6 +232,7 @@ const policy = ref<DeliveryPolicy | null>(null);
 const details = ref<CustomerDelivery | null>(null);
 const open = ref(false);
 const busy = ref(false);
+const mode = ref<Mode>("pick");
 const chosen = ref<{ address: DeliveryAddress; quote: DeliveryQuote; milesSource?: DeliveryMilesSource } | null>(null);
 const selected = ref<DeliveryAddress | null>(null);
 const search = ref("");
@@ -176,7 +241,10 @@ const typedMiles = ref<string | number>("");
 // The load's weight from the cached items, for each row's cost (the site weighs the chosen one online).
 const weightLb = ref(0);
 const typedAmount = ref<string | number>("");
-const draft = ref({ address_line1: "", city: "", miles: "" as string | number });
+const draft = ref({ ...EMPTY_DRAFT });
+// The site made the address but found no miles: the form asks for them (and keeps the address).
+const milesAsked = ref(false);
+const pendingAdded = ref<AddedAddress | null>(null);
 // navigator.onLine is not reactive: follow the browser's online/offline events,
 // and read it again when the clerk presses the button.
 const online = ref(isOnline());
@@ -184,8 +252,14 @@ const syncOnline = () => (online.value = isOnline());
 
 const addresses = computed(() => details.value?.addresses || []);
 const shown = computed(() => searchAddresses(addresses.value, search.value));
+const draftMiles = computed(() => (draft.value.miles === "" ? null : Number(draft.value.miles)));
 const draftComplete = computed(
-	() => !!draft.value.address_line1.trim() && !!draft.value.city.trim() && Number(draft.value.miles) > 0,
+	() =>
+		!!draft.value.address_line1.trim() &&
+		!!draft.value.city.trim() &&
+		!!draft.value.state.trim() &&
+		!!draft.value.pincode.trim() &&
+		(draftMiles.value === null || draftMiles.value > 0),
 );
 const summary = computed(() => {
 	const delivery = cartStore.activeDelivery;
@@ -194,15 +268,14 @@ const summary = computed(() => {
 	return delivery.miles ? __("To {0} · {1} mi", [place, String(delivery.miles)]) : __("To {0} · miles not known", [place]);
 });
 
-// Offered when the site quotes delivery and the customer has somewhere to deliver to.
-// Offline any named customer (not the walk-in default) may get one: the clerk can
-// type a new address and its miles. Never in return mode.
-const offered = computed(() => {
-	const customer = cartStore.customer;
-	if (!policy.value?.item || !customer || cartStore.isReturnMode) return false;
-	if (!online.value) return customer.name !== posStore.defaultCustomer;
-	return (customer.xpos_address_count || 0) > 0 || !!customer.xpos_has_address || !!customer.xpos_delivery?.addresses?.length;
-});
+const offered = computed(() =>
+	deliveryOffered({
+		policy: policy.value,
+		customer: cartStore.customer?.name,
+		defaultCustomer: posStore.defaultCustomer,
+		isReturnMode: cartStore.isReturnMode,
+	}),
+);
 
 onUnmounted(() => {
 	window.removeEventListener("online", syncOnline);
@@ -237,6 +310,11 @@ function costText(address: DeliveryAddress): string {
 	return quote.amount === null ? "—" : money(quote.amount);
 }
 
+/** It has a price without asking: its miles, or the customer's standing or free charge. */
+function priced(address: DeliveryAddress): boolean {
+	return !!address.miles || (details.value?.standing_charge || 0) > 0 || !!details.value?.no_charge;
+}
+
 async function start() {
 	const customer = cartStore.customer;
 	if (!customer || !policy.value) return;
@@ -247,18 +325,25 @@ async function start() {
 		chosen.value = null;
 		search.value = "";
 		typedMiles.value = "";
+		resetDraft();
 		day.value = cartStore.deliveryDate || nowDate();
-		selected.value = defaultDeliveryAddress(addresses.value);
-		// One address with a price (miles, or a standing / free charge): added at once.
-		// Offline the picker also takes a new address, so it always opens; an address
-		// with no miles opens it too, for the clerk to type them.
-		const only = addresses.value.length === 1 ? addresses.value[0] : null;
-		const priced = !!only?.miles || (details.value?.standing_charge || 0) > 0 || !!details.value?.no_charge;
-		if (only && priced && online.value) {
-			await choose(addresses.value[0]);
+		const changing = !!cartStore.activeDelivery;
+		if (!addresses.value.length) {
+			// No address yet: straight to the add form.
+			mode.value = "new";
+			open.value = true;
 			return;
 		}
+		// The one address, or the one Shipping address, is used without asking;
+		// "Change delivery" always shows the list.
+		const auto = changing ? null : autoDeliveryAddress(addresses.value);
+		if (auto && priced(auto)) {
+			await choose(auto);
+			return;
+		}
+		selected.value = auto || defaultDeliveryAddress(addresses.value);
 		weightLb.value = await cachedCartWeight(lines(), policy.value.item_code);
+		mode.value = "pick";
 		open.value = true;
 	} catch (error) {
 		showError(__("Could not add delivery: {0}", [extractErrorMessage(error)]));
@@ -289,6 +374,7 @@ async function choose(address: DeliveryAddress, milesSource?: DeliveryMilesSourc
 		if (quote.amount === null) {
 			chosen.value = { address, quote, milesSource };
 			typedAmount.value = "";
+			mode.value = "typed";
 			open.value = true;
 			return;
 		}
@@ -300,17 +386,64 @@ async function choose(address: DeliveryAddress, milesSource?: DeliveryMilesSourc
 	}
 }
 
-function chooseNew() {
-	return choose(
-		{
-			name: "",
-			address_line1: draft.value.address_line1.trim(),
-			city: draft.value.city.trim(),
-			miles: Number(draft.value.miles),
-			miles_source: TYPED_OFFLINE,
-		},
-		"manual",
-	);
+function resetDraft() {
+	draft.value = { ...EMPTY_DRAFT };
+	milesAsked.value = false;
+	pendingAdded.value = null;
+}
+
+function startNewAddress() {
+	resetDraft();
+	mode.value = "new";
+}
+
+/** Save the new address (online: the site; offline: the queue), then deliver there. */
+async function saveNewAddress() {
+	const customer = cartStore.customer;
+	if (!customer || !draftComplete.value) return;
+	syncOnline();
+	const typed = draftMiles.value;
+	// The site found no miles last time and none were typed: deliver there, the clerk types the charge.
+	if (pendingAdded.value && !typed) return deliverToNew(pendingAdded.value);
+	busy.value = true;
+	try {
+		const added = await addDeliveryAddress(
+			customer.name,
+			{
+				address_line1: draft.value.address_line1.trim(),
+				address_line2: draft.value.address_line2.trim() || null,
+				city: draft.value.city.trim(),
+				state: draft.value.state.trim(),
+				pincode: draft.value.pincode.trim(),
+				title: draft.value.title.trim() || null,
+				miles: typed,
+			},
+			{ first: !addresses.value.length },
+		);
+		const address = cachedAddress(added);
+		// The picker and the cached customer row show it at once.
+		details.value = withAddress(details.value, address);
+		customer.xpos_delivery = details.value;
+		if (added.miles_pending && added.quote?.amount == null && !isLocalAddress(added.name) && !milesAsked.value) {
+			// Online, the site could not find its miles: ask for them (or go on and type the charge).
+			milesAsked.value = true;
+			pendingAdded.value = added;
+			return;
+		}
+		busy.value = false;
+		await deliverToNew(added);
+	} catch (error) {
+		showError(__("Could not save the address: {0}", [extractErrorMessage(error)]));
+	} finally {
+		busy.value = false;
+	}
+}
+
+function deliverToNew(added: AddedAddress) {
+	const address = cachedAddress(added);
+	// Miles typed for a place the till made offline are the clerk's: priced at the till and flagged.
+	const typed = isLocalAddress(address.name) && !!address.miles;
+	return choose(address, typed ? "manual" : undefined);
 }
 
 function useTyped() {
@@ -328,6 +461,7 @@ function add(address: DeliveryAddress, quote: DeliveryQuote, amount: number, mil
 function close() {
 	open.value = false;
 	chosen.value = null;
-	draft.value = { address_line1: "", city: "", miles: "" };
+	mode.value = "pick";
+	resetDraft();
 }
 </script>
