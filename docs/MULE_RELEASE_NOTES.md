@@ -1,5 +1,31 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc28 (unreleased)
+
+### Status reads "in sync" soon after reconnecting (MuleCity-rcxk, mc23 staging walk 2026-10-02)
+
+- **After the till goes offline and back online, the caches refresh.** The
+  status control read "Online · check data sync" for up to 5 minutes although
+  everything was cached: the stale limit equalled the 5-minute refresh
+  interval, and the periodic refresh that fell while offline was skipped, so
+  nothing refreshed until the next tick. `offlineStore.handleOnline` now also
+  schedules the cache refresh (customers and addresses, products and stock,
+  taxes, open orders: `syncOfflineData`) 3 s after the network comes back,
+  debounced, and cancelled if the till goes offline again first, so a flapping
+  network refreshes once. The stale limit is now 1.5x the interval (7.5 min,
+  `utils/cacheFreshness.ts`, shared by `CacheSyncStatus` and the store). A
+  failed, incomplete or missing refresh still reads "check data sync".
+- **The console's 503s for `/xpos/orders` and `/xpos/pos` are not XPOS.** They
+  are Cloudflare Speed Brain on the staging zone (`nmc-atelier.com`): its
+  `Speculation-Rules: "/cdn-cgi/speculation"` header has Chrome prefetch a
+  link on pointerdown, Cloudflare answers the uncached prefetch with 503, and
+  the SPA router handles the click. Production (`erp.mulecity.com`) sends no
+  such header. Turning Speed Brain off for the staging zone silences them; no
+  XPOS change. (Separately found: the generated service worker's navigation
+  route throws `non-precached-url` because `index.html` is not precached, so
+  the runtime caching routes after it never register; left as is here,
+  follow-up bead.)
+
 ## mule-v2.10.1-mc27 (unreleased)
 
 ### Till mix check polish (MuleCity-ra6h, mc26 staging walk 2026-10-02)

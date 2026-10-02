@@ -19,6 +19,7 @@ import { replayQueuedAddresses, resolveQueuedAddress } from "@/services/addressQ
 import type { PendingInvoice } from "@/services/idbService";
 import type { InvoiceData, ReceiptSnapshot } from "@/types/pos.types";
 import __ from "@/lib/translate";
+import { CACHE_SYNC_INTERVAL_MS, RECONNECT_REFRESH_DELAY_MS } from "@/utils/cacheFreshness";
 
 export type OfflineInvoice = PendingInvoice;
 
@@ -51,8 +52,9 @@ export const useOfflineStore = defineStore("offline", () => {
 		const excType = (error as { excType?: string })?.excType || "";
 		return /ValidationError$|^MandatoryError$|^PermissionError$/.test(excType);
 	}
-	const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+	const SYNC_INTERVAL_MS = CACHE_SYNC_INTERVAL_MS;
 	let syncIntervalId: ReturnType<typeof setInterval> | null = null;
+	let reconnectRefreshId: ReturnType<typeof setTimeout> | null = null;
 
 	const hasPending = computed(() => pendingCount.value > 0);
 	const hasDeadLetters = computed(() => deadLetterCount.value > 0);
@@ -95,11 +97,13 @@ export const useOfflineStore = defineStore("offline", () => {
 		window.removeEventListener("online", handleOnline);
 		window.removeEventListener("offline", handleOffline);
 		stopPeriodicSync();
+		cancelReconnectRefresh();
 	}
 
 	async function handleOnline() {
 		isOnline.value = true;
 		showSuccess(__("Internet connection restored"));
+		scheduleReconnectRefresh();
 
 		// Recount first: a sale queued just before reconnecting may not be counted
 		// yet (the count refresh is async), and a stale 0 would skip this sync.
@@ -109,8 +113,29 @@ export const useOfflineStore = defineStore("offline", () => {
 		}
 	}
 
+	/**
+	 * The periodic refresh that fell while the till was offline was skipped, so
+	 * refresh the caches once the network is back (MuleCity-rcxk). Debounced: a
+	 * flapping connection refreshes once, after it has stayed up for a moment.
+	 */
+	function scheduleReconnectRefresh(): void {
+		if (reconnectRefreshId) clearTimeout(reconnectRefreshId);
+		reconnectRefreshId = setTimeout(() => {
+			reconnectRefreshId = null;
+			void syncOfflineData();
+		}, RECONNECT_REFRESH_DELAY_MS);
+	}
+
+	function cancelReconnectRefresh(): void {
+		if (reconnectRefreshId) {
+			clearTimeout(reconnectRefreshId);
+			reconnectRefreshId = null;
+		}
+	}
+
 	function handleOffline() {
 		isOnline.value = false;
+		cancelReconnectRefresh();
 		showError(__("You are offline. Check your internet connection."));
 	}
 

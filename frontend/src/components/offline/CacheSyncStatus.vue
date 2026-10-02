@@ -70,6 +70,7 @@ import { useOfflineStore } from "@/stores/offlineStore";
 import { useCustomerStore } from "@/stores/customerStore";
 import { useItemStore } from "@/stores/itemStore";
 import { STATUS_TONE_CLASS, statusSummary } from "@/utils/statusSummary";
+import { isCacheFresh } from "@/utils/cacheFreshness";
 import { __ } from "@/lib/translate";
 const emit = defineEmits<{ "open-pending": [] }>();
 const cache = useCacheStatus(),
@@ -88,10 +89,7 @@ const state = (kind: string) =>
 	cache.states[kind]?.profile === pos.profileName ? cache.states[kind] : undefined;
 const loading = computed(() => kinds.some((k) => state(k)?.loading));
 const cacheReady = computed(() =>
-	kinds.every((k) => {
-		const s = state(k);
-		return s && s.complete && !s.error && !s.loading && now.value - s.updatedAt < 300000;
-	}),
+	kinds.every((k) => isCacheFresh(state(k), now.value)),
 );
 const summary = computed(() =>
 	statusSummary(
