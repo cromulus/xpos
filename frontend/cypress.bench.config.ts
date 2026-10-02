@@ -24,6 +24,10 @@ export default defineConfig({
 			vfdFixture: process.env.XPOS_BENCH_VFD_FIXTURE || "",
 			exemptCategory: process.env.XPOS_BENCH_EXEMPT_CATEGORY || "",
 			farmCustomer: process.env.XPOS_BENCH_FARM_CUSTOMER || "",
+			// The bench user is the register's Shared Login (Mule City's pos@): Pay must
+			// ask for cashier initials, and the stories type these listed ones.
+			sharedLogin: process.env.XPOS_BENCH_SHARED_LOGIN || "",
+			initials: process.env.XPOS_BENCH_INITIALS || "",
 		},
 		supportFile: "tests/e2e/support/bench.ts",
 		specPattern: "tests/e2e/bench/**/*.cy.ts",

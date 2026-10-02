@@ -20,6 +20,8 @@ real. The browser then fires `offline` and `navigator.onLine` turns false.
 |---|---|
 | `XPOS_BENCH_URL` | The site, e.g. `http://localhost:8080` |
 | `XPOS_BENCH_USER`, `XPOS_BENCH_PASSWORD` | A user on the POS Profile, with a POS Role that may sell |
+| `XPOS_BENCH_SHARED_LOGIN` | Optional: the bench user is the profile's Shared Login (Mule City's cashier-only pos@; erp2's `offline_fixtures.py` makes it and sets this, MuleCity-g4gj). Pay must then ask for cashier initials, and a story fails if it does not |
+| `XPOS_BENCH_INITIALS` | Listed cashier initials typed at Pay on a Shared Login (default `LE`) |
 | `XPOS_BENCH_IMPERSONATE` | Optional: log in as an administrator above, then continue as this cashier (Frappe Impersonate) |
 | `XPOS_BENCH_PROFILE`, `XPOS_BENCH_COMPANY` | The POS Profile (with **Use Offline Mode** on) and its company |
 | `XPOS_BENCH_ITEM` | An item in stock with a price, shown in the item list |

@@ -27,7 +27,7 @@ export function waitUntil<T>(read: () => Cypress.Chainable<T>, ok: (value: T) =>
 	});
 }
 
-/** An open till for the bench user, as Leslie opens it in the morning. */
+/** An open till for the bench user, as the counter opens it in the morning. */
 export function ensureOpenShift() {
 	cy.benchCall("xpos.api.shifts.check_open_shift").then((open) => {
 		if (open) return;
@@ -70,15 +70,24 @@ export function chooseCustomer(name: string = customer()) {
 	});
 }
 
+/** The listed cashier initials the stories type at Pay (XPOS_BENCH_INITIALS; "LE" by default). */
+export const cashierInitials = () => (Cypress.env("initials") as string) || "LE";
+
+/** The bench user is a Shared Login (XPOS_BENCH_SHARED_LOGIN), so Pay must ask for initials. */
+export const sharedLogin = () => Boolean(Cypress.env("sharedLogin"));
+
 /**
  * Save & Print with Enter, as the counter does. On a register that asks for cashier
  * initials at Pay (Mule City's shared counter login, MuleCity-fb00), type listed
  * initials first: Enter in that box moves to the amount, whose Enter completes the
  * sale. A site without the flag shows no box and Enter goes to the dialog as before.
+ * When the bench user is the Shared Login (erp2's offline suite, MuleCity-g4gj) the
+ * box must be there: a till that stopped asking would otherwise pass unnoticed.
  * With `tendered`, that amount is typed into the Tendered box before Enter (more
  * than the total gives change, MuleCity-ztb9); without it the tender stays as filled.
  */
-export function payWithEnter(initials: string = "LE", tendered?: number) {
+export function payWithEnter(initials: string = cashierInitials(), tendered?: number) {
+	if (sharedLogin()) cy.get("[role='dialog'] [data-testid='cashier-initials-input']").should("exist");
 	cy.get("[role='dialog']").then(($dialog) => {
 		const field = $dialog.find("[data-testid='cashier-initials-input']");
 		if (field.length) cy.wrap(field).clear().type(`${initials}{enter}`);
@@ -120,7 +129,7 @@ export function ringUpOneBagTendering(mode: string, tendered: number, buyer: str
 	cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
 	cy.get(`[data-testid='payment-method'][data-mode='${mode}']`).click();
 	// Type the tender (after the cashier's initials, where asked); Enter is Save & Print.
-	payWithEnter("LE", tendered);
+	payWithEnter(cashierInitials(), tendered);
 	cy.get("[role='dialog']").should("not.exist");
 	cy.cartRows().should("have.length", 0);
 }
