@@ -110,17 +110,10 @@
 						<strong class="text-foreground" :class="{ 'text-destructive': isOverCreditLimit }">{{ customerCreditLimit > 0 ? money(customerCreditLimit) : __("None") }}</strong>
 					</span>
 				</template>
-				<AddDelivery />
-				<Button
-					variant="link"
-					size="sm"
-					class="h-auto p-0 text-xs font-semibold"
-					data-testid="customer-recent-purchases"
-					@click="openRecentPurchases"
-				>
-					{{ __("Recent purchases") }}
-				</Button>
 			</div>
+			<!-- Add delivery is its own button below the account row (Bill 2026-10-01, MuleCity-qajl.2);
+			     The recent-sales link is gone: Repeat in the top bar does that. -->
+			<AddDelivery v-if="cartStore.customer && !cartStore.isReturnMode" />
 			<p
 				v-if="showCreditInfo && isOverCreditLimit"
 				class="mt-1 flex items-center gap-1.5 text-xs font-semibold text-destructive"
@@ -352,11 +345,6 @@ function handleCustomerClick() {
 	}
 	customerStore.showCustomerDialog = true;
 	customerStore.searchCustomers();
-}
-
-// Reuse the existing history dialog and its customer-scoped API.
-function openRecentPurchases() {
-	window.dispatchEvent(new CustomEvent("xpos:show-repeat-dialog"));
 }
 
 function handleEditCustomer() {

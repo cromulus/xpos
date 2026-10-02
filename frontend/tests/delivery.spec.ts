@@ -379,3 +379,35 @@ describe("a parked delivery sale", () => {
 		expect(sale.items[0]).toMatchObject({ item_code: "MC-ITEM-DEL", rate: 105, description: "42 mi, band 2 (1,600 lb)" });
 	});
 });
+
+describe("the customer card's Add delivery button (Bill 2026-10-01, MuleCity-qajl.2)", () => {
+	it("is a button on its own line, shown for one address and for several", async () => {
+		for (const count of [1, 3]) {
+			setActivePinia(createPinia());
+			serve({ standing_charge: 0, no_charge: false, addresses: [farm] });
+			const { wrapper } = await counter({ xpos_has_address: true, xpos_address_count: count });
+			expect(wrapper.get("[data-testid='delivery-row']").find("[data-testid='add-delivery']").exists()).toBe(true);
+		}
+	});
+
+	it("negative: never in return mode, online or offline", async () => {
+		for (const online of [true, false]) {
+			setActivePinia(createPinia());
+			state.online = online;
+			const { cart, wrapper } = await counter({ xpos_has_address: true, xpos_address_count: 1 });
+			cart.isReturnMode = true;
+			await flushPromises();
+			expect(wrapper.find("[data-testid='add-delivery']").exists()).toBe(false);
+		}
+	});
+
+	it("the card no longer has Recent purchases (Repeat is in the top bar), keeps Credit limit, and puts Add delivery below the account row", async () => {
+		const source = (await import("@/components/cart/Cart.vue?raw")).default as string;
+		expect(source).not.toContain("Recent purchases");
+		expect(source).not.toContain("openRecentPurchases");
+		expect(source).toContain('data-testid="customer-credit-limit"');
+		const row = source.indexOf('data-testid="customer-account-row"');
+		const rowEnd = source.indexOf("</div>", row);
+		expect(source.indexOf("<AddDelivery", row)).toBeGreaterThan(rowEnd);
+	});
+});

@@ -1,15 +1,17 @@
 <template>
-	<Button
-		v-if="offered"
-		variant="link"
-		size="sm"
-		class="h-auto p-0 text-xs font-semibold"
-		data-testid="add-delivery"
-		:disabled="busy"
-		@click="start"
-	>
-		<Truck class="w-3 h-3 me-1" />{{ __("Add delivery") }}
-	</Button>
+	<!-- Its own line below the customer's account row (Bill 2026-10-01, MuleCity-qajl.2). -->
+	<div v-if="offered" class="mt-1.5 flex items-center gap-2" data-testid="delivery-row">
+		<Button
+			variant="outline"
+			size="sm"
+			class="h-7 px-2.5 text-xs font-semibold"
+			data-testid="add-delivery"
+			:disabled="busy"
+			@click="start"
+		>
+			<Truck class="w-3.5 h-3.5 me-1" />{{ __("Add delivery") }}
+		</Button>
+	</div>
 
 	<Dialog :open="open" @update:open="(value: boolean) => !value && close()">
 		<DialogContent class="max-w-md flex flex-col gap-3">
