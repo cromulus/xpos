@@ -53,6 +53,7 @@ import {
 import { lineDiscountFromPerUnit, perUnitDiscount } from "@/utils/lineDiscount";
 import {
 	TYPED_OFFLINE,
+	isLocalAddress,
 	fullAddress,
 	type CustomerDelivery,
 	type DeliveryAddress,
@@ -1991,7 +1992,21 @@ export const useCartStore = defineStore("cart", () => {
 		// offline too (MuleCity-qajl).
 		const delivery = activeDelivery.value;
 		const address = delivery?.address;
-		if (address?.name) data.shipping_address_name = address.name;
+		if (address?.name && !isLocalAddress(address.name)) data.shipping_address_name = address.name;
+		else if (address && isLocalAddress(address.name))
+			// Added at the till while offline (MuleCity-qajl): the queued add is replayed
+			// first and the sync swaps in its Address; the whole address rides along so
+			// the server can still make it if that replay did not happen.
+			data.xpos_new_shipping_address = {
+				address_line1: address.address_line1,
+				address_line2: address.address_line2 || undefined,
+				city: address.city,
+				state: address.state || undefined,
+				pincode: address.pincode || undefined,
+				title: address.title || undefined,
+				miles: address.miles || 0,
+				local_id: address.name,
+			};
 		else if (address)
 			data.xpos_new_shipping_address = { address_line1: address.address_line1, city: address.city, miles: address.miles || 0 };
 		if (address && deliveryQuote.value) data.xpos_delivery = { ...deliveryQuote.value, address: address.name };

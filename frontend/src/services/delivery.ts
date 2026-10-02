@@ -22,6 +22,8 @@ export interface DeliveryPolicy {
 	/** The delivery line's item (from xpos.api.delivery.get_delivery_policy). */
 	item_code?: string;
 	item?: { item_code: string; item_name: string; stock_uom: string; item_group?: string };
+	/** Customers a delivery never goes to: the profile defaults and the site's walk-in accounts (MuleCity-qajl). */
+	walk_in_customers?: string[];
 }
 
 export interface DeliveryAddress {
@@ -39,6 +41,8 @@ export interface DeliveryAddress {
 	pincode?: string | null;
 	is_primary_address?: boolean;
 	is_shipping_address?: boolean;
+	/** "Shipping" or "Billing": a customer's only Shipping address is used without asking (MuleCity-qajl). */
+	address_type?: string | null;
 }
 
 /** Where a sale's delivery miles came from at the till: the Address's, or typed by the clerk. */
@@ -161,4 +165,66 @@ export function searchAddresses<T extends DeliveryAddress>(addresses: T[], term:
 		const text = [a.title, a.address_line1, a.address_line2, a.city, a.state, a.pincode].filter(Boolean).join(" ").toLowerCase();
 		return words.every((word) => text.includes(word));
 	});
+}
+
+/**
+ * A delivery needs a real customer (Bill 2026-10-01 22:52, MuleCity-qajl): none
+ * for no customer, the POS Profile's default (walk-in) customer, or the site's
+ * own walk-in accounts (Mule City: Walk-In Customer and FilePro's CASH 338),
+ * which ride on the cached policy. The server refuses them too.
+ */
+export function isWalkInCustomer(
+	customer: string | null | undefined,
+	policy: Pick<DeliveryPolicy, "walk_in_customers"> | null | undefined,
+	defaultCustomer?: string | null,
+): boolean {
+	if (!customer) return true;
+	if (defaultCustomer && customer === defaultCustomer) return true;
+	return !!policy?.walk_in_customers?.includes(customer);
+}
+
+/**
+ * "Add delivery" is offered for a named, non-walk-in customer on a sale (not a
+ * return) when the site quotes delivery, online or offline. Whether the customer
+ * has an address does not matter: with none, the button opens the add-address form.
+ */
+export function deliveryOffered(opts: {
+	policy: DeliveryPolicy | null | undefined;
+	customer: string | null | undefined;
+	defaultCustomer?: string | null;
+	isReturnMode?: boolean;
+}): boolean {
+	if (!opts.policy?.item || opts.isReturnMode) return false;
+	return !isWalkInCustomer(opts.customer, opts.policy, opts.defaultCustomer);
+}
+
+/** A Shipping-type address (a till- or desk-added delivery place; FilePro's are Billing). */
+export function isShippingAddress(address: Pick<DeliveryAddress, "address_type">): boolean {
+	return address.address_type === "Shipping";
+}
+
+/**
+ * The address used without asking (Bill 2026-10-01 22:52): the customer's only
+ * address; else their only Shipping address; else none (the clerk picks from
+ * the list or adds one).
+ */
+export function autoDeliveryAddress<T extends DeliveryAddress>(addresses: T[]): T | null {
+	if (addresses.length === 1) return addresses[0];
+	const shipping = addresses.filter(isShippingAddress);
+	return shipping.length === 1 ? shipping[0] : null;
+}
+
+/** An address added at the till while offline: its name is a local id until the sync makes it. */
+export const LOCAL_ADDRESS_PREFIX = "LOCAL-ADDR-";
+
+export function isLocalAddress(name: string | null | undefined): boolean {
+	return !!name && name.startsWith(LOCAL_ADDRESS_PREFIX);
+}
+
+export function newLocalAddressId(): string {
+	const random =
+		typeof crypto !== "undefined" && "randomUUID" in crypto
+			? crypto.randomUUID()
+			: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+	return `${LOCAL_ADDRESS_PREFIX}${random}`;
 }
