@@ -35,6 +35,16 @@ vi.mock("@/composables/useMoney", () => ({
 vi.mock("@/services/api", () => ({ showSuccess: vi.fn(), showError: vi.fn() }));
 vi.mock("@/services/userRights", () => ({ hasPermission: () => true }));
 vi.mock("@/lib/translate", () => ({ default: (text: string) => text }));
+// An empty offline queue: nothing holds the close (closeShiftQueue.spec.ts covers the guard).
+vi.mock("@/stores/offlineStore", () => ({
+	useOfflineStore: () => ({
+		pendingInvoices: [],
+		isOnline: true,
+		isSyncing: false,
+		loadPendingInvoices: vi.fn().mockResolvedValue(undefined),
+		syncPendingInvoices: vi.fn().mockResolvedValue(undefined),
+	}),
+}));
 
 import ClosingDialog from "@/components/dialogs/ClosingDialog.vue";
 

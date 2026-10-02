@@ -103,6 +103,12 @@
 									>
 										Exp: {{ batch.expiry_date }}
 									</span>
+									<span
+										v-else-if="batch.manufacturing_date"
+										class="text-[11px] text-muted-foreground ms-2"
+									>
+										Made: {{ batch.manufacturing_date }}
+									</span>
 								</div>
 								<Badge
 									:variant="batch.qty > 0 ? 'success' : 'destructive'"

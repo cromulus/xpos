@@ -14,6 +14,83 @@
 			</DialogHeader>
 
 			<div class="flex-1 overflow-y-auto p-5 space-y-4 xpos-scrollbar">
+				<div
+					v-if="!shiftClosed && queue.attention.length"
+					class="rounded-lg border border-destructive/40 bg-destructive/5 p-3 space-y-2"
+					data-testid="close-queue-attention"
+				>
+					<p class="text-sm font-semibold text-destructive">
+						{{
+							__("{0} offline sale(s) did not sync. Fix or remove them before closing.", [
+								String(queue.attention.length),
+							])
+						}}
+					</p>
+					<ul class="space-y-1 text-sm">
+						<li
+							v-for="(row, index) in queue.attention"
+							:key="row.id ?? index"
+							class="flex flex-col"
+							data-testid="close-queue-attention-row"
+						>
+							<span class="font-medium text-foreground"
+								>{{ row.customer || __("Unknown customer") }} &middot;
+								{{ money(row.amount) }}</span
+							>
+							<span class="text-xs text-muted-foreground break-words">{{ row.error }}</span>
+						</li>
+					</ul>
+					<Button
+						variant="outline"
+						size="sm"
+						data-testid="close-open-offline-panel"
+						@click="openOfflinePanel"
+					>
+						{{ __("Open offline invoices") }}
+					</Button>
+				</div>
+
+				<div
+					v-if="!shiftClosed && queue.pending.length"
+					class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 space-y-2"
+					data-testid="close-queue-pending"
+				>
+					<p class="text-sm font-semibold text-amber-700 dark:text-amber-300">
+						<template v-if="checkingQueue">
+							{{ __("Syncing {0} offline sale(s)...", [String(queue.pending.length)]) }}
+						</template>
+						<template v-else-if="!offlineStore.isOnline">
+							{{
+								__(
+									"{0} offline sale(s) have not synced and this till is offline. Reconnect to sync them, then close the shift.",
+									[String(queue.pending.length)],
+								)
+							}}
+						</template>
+						<template v-else>
+							{{
+								__("{0} offline sale(s) are still waiting to sync. Wait for them before closing.", [
+									String(queue.pending.length),
+								])
+							}}
+						</template>
+					</p>
+					<div class="flex gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							data-testid="close-retry-sync"
+							:disabled="checkingQueue || !offlineStore.isOnline"
+							@click="settleQueue"
+						>
+							{{ __("Sync now") }}
+						</Button>
+						<Button variant="ghost" size="sm" @click="openOfflinePanel">
+							{{ __("Open offline invoices") }}
+						</Button>
+					</div>
+				</div>
+
 				<div v-if="isLoading" class="flex items-center justify-center py-12">
 					<Loader2 class="w-8 h-8 text-primary animate-spin" />
 				</div>
@@ -255,7 +332,8 @@
 					<Button
 						variant="destructive"
 						class="font-bold"
-						:disabled="isClosing"
+						:disabled="isClosing || checkingQueue || closeBlocked"
+						data-testid="close-shift-submit"
 						@click="handleCloseShift"
 					>
 						<template v-if="isClosing">
@@ -271,8 +349,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { computed, ref, onMounted } from "vue";
 import { usePosStore } from "@/stores/posStore";
+import { useOfflineStore } from "@/stores/offlineStore";
+import { classifyQueue, queueBlocksClose, type CloseShiftQueue } from "@/utils/closeShiftGuard";
 import { useMoney } from "@/composables/useMoney";
 import { showSuccess, showError } from "@/services/api";
 import { hasPermission } from "@/services/userRights";
@@ -316,6 +396,7 @@ interface ClosingDetail {
 }
 
 const posStore = usePosStore();
+const offlineStore = useOfflineStore();
 const { money } = useMoney();
 
 const isLoading = ref(true);
@@ -324,6 +405,44 @@ const shiftClosed = ref(false);
 const closedShiftName = ref("");
 const summary = ref<ClosingSummary | null>(null);
 const closingDetails = ref<ClosingDetail[]>([]);
+
+// Offline sales still in this browser's queue (MuleCity-86ea). Closing is
+// online-only and the server cannot see them, so the close waits for them.
+const queue = ref<CloseShiftQueue>({ pending: [], attention: [] });
+const checkingQueue = ref(false);
+const closeBlocked = computed(() => queueBlocksClose(queue.value));
+const SYNC_WAIT_MS = 500;
+const SYNC_WAIT_TRIES = 120;
+
+async function readQueue() {
+	await offlineStore.loadPendingInvoices();
+	queue.value = classifyQueue(offlineStore.pendingInvoices || [], posStore.profileName);
+}
+
+/** Read the queue; if sales are waiting and the till is online, sync them first. */
+async function settleQueue() {
+	checkingQueue.value = true;
+	try {
+		await readQueue();
+		if (queue.value.pending.length && offlineStore.isOnline) {
+			// A background sync may already be running: wait for it, then run one.
+			for (let i = 0; offlineStore.isSyncing && i < SYNC_WAIT_TRIES; i++) {
+				await new Promise((resolve) => setTimeout(resolve, SYNC_WAIT_MS));
+			}
+			await offlineStore.syncPendingInvoices();
+			await readQueue();
+		}
+	} catch (error) {
+		console.warn("[XPOS] Could not check the offline queue before closing:", error);
+	} finally {
+		checkingQueue.value = false;
+	}
+}
+
+function openOfflinePanel() {
+	close();
+	window.dispatchEvent(new CustomEvent("xpos:open-offline-panel"));
+}
 
 function buildClosingDetails(data: ClosingSummary): ClosingDetail[] {
 	const expectedAmounts = data.expected_amounts || {};
@@ -362,6 +481,7 @@ function buildClosingDetails(data: ClosingSummary): ClosingDetail[] {
 }
 
 onMounted(async () => {
+	void settleQueue();
 	try {
 		const data = (await posStore.fetchClosingData()) as ClosingSummary | undefined;
 		summary.value = data || null;
@@ -382,6 +502,12 @@ async function handleCloseShift() {
 	if (isClosing.value) return;
 	if (!hasPermission("close_shift")) {
 		showError(__("Only a Supervisor can close a shift."));
+		return;
+	}
+	// A sale may have been queued or refused while this dialog sat open.
+	await settleQueue();
+	if (closeBlocked.value) {
+		showError(__("Offline sales have not synced. Sync or resolve them before closing the shift."));
 		return;
 	}
 	isClosing.value = true;
