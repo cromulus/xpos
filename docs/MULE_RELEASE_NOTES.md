@@ -1,5 +1,88 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc23 (unreleased)
+
+Bill's counter review of 2026-10-01 (epic MuleCity-qajl). **Migrate needed**
+(new custom fields on Sales Invoice and POS Invoice). Needs the Mule app's
+`xpos_delivery_customers` change (address title, line 2, state, ZIP and the
+primary/shipping flags); with an older app the picker still works but has
+nothing to preselect or search by beyond street and town.
+
+### Offline cache of addresses, contacts and miles (MuleCity-qajl.4)
+
+Bill: "we should cache addresses and contact info for customers so offline can
+still do shipping!"
+
+- Each cached customer row carries its delivery addresses in full (`xpos_delivery.
+  addresses[]`: name, title, both street lines, town, state, ZIP, miles,
+  miles source, `is_primary_address`, `is_shipping_address`) and its contacts
+  (`xpos_contacts[]`: name, full name, phones, emails, `is_primary_contact`;
+  `xpos.api.customers._customer_contacts`, three batched queries). They refresh
+  with the customer cache: at till open and on every sync, as the tax contexts do.
+- The cache panel lists "Addresses" (how many, when refreshed; it fails when the
+  customers or the delivery policy could not be fetched).
+- Electron: the `customers` table keeps every key the browser keeps, in one JSON
+  column `xpos_row` (schema.sql and a startup migration). Before, the extra keys
+  (`xpos_delivery`, `xpos_has_*`, ...) failed the insert, so an Electron till's
+  customer cache was not filled by the preload (the 6nb1 gap).
+- Tests: `frontend/tests/offlineAddressCache.spec.ts`,
+  `xpos.api.tests.test_customers` (TestCachedContacts), Mule
+  `test_xpos_delivery`.
+
+### Delivery facts stored on the sale (MuleCity-qajl contract)
+
+- New fields on Sales Invoice and POS Invoice: `pos_delivery_miles` (Float) and
+  `pos_delivery_miles_source` (Select: `address` | `manual`). **Migrate needed.**
+- `create_invoice` and `save_draft_invoice` store, through `apply_delivery_facts`:
+  the standard `shipping_address_name` with its `shipping_address` display
+  (ERPNext's `get_address_display`), the day (`pos_delivery_date`; the draft path
+  did not save it before) and the miles with their source. They ride in the
+  sale's data, so an offline sale keeps them through the queue. A parked tab
+  returns them (`get_invoice_details`).
+- The offline receipt snapshot (`ReceiptSnapshot.delivery`: address name, full
+  address, miles, miles source, day) is filled for a delivery sale. Printing it
+  is the prints lane's (qajl.5); `receiptTemplate.ts` is unchanged.
+
+### Customer card (MuleCity-qajl.2)
+
+- Recent purchases is gone (Repeat in the top bar does it). Credit limit stays.
+- Add delivery is its own button on a line below the account row. Same rule:
+  online when the site quotes delivery and the customer has an address; offline
+  for any named customer (a new address can be typed with its miles); never for
+  the walk-in default; never in return mode. Once added, the line shows where it
+  goes, its miles and the day, which can be changed there.
+
+### Add delivery picker and the delivery day (MuleCity-qajl.3)
+
+Bill: "if they have multiple addresses, it pops up the addresses with the
+primary shipping address as default, but can select others. and can search. it
+should show miles and cost." / the clerk picks the delivery day at the POS.
+
+- One address with a price (miles, standing charge or free): quoted and added at
+  once, as before. Several, one with no miles, or offline: the picker opens on
+  the primary shipping address (else shipping, else primary, else the first),
+  with a search box (street, line 2, town, name, ZIP) and each row's miles (or
+  "no miles") and cost. Row costs are the till's own quote from the cached
+  policy (`quoteOffline`); the chosen row is quoted by the site online, as before.
+  A standing charge or free delivery shows on every row.
+- An address with no miles: the clerk types its one-way miles; they are priced by
+  the policy, the line says "miles typed at the till", and the sale keeps
+  `pos_delivery_miles_source = manual` (the site adds its review Comment, as for
+  miles typed offline). Leaving the miles empty still lets the clerk type the
+  charge. The typed miles are not written back to the Address.
+- Delivery day: a date in the picker (default the day already chosen, else
+  today), changeable on the card. It is the sale's `pos_delivery_date`; with a
+  counter order in the cart it also sets the mix pickup date, which the Mule app
+  uses as the Sales Order's `delivery_date`.
+- Removing the delivery line drops the delivery (address, miles, day facts) from
+  the sale.
+- Offline it behaves the same from the cache; the new-address form stays.
+- Tests: `frontend/tests/delivery.spec.ts` (picker stories online and offline),
+  `xpos.api.tests.test_delivery`, bench story in
+  `tests/e2e/bench/offline-delivery.cy.ts` (three addresses, primary shipping
+  preselected, search, a no-miles row priced from typed miles, synced sale keeps
+  address, day and miles).
+
 ## mule-v2.10.1-mc22
 
 ### Named logins (MuleCity-1p4i): initials only on a shared login

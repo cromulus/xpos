@@ -45,7 +45,7 @@ what offline, and what the server shows after sync":
 |---|---|
 | `offline-selling.cy.ts` | two tickets sold offline both post; one over the discount cap waits for a manager |
 | `offline-tax.cy.ts` | a farm customer this till never saw online is rung up untaxed; the synced invoice is untaxed |
-| `offline-delivery.cy.ts` | a delivery to an address typed offline (with its miles) is priced at the till; the synced sale ships there, keeps that price and is flagged (MuleCity-6nb1) |
+| `offline-delivery.cy.ts` | a delivery to an address typed offline (with its miles) is priced at the till; the synced sale ships there, keeps that price and is flagged (MuleCity-6nb1); a customer with three addresses: the picker opens offline on the primary shipping one, a searched address with no miles is priced from typed miles, and the synced sale keeps the address, day and miles (MuleCity-qajl.3/.4) |
 
 Shared steps live in `tests/e2e/support/offline.ts` (`openTillOnline`, which starts from
 an empty offline store; `chooseCustomer`; `ringUpOneBag`; `waitUntil`; `customerInvoices`;
