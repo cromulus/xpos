@@ -64,6 +64,7 @@
     "cypress": "13.17.0",
     "electron": "^39.8.10",
     "electron-builder": "^26.15.3",
+    "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.23",
     "resedit": "^1.7.2",

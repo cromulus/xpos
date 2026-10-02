@@ -1,8 +1,16 @@
-import Dexie, { type Table } from "dexie";
+import Dexie, { type PromiseExtended, type Table } from "dexie";
 import type { POSItem, ItemGroup, Customer } from "@/types/pos.types";
 import { sanitizeForIdb } from "./idbSanitize";
+import {
+	DB_OPEN_TIMEOUT_MS,
+	OfflineDbUnavailableError,
+	clearOfflineDbUnavailable,
+	markOfflineDbUnavailable,
+	offlineDbUnavailable,
+	type OfflineDbUnavailableReason,
+} from "./offlineDbStatus";
 
-export { sanitizeForIdb };
+export { sanitizeForIdb, DB_OPEN_TIMEOUT_MS, OfflineDbUnavailableError };
 
 const DB_NAME = "xpos_offline_v3";
 
@@ -123,7 +131,80 @@ class XPosDB extends Dexie {
 			meta: "key",
 			syncIdMap: "local_id, server_name, doctype",
 		});
+		// Dexie already closes this connection on "versionchange", so another tab can upgrade.
 	}
+
+	/**
+	 * Open, but never wait forever. Dexie calls this for its implicit auto-open too, so every
+	 * table access goes through it. A blocked open (another tab holds an older version and does
+	 * not let go, e.g. a frozen Safari tab) or one that takes longer than DB_OPEN_TIMEOUT_MS
+	 * rejects with OfflineDbUnavailableError, and the database is closed with auto-open off, so
+	 * every later access fails at once instead of queueing behind the stuck open.
+	 */
+	override open(): PromiseExtended<Dexie> {
+		if (this.isOpen()) return super.open();
+
+		return new Dexie.Promise<Dexie>((resolve, reject) => {
+			let settled = false;
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const onBlocked = () => fail("blocked");
+			const cleanup = () => {
+				settled = true;
+				if (timer !== undefined) clearTimeout(timer);
+				this.on("blocked").unsubscribe(onBlocked);
+			};
+			const fail = (reason: OfflineDbUnavailableReason) => {
+				if (settled) return;
+				cleanup();
+				const error = new OfflineDbUnavailableError(reason);
+				console.warn(`[XPOS] Offline database unavailable (${reason}); continuing online only`);
+				markOfflineDbUnavailable(error);
+				try {
+					this.close();
+				} catch {
+					// Closing only cancels the pending open.
+				}
+				reject(error);
+			};
+
+			this.on("blocked", onBlocked);
+			timer = setTimeout(() => fail("timeout"), DB_OPEN_TIMEOUT_MS);
+			super.open().then(
+				(opened) => {
+					if (settled) return;
+					cleanup();
+					clearOfflineDbUnavailable();
+					resolve(opened);
+				},
+				(error) => {
+					if (settled) return;
+					cleanup();
+					reject(error);
+				},
+			);
+		});
+	}
+}
+
+/** Reject with OfflineDbUnavailableError("timeout") if the promise is not settled in time. */
+function withOpenTimeout<T>(promise: Promise<T>): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			const error = new OfflineDbUnavailableError("timeout");
+			markOfflineDbUnavailable(error);
+			reject(error);
+		}, DB_OPEN_TIMEOUT_MS);
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
 }
 
 const db = new XPosDB();
@@ -137,6 +218,8 @@ async function resetDatabaseConnection(): Promise<void> {
 		savedInvoices = await db.pendingInvoices.toArray();
 		savedPurchases = await db.pendingPurchases.toArray();
 	} catch (err) {
+		// Never delete a database another tab is holding: the delete would block too.
+		if (err instanceof OfflineDbUnavailableError) throw err;
 		console.warn("[XPOS] Could not read pending records before DB reset", err);
 	}
 
@@ -146,7 +229,7 @@ async function resetDatabaseConnection(): Promise<void> {
 		// Ignore close failures during recovery.
 	}
 
-	await Dexie.delete(DB_NAME);
+	await withOpenTimeout(Dexie.delete(DB_NAME));
 	await db.open();
 
 	if (savedInvoices.length || savedPurchases.length) {
@@ -165,6 +248,12 @@ async function resetDatabaseConnection(): Promise<void> {
 export async function ensureDatabaseReady(forceReset = false): Promise<void> {
 	if (forceReset) {
 		dbReadyPromise = null;
+		clearOfflineDbUnavailable();
+	}
+
+	// Known unusable (blocked or timed out): fail at once rather than wait out the timeout again.
+	if (offlineDbUnavailable.value) {
+		throw offlineDbUnavailable.value;
 	}
 
 	if (!dbReadyPromise) {
@@ -174,7 +263,7 @@ export async function ensureDatabaseReady(forceReset = false): Promise<void> {
 					await db.open();
 				}
 			} catch (error) {
-				if (!isRecoverableDbError(error)) {
+				if (error instanceof OfflineDbUnavailableError || !isRecoverableDbError(error)) {
 					throw error;
 				}
 

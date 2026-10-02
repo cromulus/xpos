@@ -11,6 +11,12 @@ import { initializeNamespaces } from "./utils";
 import { dayjs } from "@/utils/datetime";
 import translate from "./lib/translate";
 import { requestPersistentStorage } from "@/utils/persistentStorage";
+import {
+	OFFLINE_DB_UNAVAILABLE_EVENT,
+	offlineDbUnavailable,
+	type OfflineDbUnavailableError,
+} from "@/services/offlineDbStatus";
+import { useToast } from "@/composables/useToast";
 
 if (!isElectron() && import.meta.env.PROD) {
 	if ("serviceWorker" in navigator) {
@@ -146,4 +152,13 @@ async function initializeNumberFormat(): Promise<void> {
 	});
 
 	app.mount("#app");
+
+	// The offline database could not be opened (another tab holds it, or it timed out): say so
+	// once the toaster is mounted. The till carries on online.
+	const showOfflineDbUnavailable = (error: OfflineDbUnavailableError) =>
+		useToast().error(error.userMessage, { duration: 30000 });
+	if (offlineDbUnavailable.value) showOfflineDbUnavailable(offlineDbUnavailable.value);
+	window.addEventListener(OFFLINE_DB_UNAVAILABLE_EVENT, (event) =>
+		showOfflineDbUnavailable((event as CustomEvent<OfflineDbUnavailableError>).detail),
+	);
 })();

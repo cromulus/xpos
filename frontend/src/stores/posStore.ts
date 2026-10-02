@@ -3,6 +3,7 @@ import { ref, computed, watch } from "vue";
 import { call } from "@/services/api";
 import { cachePOSData, getCachedPOSData, cacheReceiptContext } from "@/services/dbBridge";
 import { isElectron } from "@/services/electronBridge";
+import { offlineDbUnavailable } from "@/services/offlineDbStatus";
 import { hasPermission, loadPermissions } from "@/services/userRights";
 import {
 	type POSOpeningShift,
@@ -118,7 +119,9 @@ export const usePosStore = defineStore("pos", () => {
 
 	const backOfficeCashAccount = computed(() => posProfile.value?.back_office_cash_account);
 
-	const useOfflineMode = computed(() => !!posProfile.value?.use_offline_mode);
+	// Off while the offline database cannot be opened (blocked by another tab, or timed out):
+	// the till then runs online only instead of waiting on IndexedDB.
+	const useOfflineMode = computed(() => !!posProfile.value?.use_offline_mode && !offlineDbUnavailable.value);
 
 	const allowChangePostingDate = computed(() => !!posProfile.value?.allow_change_posting_date);
 
