@@ -31,6 +31,28 @@ own logins; only the shared counter login is asked for initials.
   cart says "Credit limit" instead of "Limit"; the product list's info button
   has an accessible label.
 
+## Native formula entry candidate (2026-09-29; not released)
+
+Workstream: `codex/native-formula-entry`, reconciled with mc20 `fe403000`.
+MuleCity-jr36.11 and MuleCity-phjf track integration.
+
+- Preserve mc19 shared-register restrictions: no formula editor or Desk
+  shortcuts. Formula creation remains in the native Desk workflow.
+- Cart rows preserve Sales Order, source row, BOM and literal mill instructions.
+  Distinct order rows or instructions stay separate. Retired quote fields are
+  dropped from invoice transport.
+- Pickup prices use b3's MuleCity-jfdy `9f53a07` (local cherry-pick `edc26d4`).
+  The same source row supplies mill instructions, overriding cart edits.
+  This candidate adds no second order-price or ingredient-price engine.
+- Prior candidate validation: 511 frontend tests, typecheck, build and 41 backend
+  adapter tests passed before mc19 reconciliation. After reconciliation, all
+  566 frontend tests, typecheck and build pass with Node 24.8.0. The same
+  gates passed again after the mc20 merge on 2026-09-30.
+  Native backend, installed browser and combined app integration remain release
+  gates; ATC runs erp2 tests on assigned slot 6 under MuleCity-2ea0.
+  Feature branch publication is authorized; ATC owns tags, platform pins,
+  main/staging integration and deployment.
+
 ## mule-v2.10.1-mc20 (2026-09-29): cash sales with change post (MuleCity-ztb9)
 
 - A cash sale paid with change posts again, online and offline. Every such sale

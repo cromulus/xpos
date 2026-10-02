@@ -400,6 +400,7 @@ export interface CustomerLoyaltyInfo {
 }
 
 export interface InvoiceItem {
+	conversion_factor?: number;
 	item_code: string;
 	item_name: string;
 	local_item_name?: string;

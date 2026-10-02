@@ -1349,3 +1349,15 @@ export async function getCachedERPSettings(): Promise<unknown | null> {
 	const idb = await import("./idbService");
 	return idb.getCachedERPSettings();
 }
+
+/** Shared offline metadata storage for the browser and desktop caches. */
+export async function setOfflineMeta(key: string, value: unknown): Promise<void> {
+  if (isElectron()) { await getDb().setMeta(key, JSON.stringify(value)); return; }
+  const idb = await import('./idbService');
+  await idb.setMeta(key, value);
+}
+export async function getOfflineMeta(key: string): Promise<unknown> {
+  if (isElectron()) { const value = await getDb().getMeta(key); return value ? JSON.parse(value) : null; }
+  const idb = await import('./idbService');
+  return await idb.getMeta(key) ?? null;
+}

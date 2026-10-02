@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 
+vi.mock("@/services/dbBridge", () => ({ setOfflineMeta: vi.fn(), getOfflineMeta: vi.fn() }));
 vi.mock("@/services/api", () => ({ call: vi.fn(), default: { call: vi.fn() } }));
 vi.mock("@/stores/posStore", () => ({
 	usePosStore: vi.fn(() => ({
@@ -162,4 +163,22 @@ describe("server-priced ticket before payment", () => {
 		expect(cart.previewExpectedTotal).toBeNull();
 		expect(cart.serverPreviewError).toContain("Press Pay again");
 	});
+});
+
+
+it("opens online payment for a capped pickup when offline preparation returns unavailable", async () => {
+  setActivePinia(createPinia());
+  const cart = useCartStore();
+  cart.customer = { name: "Buyer" };
+  cart.items.push({ item_code: "FEED", item_name: "Feed", qty: 2, rate: 20,
+    uom: "Bag", stock_uom: "Pound", conversion_factor: 50, discount_percentage: 0,
+    discount_amount: 0, sales_order: "SO", so_detail: "ROW", bom_no: "BOM", mule_vfd: "CAPPED" } as any);
+  vi.mocked(call).mockImplementation((async (method: string) => {
+    if (method === 'xpos.api.invoices.preview_invoice') return { ...PREVIEW, items: [], amount_due: 40, grand_total: 40 };
+    if (method === 'mulecity_erpnext.vfd_offline.prepare') return null;
+    return {};
+  }) as typeof call);
+  await cart.openPaymentDialog();
+  expect(cart.showPaymentDialog).toBe(true);
+  expect(vi.mocked(call).mock.calls.some(([method]) => method === 'mulecity_erpnext.vfd_offline.prepare')).toBe(true);
 });

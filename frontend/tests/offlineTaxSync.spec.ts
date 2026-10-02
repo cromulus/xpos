@@ -52,3 +52,5 @@ describe("the offline sync keeps every category's taxes", () => {
 		expect(useCacheStatus().states.Taxes).toMatchObject({ error: true, loading: false });
 	});
 });
+
+vi.mock("@/services/vfdOffline", () => ({ attachOfflineCoverage: vi.fn(), refreshVfdContext: vi.fn(), queuedInvoiceMethod: () => "xpos.api.invoices.create_invoice" }));
