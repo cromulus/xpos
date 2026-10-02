@@ -94,15 +94,26 @@ def get_erp_settings():
 		"disable_in_words": cint(frappe.db.get_single_value("Global Defaults", "disable_in_words")),
 	}
 
-	settings["currency_precision"] = {
-		"currency_precision": frappe.db.get_default("currency_precision") or "",
-		"float_precision": frappe.db.get_default("float_precision") or "",
-		"item_rate_precision": _item_rate_precision(),
-	}
+	settings["currency_precision"] = currency_precision_settings()
 
 	settings["number_format"] = get_number_format_settings()
 
 	return settings
+
+
+def currency_precision_settings() -> dict:
+	"""The till's precisions: money, plain floats, and an invoice line's rate.
+
+	Both the settings call (Electron) and the page's boot (the web till) give
+	this. The boot had none (Mule City MuleCity-ra6h), so the web till rounded
+	every line rate to a 3-place fallback: a $0.291628665/lb mix became $0.292,
+	100 lb showed $25.20 while its order billed $25.16.
+	"""
+	return {
+		"currency_precision": frappe.db.get_default("currency_precision") or "",
+		"float_precision": frappe.db.get_default("float_precision") or "",
+		"item_rate_precision": _item_rate_precision(),
+	}
 
 
 def _item_rate_precision() -> int:

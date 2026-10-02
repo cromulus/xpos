@@ -184,6 +184,10 @@
 								cartStore.mixPayMode === "now" ? __("paid now") : __("due at pickup"),
 							]) }}
 						</p>
+						<!-- An answer, not an error: shown here, never as a red toast or in the error log (MuleCity-ra6h). -->
+						<p v-if="mixRefusal" class="text-xs font-semibold text-amber-700 dark:text-amber-400" data-testid="mix-refusal">
+							{{ mixRefusal }}
+						</p>
 					</div>
 
 					<div>
@@ -1555,7 +1559,7 @@ async function submitPayment(withPrint: boolean = true) {
 			cartStore.openDraftDialog();
 		} else if (isNetworkError(error) && cartStore.hasOrderLines) {
 			// An order and its advance need the server; never queue them as a plain sale.
-			showError(__("Custom mixes can't be ordered offline. Go online, or take the order at the desk."));
+			mixRefusal.value = __("Custom mixes can't be ordered offline. Go online, or take the order at the desk.");
 		} else if (isNetworkError(error)) {
 			const saved = await completeOfflineSale(invoiceData, {
 				withPrint,
@@ -1586,11 +1590,15 @@ interface CounterCheckoutResult {
  * advance on each when paid now, and XPOS's own ticket for everything else. The
  * ticket prints with an "Ordered today" block; a mix-only cart prints the order.
  */
+/** Why a mix order can't be placed right now (offline): shown in the dialog's mix block. */
+const mixRefusal = ref("");
+
 async function submitMixOrder(invoiceData: InvoiceData, withPrint: boolean) {
 	if (!isOnline()) {
-		showError(__("Custom mixes can't be ordered offline. Go online, or take the order at the desk."));
+		mixRefusal.value = __("Custom mixes can't be ordered offline. Go online, or take the order at the desk.");
 		return;
 	}
+	mixRefusal.value = "";
 	const result = await call<CounterCheckoutResult>("mulecity_erpnext.counter_mix_orders.counter_checkout", {
 		data: JSON.stringify({ ...invoiceData, pay_mode: cartStore.mixPayMode }),
 	});

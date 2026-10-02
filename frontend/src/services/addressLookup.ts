@@ -18,6 +18,7 @@
  */
 import { call } from "@/services/api";
 import { isNetworkError } from "@/utils";
+import { isLookupRefusal } from "@/utils/refusals";
 
 export const AUTOCOMPLETE_METHOD = "xpos.api.customers.address_autocomplete";
 export const RESOLVE_METHOD = "xpos.api.customers.address_resolve";
@@ -82,7 +83,8 @@ export function newSessionToken(): string {
 async function ask<T>(method: string, args: Record<string, unknown>): Promise<T> {
 	if (lookupResting()) throw new LookupUnavailable("resting");
 	try {
-		return await call<T>(method, args);
+		// "Lookup isn't available" is an answer (the clerk types), not an error to log (MuleCity-ra6h).
+		return await call<T>(method, args, undefined, { answers: isLookupRefusal });
 	} catch (error) {
 		if (isNetworkError(error)) throw error;
 		downUntil = Date.now() + LOOKUP_COOLDOWN_MS;

@@ -305,3 +305,33 @@ describe("fallbacks: the typed form always works", () => {
 		expect(lookups(calls)).toHaveLength(2);
 	});
 });
+
+describe("the saved miles are told back (MuleCity-ra6h)", () => {
+	it("typed 3 mi, the site's Google route saved 12.4 mi: the delivery row says so", async () => {
+		const calls = serve("unavailable");
+		const { wrapper } = await openNewAddressForm();
+		await typeStreet(wrapper, "880 New Ground Rd");
+		for (const [field, text] of Object.entries({ city: "Dunn", state: "NC", zip: "28334", miles: "3" })) {
+			await wrapper.get(`[data-testid='delivery-new-${field}']`).setValue(text);
+		}
+		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
+		await flushPromises();
+		const add = calls.find(([method]) => method.endsWith("add_delivery_address"));
+		expect(add?.[1].delivery_miles).toBe(3);
+		expect(wrapper.get("[data-testid='delivery-saved-miles']").text()).toBe(
+			"Saved: 12.4 mi (Google route), you typed 3 mi",
+		);
+	});
+
+	it("negative: no miles typed, nothing to tell", async () => {
+		serve("unavailable");
+		const { wrapper } = await openNewAddressForm();
+		await typeStreet(wrapper, "880 New Ground Rd");
+		for (const [field, text] of Object.entries({ city: "Dunn", state: "NC", zip: "28334" })) {
+			await wrapper.get(`[data-testid='delivery-new-${field}']`).setValue(text);
+		}
+		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
+		await flushPromises();
+		expect(wrapper.find("[data-testid='delivery-saved-miles']").exists()).toBe(false);
+	});
+});

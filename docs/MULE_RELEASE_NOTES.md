@@ -1,5 +1,45 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc27 (unreleased)
+
+### Till mix check polish (MuleCity-ra6h, mc26 staging walk 2026-10-02)
+
+- **A mix line shows what its order bills.** Treehouse Treasures Mix 4AC2EE,
+  100 lb: the line said $25.20, the check and the order $25.16. Cause: the web
+  till takes its settings from the page's boot, which had no
+  `currency_precision`, so the cart rounded every line rate to a 3-place
+  fallback ($0.291628665/lb became $0.292; less the $0.04/lb mixing rate,
+  100 x 0.252 = $25.20 against ERPNext's 100 x 0.251628665 = $25.16). This hit
+  every web-till line with a rate finer than 3 places (per-pound feed too), and
+  the rounded rate is what the cart posts as `price_list_rate`, so a mix's free
+  made bags on the ticket could be refused as "displayed price needs review".
+  - `extend_bootinfo` now sends `currency_precision` (with
+    `item_rate_precision`, the invoice line's 9 places), the same dict as
+    `get_erp_settings` (`settings.currency_precision_settings`); an older boot
+    falls back to `sysdefaults`.
+  - The site's `counter_check`/`counter_quote` give each order its cart line
+    (`line_index`), `rate`, `amount`, `net_total` and `taxes` (Mule app,
+    MuleCity-ra6h). Once the check is in, the mix line, the summary's
+    subtotal and taxes, the total and Pay use those; while it is checking the
+    line and the total say "Checking…" and Pay waits ("Checking the price…").
+- **Expected refusals are answers, not errors.** `call(method, args, cb,
+  { answers })`: a refusal the caller expects is still thrown (with
+  `answered: true`) but kept out of the error log and its badge. The cart's
+  mix check and Pay's quote treat a 417 (ValidationError: "Short ingredients",
+  no price) as an answer; the address lookup treats 417/429/
+  AddressLookupUnavailable so. A mix order's refusal under Pay reads "Can't
+  order yet: ..." (amber), and the offline "Custom mixes can't be ordered
+  offline" in the payment dialog is shown in its mix block instead of a red
+  toast. (The offline refusal never reached the badge; it was a red toast.)
+- **Add-address tells the clerk what miles were saved.** When the site's
+  Google Routes lookup replaces typed miles (by design), the delivery row and
+  the success toast say "Saved: 0.8 mi (Google route), you typed 3 mi"
+  (`utils/savedMiles.ts`, from `add_delivery_address`'s `miles`/
+  `miles_source`). Typed miles that stood (no Google miles) say nothing.
+- Needs the Mule app commit for MuleCity-ra6h (order line amounts; shortages
+  read "6,171,890 lb", not "6.17189e+06 Pound"). With an older Mule app the
+  line keeps the cart's own figure (now at 9 places).
+
 ## mule-v2.10.1-mc26 (unreleased)
 
 ### Google address typeahead in the till's add-address form (MuleCity-p644)

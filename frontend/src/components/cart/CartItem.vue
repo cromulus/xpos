@@ -224,7 +224,14 @@
 		</div>
 
 		<div class="flex flex-col items-end gap-0.5 shrink-0">
-			<span class="text-xs font-bold text-foreground tabular-nums" data-testid="cart-amount">
+			<span
+				v-if="checking"
+				class="text-[11px] font-medium text-muted-foreground"
+				data-testid="cart-amount-checking"
+			>
+				{{ __("Checking…") }}
+			</span>
+			<span v-else class="text-xs font-bold text-foreground tabular-nums" data-testid="cart-amount">
 				{{ money(lineTotal) }}
 			</span>
 			<span v-if="hasItemDiscount" class="text-[9px] text-emerald-600 dark:text-emerald-400">
@@ -314,7 +321,12 @@ const discountAmount = computed(() => {
 	return props.item.qty < 0 ? -amt : amt;
 });
 
+// A mix line shows what its order will bill once the site priced it (MuleCity-ra6h),
+// and "Checking…" while it is pricing, never the cart's own cents.
+const checking = computed(() => cartStore.lineChecking(props.item.uid));
 const lineTotal = computed(() => {
+	const quoted = cartStore.quotedLineAmount(props.item.uid);
+	if (quoted !== null) return quoted;
 	const total = props.item.qty * props.item.rate;
 	return Math.round((total - discountAmount.value + Number.EPSILON) * 100) / 100;
 });

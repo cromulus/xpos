@@ -124,13 +124,20 @@ export async function refreshCsrfToken(): Promise<string | null> {
 	}
 }
 
-async function fetchCall<T = unknown>(method: string, args: Record<string, unknown> = {}): Promise<T> {
+export type { RefusalInfo, CallOptions } from "@/utils/refusals";
+import type { CallOptions } from "@/utils/refusals";
+
+async function fetchCall<T = unknown>(
+	method: string,
+	args: Record<string, unknown> = {},
+	options: CallOptions = {},
+): Promise<T> {
 	const { response, data } = await postMethod(method, args);
 
 	if (response.status === 400 && data.exc_type === "CSRFTokenError" && (await refreshCsrfToken())) {
-		return handleResponse<T>(method, args, await postMethod(method, args));
+		return handleResponse<T>(method, args, await postMethod(method, args), options);
 	}
-	return handleResponse<T>(method, args, { response, data });
+	return handleResponse<T>(method, args, { response, data }, options);
 }
 
 async function postMethod(
@@ -178,10 +185,25 @@ function handleResponse<T>(
 	method: string,
 	args: Record<string, unknown>,
 	{ response, data }: { response: Response; data: Record<string, any> },
+	options: CallOptions = {},
 ): T {
 	if (!response.ok || data.exc) {
 		const traceback = toTraceback(data.exc);
 		const errorMsg = extractErrorMessage(data, response.status, traceback);
+		const answered = !!options.answers?.({
+			status: response.status,
+			excType: data.exc_type,
+			message: errorMsg,
+		});
+
+		const err = new Error(errorMsg) as Error & { excType?: string; status?: number; answered?: boolean };
+		if (data.exc_type) err.excType = data.exc_type;
+		err.status = response.status;
+		if (answered) {
+			// An answer the caller shows (e.g. "Short ingredients"), not an error to log.
+			err.answered = true;
+			throw err;
+		}
 
 		captureError({
 			source: "api",
@@ -193,9 +215,6 @@ function handleResponse<T>(
 			traceback,
 			exceptionType: data.exc_type,
 		});
-
-		const err = new Error(errorMsg) as Error & { excType?: string };
-		if (data.exc_type) err.excType = data.exc_type;
 		throw err;
 	}
 	if (data && typeof data === "object" && "message" in data) {
@@ -208,8 +227,9 @@ export function call<T = unknown>(
 	method: string,
 	args: Record<string, unknown> = {},
 	callback?: (r: { message: T }) => void,
+	options?: CallOptions,
 ): Promise<T> {
-	return fetchCall<T>(method, args).then((message) => {
+	return fetchCall<T>(method, args, options).then((message) => {
 		if (callback) callback({ message });
 		return message;
 	});

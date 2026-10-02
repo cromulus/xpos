@@ -16,6 +16,10 @@
 			<span class="min-w-0 truncate text-muted-foreground" data-testid="delivery-summary">
 				{{ summary }}
 			</span>
+			<!-- The site's Google miles replaced the typed ones: say so (MuleCity-ra6h). -->
+			<span v-if="milesNote" class="font-semibold text-amber-700 dark:text-amber-400" data-testid="delivery-saved-miles">
+				{{ milesNote }}
+			</span>
 			<label class="inline-flex items-center gap-1 font-semibold">
 				{{ __("Day") }}
 				<input
@@ -171,6 +175,9 @@
 						__("· check the street number")
 					}}</span>
 				</p>
+				<p v-if="formMilesNote" class="text-xs font-semibold text-amber-700" data-testid="delivery-new-saved-miles">
+					{{ formMilesNote }}
+				</p>
 				<p v-if="milesAsked" class="text-xs font-semibold text-amber-700" data-testid="delivery-new-miles-asked">
 					{{ __("The miles to this address could not be found. Type the one-way miles, or leave them empty to type the charge.") }}
 				</p>
@@ -274,6 +281,7 @@ import { useAddressTypeahead } from "@/composables/useAddressTypeahead";
 import type { ResolvedAddress } from "@/services/addressLookup";
 import { extractErrorMessage, isOnline } from "@/utils";
 import { nowDate } from "@/utils/datetime";
+import { savedMilesNote } from "@/utils/savedMiles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -303,6 +311,13 @@ const draft = ref({ ...EMPTY_DRAFT });
 // The site made the address but found no miles: the form asks for them (and keeps the address).
 const milesAsked = ref(false);
 const pendingAdded = ref<AddedAddress | null>(null);
+// "Saved: 0.8 mi (Google route), you typed 3 mi": on the delivery row for the
+// address it was said of, and in the form while it is still open (MuleCity-ra6h).
+const savedMiles = ref<{ address: string; note: string } | null>(null);
+const formMilesNote = ref("");
+const milesNote = computed(() =>
+	savedMiles.value && cartStore.activeDelivery?.address?.name === savedMiles.value.address ? savedMiles.value.note : "",
+);
 // navigator.onLine is not reactive: follow the browser's online/offline events,
 // and read it again when the clerk presses the button.
 const online = ref(isOnline());
@@ -490,6 +505,7 @@ function resetDraft() {
 	draft.value = { ...EMPTY_DRAFT };
 	milesAsked.value = false;
 	pendingAdded.value = null;
+	formMilesNote.value = "";
 	picked.value = null;
 	// One Google session per address form.
 	typeahead.newSession();
@@ -528,6 +544,10 @@ async function saveNewAddress() {
 			{ first: !addresses.value.length },
 		);
 		const address = cachedAddress(added);
+		// Google's miles won over the typed ones: tell the clerk (kept typed only when Google had none).
+		const note = savedMilesNote(typed, added);
+		formMilesNote.value = note;
+		savedMiles.value = note && added.name ? { address: added.name, note } : null;
 		// The picker and the cached customer row show it at once.
 		details.value = withAddress(details.value, address);
 		customer.xpos_delivery = details.value;
@@ -561,7 +581,12 @@ function useTyped() {
 
 function add(address: DeliveryAddress, quote: DeliveryQuote, amount: number, milesSource?: DeliveryMilesSource) {
 	cartStore.setDelivery(policy.value!, address, quote, amount, { milesSource, date: day.value || undefined });
-	showSuccess(__("Delivery to {0} added", [describeAddress(address)]));
+	const note = savedMiles.value?.address === address.name ? savedMiles.value.note : "";
+	showSuccess(
+		note
+			? __("Delivery to {0} added. {1}", [describeAddress(address), note])
+			: __("Delivery to {0} added", [describeAddress(address)]),
+	);
 	close();
 }
 

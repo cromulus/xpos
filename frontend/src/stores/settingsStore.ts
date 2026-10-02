@@ -193,7 +193,12 @@ export const useSettingsStore = defineStore("settings", () => {
 					stock_settings: boot.stock_settings || {},
 					accounts_settings: boot.accounts_settings || {},
 					global_defaults: boot.sysdefaults || {},
-					currency_precision: boot.currency_precision || {},
+					// The site's boot carries the line rate's precision (MuleCity-ra6h); an
+					// older boot had none, and the cart rounded every rate to 3 places.
+					currency_precision: boot.currency_precision || {
+						currency_precision: boot.sysdefaults?.currency_precision ?? "",
+						float_precision: boot.sysdefaults?.float_precision ?? "",
+					},
 					number_format: boot.xpos_number_format || boot.sysdefaults || {},
 					pos_settings: boot.pos_settings || {},
 					item_search: boot.xpos_item_search || {},

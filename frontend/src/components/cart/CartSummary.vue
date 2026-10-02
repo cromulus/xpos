@@ -12,7 +12,7 @@
 			<div class="flex items-center justify-between text-sm">
 				<span class="text-muted-foreground">{{ __("Subtotal") }}</span>
 				<span class="font-medium text-foreground">
-					{{ money(cartStore.subtotal) }}
+					{{ money(cartStore.summarySubtotal) }}
 				</span>
 			</div>
 
@@ -25,9 +25,9 @@
 				</span>
 			</div>
 
-			<template v-if="cartStore.calculatedTaxes.length > 0">
+			<template v-if="cartStore.summaryTaxes.length > 0">
 				<div
-					v-for="(tax, idx) in cartStore.calculatedTaxes"
+					v-for="(tax, idx) in cartStore.summaryTaxes"
 					:key="idx"
 					class="flex items-center justify-between text-sm"
 				>
@@ -130,6 +130,14 @@
 			<div class="flex items-center justify-between">
 				<span class="text-base font-bold text-foreground">{{ __("Total") }}</span>
 				<span
+					v-if="cartStore.mixPriceChecking"
+					class="text-sm font-medium text-muted-foreground"
+					data-testid="cart-total-checking"
+				>
+					{{ __("Checking…") }}
+				</span>
+				<span
+					v-else
 					class="text-xl font-extrabold"
 					:class="
 						cartStore.isReturnMode
@@ -351,13 +359,21 @@
 					? 'bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-amber-500/25 text-white'
 					: 'bg-linear-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 shadow-primary/25'
 			"
-			:disabled="receivesOnAccount ? false : cartStore.isEmpty || !cartStore.customer || cartStore.muleTaxPending || !!cartStore.muleTaxError || cartStore.serverPreviewPending"
+			:disabled="receivesOnAccount ? false : cartStore.isEmpty || !cartStore.customer || cartStore.muleTaxPending || !!cartStore.muleTaxError || cartStore.serverPreviewPending || cartStore.mixPriceChecking"
 			@click="handleCheckout()"
 		>
 			<Wallet class="w-5 h-5" />
 			{{ payButtonLabel }}
 		</Button>
-		<p v-if="cartStore.serverPreviewError" class="text-xs text-destructive">
+		<!-- A mix order's refusal ("Short ingredients", offline) is the site's answer (MuleCity-ra6h). -->
+		<p
+			v-if="cartStore.serverPreviewError && cartStore.hasOrderLines"
+			class="text-xs font-semibold text-amber-700 dark:text-amber-400"
+			data-testid="mix-order-refusal"
+		>
+			{{ __("Can't order yet: {0}", [cartStore.serverPreviewError]) }}
+		</p>
+		<p v-else-if="cartStore.serverPreviewError" class="text-xs text-destructive">
 			{{ __("The ticket could not be checked with the server; payment was not opened.") }}
 			{{ cartStore.serverPreviewError }}
 		</p>
@@ -489,6 +505,8 @@ const payButtonLabel = computed(() => {
 	if (cartStore.isEmpty) return __("Add items to pay");
 	if (!cartStore.customer) return __("Select customer first");
 	if (posStore.enableCashierSettlement && !cartStore.isReturnMode) return __("Send to Cashier");
+	// The mix orders are being priced by the site: Pay shows (and takes) its price, not the cart's.
+	if (cartStore.mixPriceChecking) return __("Checking the price…");
 	const amt = `${money(Math.abs(cartStore.grandTotal))}`;
 	return cartStore.isReturnMode ? __("Process Return {0}", [amt]) : __("Pay {0}", [amt]);
 });

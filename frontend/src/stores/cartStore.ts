@@ -4,6 +4,7 @@ import { muleOrderFields } from "@/services/muleOrderFields";
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { call } from "@/services/api";
+import { isValidationRefusal } from "@/utils/refusals";
 import { usePosStore } from "./posStore";
 import { useSettingsStore } from "./settingsStore";
 import {
@@ -112,7 +113,27 @@ interface CounterQuote {
 	key: string;
 	ticket_due: number;
 	orders_total: number;
-	orders: { item_code: string; qty: number; uom?: string; grand_total: number }[];
+	orders: CounterQuoteOrder[];
+	/** XPOS's preview of today's ticket (free made bags and everything else), or null. */
+	ticket?: Omit<ServerPreview, "key"> | null;
+}
+
+/**
+ * One mix order the site priced. ``line_index`` is the cart line it came from;
+ * ``rate``/``amount`` are its line as ERPNext prices it (9-place rate, Pricing
+ * Rules applied), ``net_total``/``taxes`` the order's own (MuleCity-ra6h). An
+ * older site sends only ``grand_total``.
+ */
+export interface CounterQuoteOrder {
+	item_code: string;
+	qty: number;
+	uom?: string;
+	grand_total: number;
+	line_index?: number;
+	rate?: number;
+	amount?: number;
+	net_total?: number;
+	taxes?: number;
 }
 
 /** A cart's custom mixes are paid now (an advance on the order) or at pickup. */
@@ -1656,6 +1677,101 @@ export const useCartStore = defineStore("cart", () => {
 	const mixCheckPending = ref(false);
 	const mixCheckError = ref("");
 	let mixCheckRequest = 0;
+
+	/** The site's check or quote still prices this very cart. */
+	const quoteCurrent = computed(() => !!counterQuote.value && counterQuote.value.key === previewKey.value);
+
+	/**
+	 * What each mix line costs as the site priced it (MuleCity-ra6h), by cart
+	 * line uid: the order's own line amount, plus the free made bags the ticket
+	 * sells from the same line. The cart's own figure (rate x qty less the rule's
+	 * discount) can differ by cents from ERPNext's 9-place line rate; once the
+	 * check is in, the line shows what the order will bill. A line the site's
+	 * answer can't be matched to keeps the cart's figure.
+	 */
+	const quotedLineAmounts = computed(() => {
+		const amounts = new Map<string, number>();
+		const quote = counterQuote.value;
+		if (!quote || !quoteCurrent.value) return amounts;
+		const ticketLines = [...(quote.ticket?.items || [])];
+		for (const order of quote.orders || []) {
+			if (order.line_index == null || order.amount == null) continue;
+			const item = items.value[order.line_index];
+			if (!item?.uid || item.item_code !== order.item_code) continue;
+			let amount = order.amount;
+			const fromShelf = Math.abs(item.qty) - order.qty;
+			if (fromShelf > STOCK_QTY_TOLERANCE) {
+				// The rest of the line sells today from made bags: the ticket prices it.
+				const at = ticketLines.findIndex(
+					(row) => row.item_code === item.item_code && Math.abs(row.qty - fromShelf) <= STOCK_QTY_TOLERANCE,
+				);
+				if (at < 0) continue;
+				amount += ticketLines[at].amount;
+				ticketLines.splice(at, 1);
+			}
+			amounts.set(item.uid, Math.round((amount + Number.EPSILON) * 100) / 100);
+		}
+		return amounts;
+	});
+
+	/** A mix line's amount as the site priced it, or null while it hasn't (the cart's own figure stands). */
+	function quotedLineAmount(uid: string | undefined): number | null {
+		if (!uid) return null;
+		const amount = quotedLineAmounts.value.get(uid);
+		return amount === undefined ? null : amount;
+	}
+
+	/** The site is pricing this mix line: show "Checking…" rather than the cart's own figure. */
+	function lineChecking(uid: string | undefined): boolean {
+		return isOrderLine(uid) && mixCheckPending.value && !quoteCurrent.value;
+	}
+
+	/** Pay waits for the site's price of the mix orders: it never charges the cart's own sum. */
+	const mixPriceChecking = computed(() => hasOrderLines.value && mixCheckPending.value && !quoteCurrent.value);
+
+	/** The summary's subtotal: each mix line at the site's price once it has one. */
+	const summarySubtotal = computed(() => {
+		if (!quoteCurrent.value || !quotedLineAmounts.value.size) return subtotal.value;
+		return items.value.reduce((sum: number, item: CartItem) => {
+			const quoted = item.uid ? quotedLineAmounts.value.get(item.uid) : undefined;
+			if (quoted !== undefined) return sum + quoted;
+			const itemTotal = item.qty * item.rate;
+			let discount = 0;
+			if (item.discount_percentage) discount = (itemTotal * item.discount_percentage) / 100;
+			else if (item.discount_amount) discount = item.qty < 0 ? -item.discount_amount : item.discount_amount;
+			return sum + (itemTotal - discount);
+		}, 0);
+	});
+
+	/**
+	 * The summary's taxes: once the site priced the cart, today's ticket's taxes
+	 * as its preview has them and the orders' own, so the lines above the total
+	 * add up to it; until then the cart's estimate.
+	 */
+	const summaryTaxes = computed<CalculatedTax[]>(() => {
+		const quote = counterQuote.value;
+		if (!quote || !quoteCurrent.value || !(quote.orders || []).every((row) => row.taxes != null)) {
+			return calculatedTaxes.value;
+		}
+		const rows: CalculatedTax[] = (quote.ticket?.taxes || [])
+			.filter((tax) => tax.tax_amount)
+			.map((tax) => ({
+				description: tax.description || __("Tax"),
+				rate: tax.rate,
+				amount: tax.tax_amount,
+				included_in_print_rate: false,
+			}));
+		const orderTax = (quote.orders || []).reduce((sum, row) => sum + (row.taxes || 0), 0);
+		if (orderTax) {
+			rows.push({
+				description: __("Tax on mix orders"),
+				rate: 0,
+				amount: Math.round((orderTax + Number.EPSILON) * 100) / 100,
+				included_in_print_rate: false,
+			});
+		}
+		return rows;
+	});
 	async function checkMixOrders(): Promise<void> {
 		const request = ++mixCheckRequest;
 		mixCheckError.value = "";
@@ -1671,9 +1787,13 @@ export const useCartStore = defineStore("cart", () => {
 		}
 		mixCheckPending.value = true;
 		try {
-			const result = await call<Omit<CounterQuote, "key">>("mulecity_erpnext.counter_mix_orders.counter_check", {
-				data: JSON.stringify(previewPayload()),
-			});
+			const result = await call<Omit<CounterQuote, "key">>(
+				"mulecity_erpnext.counter_mix_orders.counter_check",
+				{ data: JSON.stringify(previewPayload()) },
+				undefined,
+				// "Short ingredients" or "no price" is the check's answer, shown in the cart (MuleCity-ra6h).
+				{ answers: isValidationRefusal },
+			);
 			if (request !== mixCheckRequest) return;
 			if (key === previewKey.value) counterQuote.value = { ...result, key };
 		} catch (error) {
@@ -1717,9 +1837,13 @@ export const useCartStore = defineStore("cart", () => {
 		const key = previewKey.value;
 		serverPreviewPending.value = true;
 		try {
-			const result = await call<Omit<CounterQuote, "key">>("mulecity_erpnext.counter_mix_orders.counter_quote", {
-				data: JSON.stringify(previewPayload()),
-			});
+			const result = await call<Omit<CounterQuote, "key">>(
+				"mulecity_erpnext.counter_mix_orders.counter_quote",
+				{ data: JSON.stringify(previewPayload()) },
+				undefined,
+				// Pay's refusal ("Short ingredients") is shown under Pay, not logged as an error.
+				{ answers: isValidationRefusal },
+			);
 			counterQuote.value = { ...result, key };
 			if (key !== previewKey.value) return;
 		} catch (error) {
@@ -2390,6 +2514,11 @@ export const useCartStore = defineStore("cart", () => {
 		counterQuote,
 		mixCheckPending,
 		mixCheckError,
+		quotedLineAmount,
+		lineChecking,
+		mixPriceChecking,
+		summarySubtotal,
+		summaryTaxes,
 		hasOrderLines,
 		isOrderLine,
 	};

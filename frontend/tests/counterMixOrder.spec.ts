@@ -131,6 +131,9 @@ describe("a custom mix ordered at the counter", () => {
 		expect(mockedCall).toHaveBeenCalledWith(
 			"mulecity_erpnext.counter_mix_orders.counter_quote",
 			expect.objectContaining({ data: expect.stringContaining('"pickup_date":"2026-10-02"') }),
+			undefined,
+			// Its refusal is an answer, kept out of the error badge (MuleCity-ra6h).
+			expect.objectContaining({ answers: expect.any(Function) }),
 		);
 		expect(cart.showPaymentDialog).toBe(true);
 		expect(cart.grandTotal).toBe(50);
