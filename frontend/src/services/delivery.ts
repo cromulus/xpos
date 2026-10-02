@@ -129,3 +129,36 @@ export function cartWeight(
 export function describeAddress(address: Pick<DeliveryAddress, "address_line1" | "city">): string {
 	return [address.address_line1, address.city].filter(Boolean).join(", ");
 }
+
+/** "Street, line 2, Town, State ZIP": the whole address, for the picker and the receipt. */
+export function fullAddress(
+	address: Pick<DeliveryAddress, "address_line1" | "city"> & Partial<Pick<DeliveryAddress, "address_line2" | "state" | "pincode">>,
+): string {
+	const region = [address.state, address.pincode].filter(Boolean).join(" ");
+	return [address.address_line1, address.address_line2, address.city, region].filter(Boolean).join(", ");
+}
+
+/**
+ * The address the picker starts on (Bill 2026-10-01, MuleCity-qajl.3): the
+ * customer's shipping address (primary shipping first), else their primary
+ * address, else the first listed (the site lists shipping, then primary, first).
+ */
+export function defaultDeliveryAddress<T extends DeliveryAddress>(addresses: T[]): T | null {
+	return (
+		addresses.find((a) => a.is_shipping_address && a.is_primary_address) ||
+		addresses.find((a) => a.is_shipping_address) ||
+		addresses.find((a) => a.is_primary_address) ||
+		addresses[0] ||
+		null
+	);
+}
+
+/** Addresses whose title, street, town, state or ZIP contain every word typed. */
+export function searchAddresses<T extends DeliveryAddress>(addresses: T[], term: string): T[] {
+	const words = term.toLowerCase().split(/\s+/).filter(Boolean);
+	if (!words.length) return addresses;
+	return addresses.filter((a) => {
+		const text = [a.title, a.address_line1, a.address_line2, a.city, a.state, a.pincode].filter(Boolean).join(" ").toLowerCase();
+		return words.every((word) => text.includes(word));
+	});
+}

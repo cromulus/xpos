@@ -162,14 +162,21 @@ describe("Add delivery at the counter (online: the site quotes)", () => {
 		expect(sale.xpos_new_shipping_address).toBeUndefined();
 	});
 
-	it("several addresses: a picker lists street and town, and the chosen one is quoted", async () => {
+	it("several addresses: a picker lists street, town, miles and cost, and the chosen one is quoted", async () => {
 		serve({ standing_charge: 0, no_charge: false, addresses: [farm, barn] }, siteQuote({ amount: 45, miles: 17.4, description: "17.4 mi, band 2 (1,600 lb)" }));
 		const { cart, wrapper } = await counter({ xpos_has_address: true, xpos_address_count: 2 });
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
 		const choices = wrapper.findAll("[data-testid='delivery-address']");
-		expect(choices.map((c) => c.text())).toEqual(["4410 Old Fairground Rd, Dunn · 42 mi", "12 Mill Rd, Angier · 17.4 mi"]);
+		expect(choices.map((c) => c.get("[data-testid='delivery-address-text']").text())).toEqual(["4410 Old Fairground Rd, Dunn", "12 Mill Rd, Angier"]);
+		expect(choices.map((c) => c.get("[data-testid='delivery-address-miles']").text())).toEqual(["42 mi", "17.4 mi"]);
+		// 1,600 lb, band 2: 42 mi -> $105; 17.4 mi -> $87 full load -> $45 (the shared vectors).
+		expect(choices.map((c) => c.get("[data-testid='delivery-address-cost']").text())).toEqual([
+			expect.stringContaining("105.00"),
+			expect.stringContaining("45.00"),
+		]);
 		await choices[1].trigger("click");
+		await wrapper.get("[data-testid='delivery-use']").trigger("click");
 		await flushPromises();
 		expect(state.call).toHaveBeenCalledWith("xpos.api.delivery.quote_delivery", expect.objectContaining({ address: "ADDR-BARN" }));
 		expect(deliveryLines(cart)).toEqual([[1, 45, "17.4 mi, band 2 (1,600 lb)"]]);
@@ -194,11 +201,14 @@ describe("Add delivery at the counter (online: the site quotes)", () => {
 		expect(deliveryLines(cart)).toEqual([[1, 0, "No delivery charge (standing exception)"]]);
 	});
 
-	it("no quote (no miles yet): Leslie types the charge", async () => {
+	it("no quote (no miles yet): the picker says no miles; leaving them empty, Leslie types the charge", async () => {
 		serve({ standing_charge: 0, no_charge: false, addresses: [{ ...farm, miles: null, miles_source: null }] },
 			siteQuote({ amount: null, source: "none", miles: null, band: null, description: "No miles for this address; type the delivery charge" }));
 		const { cart, wrapper } = await counter({ xpos_has_address: true });
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		expect(wrapper.get("[data-testid='delivery-address-miles']").text()).toBe("no miles");
+		await wrapper.get("[data-testid='delivery-use']").trigger("click");
 		await flushPromises();
 		expect(wrapper.text()).toContain("No miles for this address; type the delivery charge");
 		expect(deliveryLines(cart)).toEqual([]);
@@ -229,7 +239,8 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		});
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
-		await wrapper.get("[data-testid='delivery-address']").trigger("click");
+		expect(wrapper.get("[data-testid='delivery-address']").attributes("data-selected")).toBe("true");
+		await wrapper.get("[data-testid='delivery-use']").trigger("click");
 		await flushPromises();
 		expect(state.call).not.toHaveBeenCalled();
 		// 32 bags x 50 lb = 1,600 lb, band 2; 42 mi x $5 = $210 x 50% = $105 (a shared vector).
@@ -245,7 +256,7 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		});
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
-		await wrapper.get("[data-testid='delivery-address']").trigger("click");
+		await wrapper.get("[data-testid='delivery-use']").trigger("click");
 		await flushPromises();
 		expect(deliveryLines(cart)).toEqual([[1, 80, "Standing rate"]]);
 	});
@@ -409,5 +420,129 @@ describe("the customer card's Add delivery button (Bill 2026-10-01, MuleCity-qaj
 		const row = source.indexOf('data-testid="customer-account-row"');
 		const rowEnd = source.indexOf("</div>", row);
 		expect(source.indexOf("<AddDelivery", row)).toBeGreaterThan(rowEnd);
+	});
+});
+
+describe("the address picker (Bill 2026-10-01, MuleCity-qajl.3)", () => {
+	// Three places: the yard is the primary shipping address though listed last.
+	const shed = { name: "ADDR-SHED", title: "Back shed", address_line1: "5 Back Rd", city: "Dunn", miles: null, miles_source: null,
+		is_primary_address: false, is_shipping_address: false };
+	const yard = { name: "ADDR-YARD", title: "Hollow Creek yard", address_line1: "77 Feed Lot Ln", address_line2: "Gate 3", city: "Benson",
+		state: "NC", pincode: "27504", miles: 42, miles_source: "routes", is_primary_address: true, is_shipping_address: true };
+	const places = { standing_charge: 0, no_charge: false, addresses: [{ ...barn, is_primary_address: true }, shed, yard] };
+
+	async function picker(online: boolean, details: Record<string, unknown> = places) {
+		state.online = online;
+		serve(details);
+		const opened = await counter({ xpos_has_address: true, xpos_address_count: 3, xpos_delivery: details });
+		await opened.wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		return opened;
+	}
+	const rows = (wrapper: Awaited<ReturnType<typeof picker>>["wrapper"]) => wrapper.findAll("[data-testid='delivery-address']");
+	const selectedText = (wrapper: Awaited<ReturnType<typeof picker>>["wrapper"]) =>
+		rows(wrapper).filter((r) => r.attributes("data-selected") === "true").map((r) => r.get("[data-testid='delivery-address-text']").text());
+
+	for (const online of [true, false]) {
+		const mode = online ? "online" : "offline";
+
+		it(`${mode}: opens on the primary shipping address; each row shows its miles and cost, or "no miles"`, async () => {
+			const { wrapper } = await picker(online);
+			expect(selectedText(wrapper)).toEqual(["77 Feed Lot Ln, Gate 3, Benson, NC 27504"]);
+			expect(rows(wrapper).map((r) => r.get("[data-testid='delivery-address-miles']").text())).toEqual(["17.4 mi", "no miles", "42 mi"]);
+			const costs = rows(wrapper).map((r) => r.get("[data-testid='delivery-address-cost']").text());
+			expect(costs[0]).toContain("45.00");
+			expect(costs[1]).toBe("—");
+			expect(costs[2]).toContain("105.00");
+		});
+
+		it(`${mode}: the search narrows by street, town or name, and another choice is added`, async () => {
+			const { cart, wrapper } = await picker(online);
+			await wrapper.get("[data-testid='delivery-search']").setValue("angier");
+			expect(rows(wrapper).map((r) => r.get("[data-testid='delivery-address-text']").text())).toEqual(["12 Mill Rd, Angier"]);
+			await wrapper.get("[data-testid='delivery-search']").setValue("creek yard");
+			expect(rows(wrapper)).toHaveLength(1);
+			await wrapper.get("[data-testid='delivery-search']").setValue("mill");
+			await rows(wrapper)[0].trigger("click");
+			if (online) serve(places, siteQuote({ amount: 45, miles: 17.4, description: "17.4 mi, band 2 (1,600 lb)" }));
+			await wrapper.get("[data-testid='delivery-use']").trigger("click");
+			await flushPromises();
+			expect(deliveryLines(cart)).toEqual([[1, 45, "17.4 mi, band 2 (1,600 lb)"]]);
+			const sale = cart.getInvoiceData("Till", "SHIFT-1");
+			expect([sale.shipping_address_name, sale.pos_delivery_miles, sale.pos_delivery_miles_source]).toEqual(["ADDR-BARN", 17.4, "address"]);
+		});
+
+		it(`${mode}: a standing-charge customer sees that amount on every row, with or without miles`, async () => {
+			const { wrapper } = await picker(online, { ...places, standing_charge: 80 });
+			for (const row of rows(wrapper)) expect(row.get("[data-testid='delivery-address-cost']").text()).toContain("80.00");
+		});
+
+		it(`${mode}: an address with no miles: the typed miles are priced by the policy and kept as typed`, async () => {
+			const { cart, wrapper } = await picker(online);
+			await rows(wrapper)[1].trigger("click");
+			await wrapper.get("[data-testid='delivery-miles']").setValue("42");
+			expect(rows(wrapper)[1].get("[data-testid='delivery-address-cost']").text()).toContain("105.00");
+			await wrapper.get("[data-testid='delivery-use']").trigger("click");
+			await flushPromises();
+			// Priced at the till; the site has no miles for the shed to quote from.
+			expect(state.call).not.toHaveBeenCalledWith("xpos.api.delivery.quote_delivery", expect.anything());
+			expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb), miles typed at the till"]]);
+			const sale = cart.getInvoiceData("Till", "SHIFT-1");
+			expect([sale.shipping_address_name, sale.pos_delivery_miles, sale.pos_delivery_miles_source]).toEqual(["ADDR-SHED", 42, "manual"]);
+			// The site flags a sale priced from typed miles (xpos.api.delivery.note_typed_miles).
+			expect(sale.xpos_delivery).toMatchObject({ source: "miles", miles: 42, miles_source: "manual", address: "ADDR-SHED" });
+		});
+	}
+
+	it("the clerk picks the day; it goes on the sale, and a counter order takes it as its pickup (delivery) date", async () => {
+		const { cart, wrapper } = await picker(true);
+		expect((wrapper.get("[data-testid='delivery-day']").element as HTMLInputElement).value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+		await wrapper.get("[data-testid='delivery-day']").setValue("2026-10-05");
+		await wrapper.get("[data-testid='delivery-use']").trigger("click");
+		await flushPromises();
+		expect(cart.getInvoiceData("Till", "SHIFT-1").pos_delivery_date).toBe("2026-10-05");
+		// Changed on the card afterwards.
+		const card = wrapper.get("[data-testid='delivery-day-card']");
+		await card.setValue("2026-10-06");
+		await card.trigger("change");
+		expect(cart.deliveryDate).toBe("2026-10-06");
+		expect(wrapper.get("[data-testid='delivery-summary']").text()).toBe("To 77 Feed Lot Ln, Benson · 42 mi");
+	});
+
+	it("one address with miles is added at once with today's day; a counter order's date follows the day", async () => {
+		serve({ standing_charge: 0, no_charge: false, addresses: [farm] });
+		const { cart, wrapper } = await counter({ xpos_has_address: true, xpos_address_count: 1 });
+		await wrapper.get("[data-testid='add-delivery']").trigger("click");
+		await flushPromises();
+		expect(wrapper.find("[data-testid='delivery-dialog']").exists()).toBe(false);
+		expect(cart.deliveryDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+		// A custom mix the mill still has to make: an order line (its Sales Order's delivery_date is pickup_date).
+		cart.items.push({ uid: "r2", item_code: "MIX-1", item_name: "Custom mix", qty: 500, rate: 0.4, uom: "Pound", conversion_factor: 1,
+			discount_percentage: 0, discount_amount: 0, is_made_to_order: 1, actual_qty: 0 } as never);
+		expect(cart.hasOrderLines).toBe(true);
+		cart.setDeliveryDate("2026-10-07");
+		const sale = cart.getInvoiceData("Till", "SHIFT-1") as Record<string, unknown>;
+		expect([sale.pos_delivery_date, sale.pickup_date]).toEqual(["2026-10-07", "2026-10-07"]);
+	});
+
+	it("the receipt snapshot carries the delivery's address, miles and day; removing the line drops it", async () => {
+		const { cart, wrapper } = await picker(false);
+		await wrapper.get("[data-testid='delivery-day']").setValue("2026-10-05");
+		await wrapper.get("[data-testid='delivery-use']").trigger("click");
+		await flushPromises();
+		expect(cart.getReceiptSnapshot("SINV-1").delivery).toEqual({
+			address_name: "ADDR-YARD", address: "77 Feed Lot Ln, Gate 3, Benson, NC 27504", miles: 42, miles_source: "address", date: "2026-10-05",
+		});
+		cart.items.splice(cart.items.findIndex((i) => i.item_code === "MC-ITEM-DEL"), 1);
+		expect(cart.getReceiptSnapshot("SINV-1").delivery).toBeUndefined();
+		const sale = cart.getInvoiceData("Till", "SHIFT-1");
+		expect([sale.shipping_address_name, sale.pos_delivery_miles]).toEqual([undefined, undefined]);
+	});
+
+	it("negative: a pickup sale has no delivery on its snapshot or its data", async () => {
+		const { cart } = await counter({ xpos_has_address: true });
+		expect(cart.getReceiptSnapshot("SINV-2").delivery).toBeUndefined();
+		const sale = cart.getInvoiceData("Till", "SHIFT-1");
+		expect([sale.pos_delivery_miles, sale.pos_delivery_miles_source, sale.pos_delivery_date]).toEqual([undefined, undefined, undefined]);
 	});
 });

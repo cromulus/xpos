@@ -51,7 +51,15 @@ import {
 	type DiscountKind,
 } from "@/utils/discountCap";
 import { lineDiscountFromPerUnit, perUnitDiscount } from "@/utils/lineDiscount";
-import { TYPED_OFFLINE, type CustomerDelivery, type DeliveryAddress, type DeliveryPolicy, type DeliveryQuote } from "@/services/delivery";
+import {
+	TYPED_OFFLINE,
+	fullAddress,
+	type CustomerDelivery,
+	type DeliveryAddress,
+	type DeliveryMilesSource,
+	type DeliveryPolicy,
+	type DeliveryQuote,
+} from "@/services/delivery";
 
 let cartRowSeq = 0;
 
@@ -253,6 +261,17 @@ export const useCartStore = defineStore("cart", () => {
 	// A quoted delivery (MuleCity-6nb1): where it goes, and the quote its line was priced from.
 	const shippingAddress = ref<DeliveryAddress | null>(null);
 	const deliveryQuote = ref<DeliveryQuote | null>(null);
+	// The delivery line's item, and whether its miles were the Address's or typed (MuleCity-qajl).
+	const deliveryItemCode = ref("");
+	const deliveryMilesSource = ref<DeliveryMilesSource | null>(null);
+	/** The quoted delivery, while its line is still in the cart (removing the line drops it). */
+	const activeDelivery = computed(() => {
+		const address = shippingAddress.value;
+		if (!address) return null;
+		if (deliveryItemCode.value && !items.value.some((i) => i.item_code === deliveryItemCode.value)) return null;
+		const miles = deliveryQuote.value?.miles ?? address.miles ?? null;
+		return { address, quote: deliveryQuote.value, miles: miles && miles > 0 ? miles : null, milesSource: deliveryMilesSource.value };
+	});
 	const settingsStore = useSettingsStore();
 
 	const ruleDiscountPercentage = ref(0);
@@ -1055,10 +1074,10 @@ export const useCartStore = defineStore("cart", () => {
 			tax_category?: string | null;
 		} | null,
 	): void {
-		// Another buyer's delivery address never carries over.
+		// Another buyer's delivery address (and its day) never carries over.
 		if (cust?.name !== customer.value?.name) {
-			shippingAddress.value = null;
-			deliveryQuote.value = null;
+			if (shippingAddress.value) deliveryDate.value = "";
+			clearDelivery();
 		}
 		customer.value = cust;
 	}
@@ -1484,8 +1503,14 @@ export const useCartStore = defineStore("cart", () => {
 		currency.value = "";
 		conversionRate.value = 1;
 		selectedDeliveryCharge.value = null;
+		clearDelivery();
+	}
+
+	function clearDelivery(): void {
 		shippingAddress.value = null;
 		deliveryQuote.value = null;
+		deliveryItemCode.value = "";
+		deliveryMilesSource.value = null;
 	}
 
 	function clearAll(): void {
@@ -1726,7 +1751,9 @@ export const useCartStore = defineStore("cart", () => {
 				}
 			}
 			if (result.shipping_address_name) {
-				shippingAddress.value = { name: result.shipping_address_name, address_line1: "", city: "", miles: null, miles_source: null };
+				const miles = Number(result.pos_delivery_miles) || null;
+				shippingAddress.value = { name: result.shipping_address_name, address_line1: "", city: "", miles, miles_source: null };
+				deliveryMilesSource.value = miles ? ((result.pos_delivery_miles_source as DeliveryMilesSource) || "address") : null;
 			}
 
 			if (result.additional_discount_percentage) {
@@ -1959,11 +1986,18 @@ export const useCartStore = defineStore("cart", () => {
 		}
 
 		// A quoted delivery ships to its address; one typed offline is made on sync.
-		const address = shippingAddress.value;
+		// Its day and miles ride with the sale, so the invoice keeps them as rung up,
+		// offline too (MuleCity-qajl).
+		const delivery = activeDelivery.value;
+		const address = delivery?.address;
 		if (address?.name) data.shipping_address_name = address.name;
 		else if (address)
 			data.xpos_new_shipping_address = { address_line1: address.address_line1, city: address.city, miles: address.miles || 0 };
 		if (address && deliveryQuote.value) data.xpos_delivery = { ...deliveryQuote.value, address: address.name };
+		if (delivery?.miles) {
+			data.pos_delivery_miles = delivery.miles;
+			data.pos_delivery_miles_source = delivery.milesSource || "address";
+		}
 
 		return data;
 	}
@@ -2066,6 +2100,20 @@ export const useCartStore = defineStore("cart", () => {
 			change_legs: changeLegs.value.length ? changeLegs.value : undefined,
 			currency: currency.value || posStore.currency || undefined,
 			notes: orderNotes.value || undefined,
+			delivery: receiptDelivery(),
+		};
+	}
+
+	/** The delivery's facts for the offline receipt (the prints lane formats them). */
+	function receiptDelivery(): ReceiptSnapshot["delivery"] {
+		const delivery = activeDelivery.value;
+		if (!delivery) return undefined;
+		return {
+			address_name: delivery.address.name,
+			address: fullAddress(delivery.address),
+			miles: delivery.miles,
+			miles_source: delivery.miles ? delivery.milesSource || "address" : null,
+			date: deliveryDate.value || nowDate(),
 		};
 	}
 
@@ -2078,12 +2126,18 @@ export const useCartStore = defineStore("cart", () => {
 	 * site's delivery item, qty 1, described by the quote. A second "Add delivery"
 	 * updates that line; it stays an ordinary line (editable within the discount cap).
 	 */
-	function setDelivery(policy: DeliveryPolicy, address: DeliveryAddress, quote: DeliveryQuote, amount: number): void {
+	function setDelivery(
+		policy: DeliveryPolicy,
+		address: DeliveryAddress,
+		quote: DeliveryQuote,
+		amount: number,
+		options: { milesSource?: DeliveryMilesSource; date?: string } = {},
+	): void {
 		const item = policy.item!;
-		const description =
-			address.miles_source === TYPED_OFFLINE && quote.source === "miles"
-				? `${quote.description}, miles typed offline`
-				: quote.description;
+		const typed = quote.source === "miles" && (address.miles_source === TYPED_OFFLINE || options.milesSource === "manual");
+		const description = !typed
+			? quote.description
+			: `${quote.description}, ${address.miles_source === TYPED_OFFLINE ? "miles typed offline" : "miles typed at the till"}`;
 		const line = items.value.find((i) => i.item_code === item.item_code);
 		if (line) {
 			Object.assign(line, { qty: 1, rate: normalizeItemRate(amount), description, discount_percentage: 0, discount_amount: 0 });
@@ -2106,6 +2160,19 @@ export const useCartStore = defineStore("cart", () => {
 		}
 		shippingAddress.value = address;
 		deliveryQuote.value = { ...quote, amount };
+		deliveryItemCode.value = item.item_code;
+		deliveryMilesSource.value = options.milesSource || (address.miles_source === TYPED_OFFLINE ? "manual" : "address");
+		setDeliveryDate(options.date || deliveryDate.value || nowDate());
+	}
+
+	/**
+	 * The day the delivery goes (Bill 2026-10-01: the clerk picks it at the till).
+	 * The sale keeps it as pos_delivery_date; a counter order's Sales Order takes it
+	 * as its delivery_date (the mix order's pickup_date).
+	 */
+	function setDeliveryDate(day: string): void {
+		deliveryDate.value = day;
+		if (hasOrderLines.value && day) pickupDate.value = day;
 	}
 
 	return {
@@ -2213,7 +2280,9 @@ export const useCartStore = defineStore("cart", () => {
 		setDeliveryCharge,
 		shippingAddress,
 		deliveryQuote,
+		activeDelivery,
 		setDelivery,
+		setDeliveryDate,
 		itemRatePrecision,
 		pickupDate,
 		mixPayMode,

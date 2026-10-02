@@ -485,6 +485,9 @@ export interface InvoiceData {
 	payments?: InvoicePayment[];
 	pos_notes?: string;
 	pos_delivery_date?: string;
+	/** One-way miles the delivery was priced from, as rung up (MuleCity-qajl). */
+	pos_delivery_miles?: number;
+	pos_delivery_miles_source?: DeliveryMilesSource;
 	pos_opening_shift?: string;
 	offers?: string;
 	coupons?: string;
