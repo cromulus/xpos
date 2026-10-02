@@ -268,6 +268,7 @@ CREATE TABLE IF NOT EXISTS `customers` (
   `synced_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `is_local` TINYINT(1) DEFAULT 0,
   `local_id` VARCHAR(100) DEFAULT NULL,
+  `xpos_row` LONGTEXT DEFAULT NULL,
   INDEX `idx_customer_name` (`customer_name`),
   INDEX `idx_mobile_no` (`mobile_no`),
   INDEX `idx_email_id` (`email_id`),

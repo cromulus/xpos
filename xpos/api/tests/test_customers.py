@@ -369,3 +369,35 @@ class TestCounterAddresses(IntegrationTestCase):
 		made = customers.make_address({"customer": owner, "address_line1": "1 Mill Rd", "city": "Dunn"})
 		with self.assertRaises(frappe.PermissionError):
 			customers.update_address(other, made["name"], {"address_line1": "2 Mill Rd", "city": "Dunn"})
+
+
+class TestCachedContacts(IntegrationTestCase):
+	"""Mule City (Bill 2026-10-01, MuleCity-qajl.4): the till caches each
+	customer's contacts with their phones and emails, primary first, so the
+	clerk can reach them about a delivery while the internet is down."""
+
+	def test_each_contact_with_its_phones_and_emails_rides_on_the_customer_row(self):
+		tag = frappe.generate_hash(length=6)
+		customer = frappe.get_doc(
+			{"doctype": "Customer", "customer_name": f"Contact Cache {tag}", "customer_type": "Company"}
+		).insert(ignore_permissions=True).name
+		link = [{"link_doctype": "Customer", "link_name": customer}]
+		yard = frappe.get_doc({"doctype": "Contact", "first_name": "Yard", "last_name": tag,
+			"phone_nos": [{"phone": "919-555-0101", "is_primary_phone": 1}], "links": link}).insert(ignore_permissions=True)
+		owner = frappe.get_doc({"doctype": "Contact", "first_name": "Owner", "last_name": tag, "is_primary_contact": 1,
+			"phone_nos": [{"phone": "919-555-0102"}, {"phone": "919-555-0103", "is_primary_mobile_no": 1}],
+			"email_ids": [{"email_id": f"owner.{tag}@example.com", "is_primary": 1}], "links": link}).insert(ignore_permissions=True)
+		lonely = frappe.get_doc(
+			{"doctype": "Customer", "customer_name": f"No Contact {tag}", "customer_type": "Company"}
+		).insert(ignore_permissions=True).name
+
+		rows = [{"name": customer, "mobile_no": ""}, {"name": lonely, "mobile_no": ""}]
+		customers._enrich_picker_customers(rows, None)
+		self.assertEqual(rows[0]["xpos_contacts"], [
+			{"name": owner.name, "full_name": f"Owner {tag}", "phones": ["919-555-0103", "919-555-0102"],
+			 "emails": [f"owner.{tag}@example.com"], "is_primary_contact": True},
+			{"name": yard.name, "full_name": f"Yard {tag}", "phones": ["919-555-0101"], "emails": [],
+			 "is_primary_contact": False},
+		])
+		self.assertNotIn("xpos_contacts", rows[1])
+		self.assertEqual(customers._customer_contacts([]), {})

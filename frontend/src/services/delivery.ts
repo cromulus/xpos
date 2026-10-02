@@ -30,8 +30,19 @@ export interface DeliveryAddress {
 	address_line1: string;
 	city: string;
 	miles: number | null;
+	/** The Address's own source (the site's lookup "routes", "manual", or TYPED_OFFLINE). */
 	miles_source: string | null;
+	// Cached for the offline picker (MuleCity-qajl.4); older cached rows lack them.
+	title?: string | null;
+	address_line2?: string | null;
+	state?: string | null;
+	pincode?: string | null;
+	is_primary_address?: boolean;
+	is_shipping_address?: boolean;
 }
+
+/** Where a sale's delivery miles came from at the till: the Address's, or typed by the clerk. */
+export type DeliveryMilesSource = "address" | "manual";
 
 /** A customer's delivery details (xpos_delivery on the customer row). */
 export interface CustomerDelivery {

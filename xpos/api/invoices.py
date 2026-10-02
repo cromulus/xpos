@@ -91,6 +91,32 @@ def _mark_xpos_delivery_charges_managed(invoice_doc):
 	invoice_doc.flags.xpos_skip_auto_delivery_charges = True
 
 
+DELIVERY_MILES_SOURCES = ("address", "manual")
+
+
+def apply_delivery_facts(invoice_doc, data: dict):
+	"""Keep a delivery's facts as they were at the till (Mule City, MuleCity-qajl).
+
+	Where it goes (standard ``shipping_address_name``, its display filled by
+	ERPNext's own formatter), the day (``pos_delivery_date``) and the one-way
+	miles it was priced from (``pos_delivery_miles``, with
+	``pos_delivery_miles_source``: "address" when they were the Address's,
+	"manual" when the clerk typed them). Prints read these, never today's
+	Address. They travel in the sale's data, so an offline sale keeps them.
+	"""
+	if data.get("pos_delivery_date"):
+		invoice_doc.pos_delivery_date = data["pos_delivery_date"]
+	if data.get("shipping_address_name"):
+		invoice_doc.shipping_address_name = data["shipping_address_name"]
+		from frappe.contacts.doctype.address.address import get_address_display
+
+		invoice_doc.shipping_address = get_address_display(data["shipping_address_name"])
+	miles = flt(data.get("pos_delivery_miles"))
+	source = data.get("pos_delivery_miles_source")
+	invoice_doc.pos_delivery_miles = miles if miles > 0 else None
+	invoice_doc.pos_delivery_miles_source = source if miles > 0 and source in DELIVERY_MILES_SOURCES else None
+
+
 def _apply_invoice_delivery_charge_fields(invoice_doc, data: dict):
 	"""Apply the delivery-charge selection supplied by the xpos client."""
 	_mark_xpos_delivery_charges_managed(invoice_doc)
@@ -673,9 +699,8 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 
 	invoice_doc.pos_notes = data.get("pos_notes", "")
 	invoice_doc.pos_delivery_date = data.get("pos_delivery_date", None) or None
-	# Where a quoted delivery goes (xpos.api.delivery, MuleCity-6nb1).
-	if data.get("shipping_address_name"):
-		invoice_doc.shipping_address_name = data["shipping_address_name"]
+	# Where a quoted delivery goes, its day and miles (xpos.api.delivery, MuleCity-6nb1, qajl).
+	apply_delivery_facts(invoice_doc, data)
 
 	sales_person = data.get("sales_person") or None
 	if sales_person:
@@ -1230,8 +1255,7 @@ def save_draft_invoice(data: str | dict):
 
 	apply_sales_person(invoice_doc, data.get("sales_person") or None, pos_profile)
 	resolve_new_shipping_address(data)
-	if data.get("shipping_address_name"):
-		invoice_doc.shipping_address_name = data["shipping_address_name"]
+	apply_delivery_facts(invoice_doc, data)
 
 	rate_precision = _item_field_precision(invoice_doc, "rate")
 	discount_precision = _item_field_precision(invoice_doc, "discount_amount")
@@ -1718,8 +1742,11 @@ def get_invoice_details(invoice_name: str, doctype: str = ""):
 			}
 			for i in doc.items
 		],
-		# A parked delivery keeps where it goes (MuleCity-6nb1).
+		# A parked delivery keeps where it goes, its day and its miles (MuleCity-6nb1, qajl).
 		"shipping_address_name": doc.get("shipping_address_name"),
+		"pos_delivery_date": str(doc.get("pos_delivery_date") or "") or None,
+		"pos_delivery_miles": doc.get("pos_delivery_miles"),
+		"pos_delivery_miles_source": doc.get("pos_delivery_miles_source"),
 		"payments": [
 			{
 				"mode_of_payment": p.mode_of_payment,

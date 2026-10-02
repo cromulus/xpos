@@ -1,4 +1,4 @@
-import type { CustomerDelivery, DeliveryQuote } from "@/services/delivery";
+import type { CustomerDelivery, DeliveryMilesSource, DeliveryQuote } from "@/services/delivery";
 export interface POSSearchField {
 	field: string;
 	fieldname?: string;
@@ -298,6 +298,8 @@ export interface Customer {
 	xpos_address_count?: number;
 	/** The site's delivery details, for pricing a delivery offline (MuleCity-6nb1). */
 	xpos_delivery?: CustomerDelivery;
+	/** The customer's contacts, primary first, cached for offline (MuleCity-qajl.4). */
+	xpos_contacts?: CustomerContact[];
 	xpos_has_email?: boolean;
 	xpos_has_phone?: boolean;
 	xpos_customer_since?: string;
@@ -326,6 +328,15 @@ export interface Customer {
 	balance?: number;
 	credit_limit?: number;
 	[key: string]: unknown;
+}
+
+/** One of a customer's Contacts as the till caches it (xpos.api.customers._customer_contacts). */
+export interface CustomerContact {
+	name: string;
+	full_name: string;
+	phones: string[];
+	emails: string[];
+	is_primary_contact: boolean;
 }
 
 export interface CustomerAddress {
@@ -824,6 +835,21 @@ export interface ReceiptSnapshot {
 	change_legs?: InvoiceChangeLeg[];
 	currency?: string;
 	notes?: string;
+	/** Where, when and how far a delivery goes, as rung up (MuleCity-qajl); absent for a pickup. */
+	delivery?: ReceiptSnapshotDelivery;
+}
+
+/** A delivery's facts at sale time, for the offline receipt (the server keeps the same on the invoice). */
+export interface ReceiptSnapshotDelivery {
+	/** The Address's name; empty for one typed offline (made when the sale syncs). */
+	address_name: string;
+	/** "Street, line 2, Town, State ZIP". */
+	address: string;
+	miles: number | null;
+	/** "address" (the Address's miles) or "manual" (typed by the clerk). */
+	miles_source: DeliveryMilesSource | null;
+	/** The delivery day (YYYY-MM-DD). */
+	date: string;
 }
 
 export interface ShiftCheckResult {

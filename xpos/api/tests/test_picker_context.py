@@ -11,6 +11,10 @@ class TestPickerContext(unittest.TestCase):
 		patcher = patch.object(customers, "customer_delivery", return_value={})
 		patcher.start()
 		self.addCleanup(patcher.stop)
+		# Cached contacts are TestCachedContacts' (test_customers.py).
+		contacts = patch.object(customers, "_customer_contacts", return_value={})
+		contacts.start()
+		self.addCleanup(contacts.stop)
 
 	def test_description_keeps_distinguishing_fields_without_generic_clutter(self):
 		row = {"name": "MC-CUST-2980", "customer_name": "Southern Woods",

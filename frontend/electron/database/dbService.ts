@@ -346,6 +346,8 @@ async function runMigrations(): Promise<void> {
 		["currencies", "number_format", "VARCHAR(20) DEFAULT NULL"],
 		["currencies", "smallest_currency_fraction_value", "DECIMAL(18,6) DEFAULT 0"],
 		["currencies", "symbol_on_right", "TINYINT(1) DEFAULT 0"],
+		// What the site adds to a customer row (delivery, contacts), as JSON (MuleCity-qajl.4).
+		["customers", "xpos_row", "LONGTEXT DEFAULT NULL"],
 	];
 	for (const [table, col, typedef] of columnMigrations) {
 		try {

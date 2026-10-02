@@ -17,8 +17,11 @@ What (site hooks, all optional; with none, XPOS offers no quoted delivery)
       when the clerk must type it), source (exception|standing|miles|none), rule,
       miles, miles_source, band, description}``.
     * ``xpos_delivery_customers(customer_names)`` -> ``{name: {standing_charge,
-      no_charge, addresses: [{name, address_line1, city, miles, miles_source}]}}``,
-      one batch for the customer search rows the till caches offline.
+      no_charge, addresses: [{name, title, address_line1, address_line2, city,
+      state, pincode, miles, miles_source, is_primary_address,
+      is_shipping_address}]}}``, one batch for the customer search rows the till
+      caches offline (the offline picker shows, searches and preselects by
+      these, MuleCity-qajl.4).
     * ``xpos_delivery_typed_miles(address_doc, miles)``: record miles a clerk typed
       at the till while offline on a new Address, before it is inserted.
 

@@ -21,6 +21,7 @@ import {
 	type DbConfig,
 } from "./dbService";
 import { createLogger } from "../logger";
+import { packCustomerRows, unpackCustomerRow } from "./customerRows";
 
 const log = createLogger("DB-IPC");
 
@@ -210,15 +211,16 @@ export function registerDbHandlers(): void {
 			sql += " LIMIT ?";
 			params.push(opts.limit);
 		}
-		return query(sql, params);
+		// Each row with what the site added to it (delivery, contacts), as the browser keeps it (qajl.4).
+		return (await query<Record<string, unknown>>(sql, params)).map(unpackCustomerRow);
 	});
 
 	ipcMain.handle("db:get-customer", async (_e, name: string) => {
-		return queryOne("SELECT * FROM `customers` WHERE `name` = ?", [name]);
+		return unpackCustomerRow(await queryOne<Record<string, unknown>>("SELECT * FROM `customers` WHERE `name` = ?", [name]));
 	});
 
 	ipcMain.handle("db:upsert-customers", async (_e, rows: Record<string, unknown>[]) => {
-		return upsertBatch("customers", rows, "name");
+		return upsertBatch("customers", packCustomerRows(rows), "name");
 	});
 
 	ipcMain.handle("db:add-local-customer", async (_e, customer: Record<string, unknown>) => {

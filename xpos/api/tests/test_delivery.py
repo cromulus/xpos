@@ -89,7 +89,8 @@ class TestCustomerDetails(HookCase):
 		self.with_hooks(xpos_delivery_customers=lambda names: {n: details[n] for n in names if n in details})
 		rows = [{"name": "C1", "mobile_no": ""}, {"name": "C2", "mobile_no": ""}]
 		with patch.object(customers.frappe.db, "sql", side_effect=[[], [
-			{"name": "C1", "address_count": 1, "has_email": 0}, {"name": "C2", "address_count": 0, "has_email": 0}]]):
+			{"name": "C1", "address_count": 1, "has_email": 0}, {"name": "C2", "address_count": 0, "has_email": 0}]]), \
+			patch.object(customers, "_customer_contacts", return_value={}):
 			customers._enrich_picker_customers(rows, None)
 		self.assertEqual(rows[0]["xpos_delivery"], details["C1"])
 		self.assertNotIn("xpos_delivery", rows[1])
@@ -190,7 +191,7 @@ class TestTheSaleCarriesItsAddressAndLineDescription(unittest.TestCase):
 
 		for builder in (invoices._build_invoice_doc, invoices.save_draft_invoice):
 			source = inspect.getsource(builder)
-			self.assertIn('invoice_doc.shipping_address_name = data["shipping_address_name"]', source)
+			self.assertIn("apply_delivery_facts(invoice_doc, data)", source)
 			self.assertIn('item.description = item_data["description"]', source)
 		# Only saving makes an offline-typed address; the preview never does.
 		self.assertIn("resolve_new_shipping_address(data)", inspect.getsource(invoices.create_invoice))
@@ -199,3 +200,50 @@ class TestTheSaleCarriesItsAddressAndLineDescription(unittest.TestCase):
 		details = inspect.getsource(invoices.get_invoice_details)
 		self.assertIn('"description": i.description', details)
 		self.assertIn('"shipping_address_name": doc.get("shipping_address_name")', details)
+		self.assertIn('"pos_delivery_miles": doc.get("pos_delivery_miles")', details)
+
+
+class TestTheSaleKeepsItsDeliveryFacts(unittest.TestCase):
+	"""Bill 2026-10-01 (MuleCity-qajl): the address, day and miles are stored on
+	the sale as they were at the till; prints never read today's Address."""
+
+	def apply(self, data):
+		from xpos.api import invoices
+
+		doc = frappe._dict()
+		with patch("frappe.contacts.doctype.address.address.get_address_display", return_value="12 Mill Rd<br>Angier") as display:
+			invoices.apply_delivery_facts(doc, data)
+		return doc, display
+
+	def test_address_day_and_miles_from_the_address(self):
+		doc, display = self.apply({"shipping_address_name": "ADDR-BARN", "pos_delivery_date": "2026-10-03",
+			"pos_delivery_miles": 17.4, "pos_delivery_miles_source": "address"})
+		display.assert_called_once_with("ADDR-BARN")
+		self.assertEqual((doc.shipping_address_name, doc.shipping_address, doc.pos_delivery_date),
+			("ADDR-BARN", "12 Mill Rd<br>Angier", "2026-10-03"))
+		self.assertEqual((doc.pos_delivery_miles, doc.pos_delivery_miles_source), (17.4, "address"))
+
+	def test_miles_the_clerk_typed_are_flagged_manual(self):
+		doc, _ = self.apply({"shipping_address_name": "ADDR-SHED", "pos_delivery_miles": "9.5", "pos_delivery_miles_source": "manual"})
+		self.assertEqual((doc.pos_delivery_miles, doc.pos_delivery_miles_source), (9.5, "manual"))
+
+	def test_negative_no_miles_or_an_unknown_source_stores_no_source(self):
+		doc, display = self.apply({"pos_delivery_miles": 0, "pos_delivery_miles_source": "manual"})
+		display.assert_not_called()
+		self.assertEqual((doc.pos_delivery_miles, doc.pos_delivery_miles_source), (None, None))
+		self.assertNotIn("shipping_address_name", doc)
+		doc, _ = self.apply({"pos_delivery_miles": 12, "pos_delivery_miles_source": "routes"})
+		self.assertEqual((doc.pos_delivery_miles, doc.pos_delivery_miles_source), (12, None))
+
+	def test_the_fields_exist_on_sales_and_pos_invoices(self):
+		import json
+		import os
+
+		import xpos
+
+		root = os.path.join(os.path.dirname(xpos.__file__), "x_pos", "custom")
+		for name, doctype in (("sales_invoice.json", "Sales Invoice"), ("pos_invoice.json", "POS Invoice")):
+			with open(os.path.join(root, name)) as f:
+				fields = {row["fieldname"]: row for row in json.load(f)["custom_fields"]}
+			self.assertEqual(fields["pos_delivery_miles"]["fieldtype"], "Float", doctype)
+			self.assertEqual(fields["pos_delivery_miles_source"]["options"], "\naddress\nmanual", doctype)

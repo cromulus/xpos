@@ -53,7 +53,8 @@ const cache = useCacheStatus(),
 	pos = usePosStore(),
 	offline = useOfflineStore();
 // Taxes: every tax category's taxes, so any synced customer is taxed offline (MuleCity-ispl).
-const kinds = ["Customers", "Products and stock", "Taxes"];
+// Addresses: customers' delivery addresses with their miles, and their contacts (MuleCity-qajl.4).
+const kinds = ["Customers", "Addresses", "Products and stock", "Taxes"];
 const now = ref(Date.now());
 const timer = setInterval(() => {
 	now.value = Date.now();

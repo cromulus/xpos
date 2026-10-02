@@ -14,6 +14,11 @@ import type {
 import { isOnline } from "@/utils";
 import { refreshDeliveryPolicy } from "@/composables/useDelivery";
 
+/** How many delivery addresses the cached customer rows carry (the cache panel's "Addresses"). */
+export function cachedAddressCount(customers: Customer[]): number {
+	return customers.reduce((sum, customer) => sum + (customer.xpos_delivery?.addresses?.length || 0), 0);
+}
+
 export const useCustomerStore = defineStore("customers", () => {
 	const customers = ref<Customer[]>([]);
 	const isLoading = ref(false);
@@ -82,7 +87,11 @@ export const useCustomerStore = defineStore("customers", () => {
 	async function cacheAllCustomers(posProfile?: string): Promise<void> {
 		if (!isOnline()) return;
 		const status = useCacheStatus();
-		if (!status.begin("Customers", posProfile || "")) return;
+		const profile = posProfile || "";
+		if (!status.begin("Customers", profile)) return;
+		// Addresses (with their miles) and contacts ride on the customer rows, so they
+		// refresh with them: at till open and on every sync (MuleCity-qajl.4).
+		status.begin("Addresses", profile);
 		try {
 			const result = await call<{ customers: Customer[]; complete: boolean }>("xpos.api.customers.get_customers", {
 				search_term: "",
@@ -93,12 +102,21 @@ export const useCustomerStore = defineStore("customers", () => {
 
 			if (result) {
 				await cacheCustomers(result.customers.map((customer, rank) => ({ ...customer, xpos_cache_rank: rank })));
-				status.finish("Customers", posProfile || "", result.customers.length, result.complete);
+				status.finish("Customers", profile, result.customers.length, result.complete);
 			}
 			// The rows carry each customer's delivery details; the policy prices them offline.
-			await refreshDeliveryPolicy().catch((error) => console.warn("[XPOS Offline] Failed to cache the delivery policy:", error));
+			const policyCached = await refreshDeliveryPolicy().then(
+				() => true,
+				(error) => {
+					console.warn("[XPOS Offline] Failed to cache the delivery policy:", error);
+					return false;
+				},
+			);
+			if (result && policyCached) status.finish("Addresses", profile, cachedAddressCount(result.customers), result.complete);
+			else status.fail("Addresses");
 		} catch (error) {
 			status.fail("Customers");
+			status.fail("Addresses");
 			console.warn("[XPOS Offline] Failed to pre-cache customers:", error);
 		}
 	}

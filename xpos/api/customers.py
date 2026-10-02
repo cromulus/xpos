@@ -255,6 +255,8 @@ def _enrich_picker_customers(customers, company):
 	for name, details in customer_delivery(list(by_name)).items():
 		if name in by_name:
 			by_name[name]["xpos_delivery"] = details
+	for name, contacts in _customer_contacts(list(by_name)).items():
+		by_name[name]["xpos_contacts"] = contacts
 	if not company:
 		return
 	# Use permission-aware reads and company currency; returns reduce net sales.
@@ -272,6 +274,58 @@ def _enrich_picker_customers(customers, company):
 		for sale in frappe.get_list(doctype, filters=filters,
 			fields=["customer", {"SUM": "base_net_total", "as": "sales"}], group_by="customer", limit_page_length=0):
 			by_name[sale["customer"]]["xpos_sales_12mo"] += flt(sale["sales"])
+
+
+def _customer_contacts(customer_names: list[str]) -> dict:
+	"""{customer: [{name, full_name, phones, emails, is_primary_contact}]}, primary contact first.
+
+	Cached on the till's customer rows so a clerk can reach the customer about a
+	delivery while offline (Mule City, MuleCity-qajl.4). Three queries for any
+	number of customers; a customer with no Contact gets no entry.
+	"""
+	if not customer_names:
+		return {}
+	links = frappe.db.sql(
+		"""
+		SELECT dl.link_name AS customer, c.name, c.full_name, c.first_name, c.last_name, c.is_primary_contact
+		FROM `tabDynamic Link` dl JOIN `tabContact` c ON c.name = dl.parent
+		WHERE dl.parenttype = 'Contact' AND dl.link_doctype = 'Customer' AND dl.link_name IN %(names)s
+		ORDER BY dl.link_name, c.is_primary_contact DESC, c.creation, c.name
+		""",
+		{"names": list(customer_names)},
+		as_dict=True,
+	)
+	if not links:
+		return {}
+	contact_names = list({row.name for row in links})
+	phones, emails = {}, {}
+	for row in frappe.db.sql(
+		"""SELECT parent, phone FROM `tabContact Phone` WHERE parent IN %(contacts)s
+		AND TRIM(IFNULL(phone, '')) != '' ORDER BY parent, is_primary_mobile_no DESC, is_primary_phone DESC, idx""",
+		{"contacts": contact_names},
+		as_dict=True,
+	):
+		phones.setdefault(row.parent, []).append(row.phone)
+	for row in frappe.db.sql(
+		"""SELECT parent, email_id FROM `tabContact Email` WHERE parent IN %(contacts)s
+		AND TRIM(IFNULL(email_id, '')) != '' ORDER BY parent, is_primary DESC, idx""",
+		{"contacts": contact_names},
+		as_dict=True,
+	):
+		emails.setdefault(row.parent, []).append(row.email_id)
+	contacts = {}
+	for row in links:
+		full_name = row.full_name or " ".join(filter(None, (row.first_name, row.last_name))) or row.name
+		contacts.setdefault(row.customer, []).append(
+			{
+				"name": row.name,
+				"full_name": full_name,
+				"phones": phones.get(row.name, []),
+				"emails": emails.get(row.name, []),
+				"is_primary_contact": bool(row.is_primary_contact),
+			}
+		)
+	return contacts
 
 
 def _linked_contact_details(customer: str) -> dict:
