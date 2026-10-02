@@ -183,29 +183,45 @@ describe("adding a custom mix to the cart", () => {
 });
 
 describe("the cart says whether the mix can be made before Pay", () => {
-	it("asks the site's counter quote once a pickup date is chosen, and shows the order's price", async () => {
+	it("asks the site's read-only counter check once a pickup date is chosen, and shows the order's price", async () => {
 		vi.useFakeTimers();
 		mockedCall.mockImplementation(async (method: string) =>
-			method === "mulecity_erpnext.counter_mix_orders.counter_quote" ? QUOTE : undefined,
+			method === "mulecity_erpnext.counter_mix_orders.counter_check" ? QUOTE : undefined,
 		);
 		const cart = useCartStore();
 		cart.addItem(mix());
 		await vi.advanceTimersByTimeAsync(700);
-		expect(mockedCall.mock.calls.some(([m]) => m === "mulecity_erpnext.counter_mix_orders.counter_quote")).toBe(false);
+		expect(mockedCall.mock.calls.some(([m]) => m === "mulecity_erpnext.counter_mix_orders.counter_check")).toBe(false);
 		cart.pickupDate = "2026-10-05";
 		await vi.advanceTimersByTimeAsync(700);
-		const quotes = mockedCall.mock.calls.filter(([m]) => m === "mulecity_erpnext.counter_mix_orders.counter_quote");
-		expect(quotes).toHaveLength(1);
-		expect(JSON.parse((quotes[0][1] as { data: string }).data).pickup_date).toBe("2026-10-05");
+		const checks = mockedCall.mock.calls.filter(([m]) => m === "mulecity_erpnext.counter_mix_orders.counter_check");
+		expect(checks).toHaveLength(1);
+		expect(JSON.parse((checks[0][1] as { data: string }).data).pickup_date).toBe("2026-10-05");
+		// The cart's check never places (and rolls back) an order: that is Pay's quote (MuleCity-ynb9).
+		expect(mockedCall.mock.calls.some(([m]) => m === "mulecity_erpnext.counter_mix_orders.counter_quote")).toBe(false);
 		expect(cart.mixCheckPending).toBe(false);
 		expect(cart.mixCheckError).toBe("");
 		expect(cart.counterQuote?.orders_total).toBe(16);
 	});
 
+	it("Pay still asks the site's counter quote, the dry run of the real order", async () => {
+		vi.useFakeTimers();
+		mockedCall.mockImplementation(async (method: string) =>
+			method.startsWith("mulecity_erpnext.counter_mix_orders.counter_") ? QUOTE : undefined,
+		);
+		const cart = useCartStore();
+		cart.pickupDate = "2026-10-05";
+		cart.addItem(mix());
+		await vi.advanceTimersByTimeAsync(700);
+		await cart.openPaymentDialog();
+		const quotes = mockedCall.mock.calls.filter(([m]) => m === "mulecity_erpnext.counter_mix_orders.counter_quote");
+		expect(quotes).toHaveLength(1);
+	});
+
 	it("negative: short ingredients are shown in the cart, from the site's refusal", async () => {
 		vi.useFakeTimers();
 		mockedCall.mockImplementation(async (method: string) => {
-			if (method === "mulecity_erpnext.counter_mix_orders.counter_quote") {
+			if (method === "mulecity_erpnext.counter_mix_orders.counter_check") {
 				throw new Error("Short ingredients: MC-CORN: 40 lb at Main - MCSF");
 			}
 			return undefined;

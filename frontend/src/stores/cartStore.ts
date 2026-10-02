@@ -103,7 +103,8 @@ interface ServerPreview {
 }
 
 /**
- * What the Mule site's ``counter_mix_orders.counter_quote`` returns for a cart
+ * What the Mule site's ``counter_mix_orders.counter_quote`` (and the cart's
+ * read-only ``counter_check``, MuleCity-ynb9) returns for a cart
  * holding made-to-order mixes, keyed to the cart it priced (Mule City,
  * MuleCity-3j1m): today's ticket and the orders, priced separately.
  */
@@ -1645,10 +1646,12 @@ export const useCartStore = defineStore("cart", () => {
 
 	/**
 	 * Whether the cart's mix orders can be placed, shown while the cart is built
-	 * (Bill 2026-09-30, MuleCity-zstm.20): the same ``counter_quote`` Pay asks,
-	 * which places each order in a rolled-back savepoint, so it prices the order
-	 * the way it will be placed and refuses short ingredients (MuleCity-mxwy.16)
-	 * before any money is taken. Pay asks again; this only informs.
+	 * (Bill 2026-09-30, MuleCity-zstm.20): the site's ``counter_check``, which
+	 * answers what ``counter_quote`` would (the orders' price, or the "Short
+	 * ingredients" refusal, MuleCity-mxwy.16) without placing anything: no order,
+	 * Work Order or reservation is made and rolled back on every cart change
+	 * (MuleCity-ynb9). Pay still asks ``counter_quote`` and the order is placed
+	 * by ``counter_checkout``; this only informs.
 	 */
 	const mixCheckPending = ref(false);
 	const mixCheckError = ref("");
@@ -1668,7 +1671,7 @@ export const useCartStore = defineStore("cart", () => {
 		}
 		mixCheckPending.value = true;
 		try {
-			const result = await call<Omit<CounterQuote, "key">>("mulecity_erpnext.counter_mix_orders.counter_quote", {
+			const result = await call<Omit<CounterQuote, "key">>("mulecity_erpnext.counter_mix_orders.counter_check", {
 				data: JSON.stringify(previewPayload()),
 			});
 			if (request !== mixCheckRequest) return;

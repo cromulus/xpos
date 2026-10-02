@@ -2,8 +2,8 @@ import __ from "@/lib/translate";
 
 /**
  * The cart's line about its custom mix orders (MuleCity-zstm.20): whether the
- * mill has the ingredients and what the orders cost, from ``counter_quote``,
- * before Pay. Short ingredients are the site's own refusal (MuleCity-mxwy.16),
+ * mill has the ingredients and what the orders cost, from the site's read-only
+ * ``counter_check`` (MuleCity-ynb9; Pay still asks ``counter_quote``), before Pay. Short ingredients are the site's own refusal (MuleCity-mxwy.16),
  * so they read as a problem; everything else is information.
  */
 export interface MixCheckInput {
