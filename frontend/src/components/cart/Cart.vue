@@ -75,6 +75,7 @@
 				>
 					<Pencil class="w-4 h-4" />
 				</Button>
+				<ClearCustomer />
 				<Autocomplete
 					v-if="posStore.salesPersonEnabled && !cartStore.isReturnMode"
 					v-model="cartStore.salesPerson"
@@ -256,6 +257,7 @@ import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
 import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
 import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import AddDelivery from "@/components/cart/AddDelivery.vue";
+import ClearCustomer from "@/components/cart/ClearCustomer.vue";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { showsCreditInfo } from "@/utils/creditPanel";
 import type { ItemUOM } from "@/types/pos.types";
