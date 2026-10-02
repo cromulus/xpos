@@ -1931,7 +1931,8 @@ export const useCartStore = defineStore("cart", () => {
 
 		if (hasOrderLines.value) (data as any).pickup_date = pickupDate.value;
 		if (orderNotes.value) data.pos_notes = orderNotes.value;
-		if (deliveryDate.value) data.pos_delivery_date = deliveryDate.value;
+		// The day belongs to a delivery: a pickup sale (or one whose delivery line was removed) has none.
+		if (deliveryDate.value && (activeDelivery.value || selectedDeliveryCharge.value)) data.pos_delivery_date = deliveryDate.value;
 		if (salesPerson.value) data.sales_person = salesPerson.value;
 
 		if (redeemLoyaltyPoints.value) {

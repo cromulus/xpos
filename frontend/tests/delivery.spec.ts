@@ -536,7 +536,7 @@ describe("the address picker (Bill 2026-10-01, MuleCity-qajl.3)", () => {
 		cart.items.splice(cart.items.findIndex((i) => i.item_code === "MC-ITEM-DEL"), 1);
 		expect(cart.getReceiptSnapshot("SINV-1").delivery).toBeUndefined();
 		const sale = cart.getInvoiceData("Till", "SHIFT-1");
-		expect([sale.shipping_address_name, sale.pos_delivery_miles]).toEqual([undefined, undefined]);
+		expect([sale.shipping_address_name, sale.pos_delivery_miles, sale.pos_delivery_date]).toEqual([undefined, undefined, undefined]);
 	});
 
 	it("negative: a pickup sale has no delivery on its snapshot or its data", async () => {
