@@ -203,6 +203,8 @@ export interface POSItem {
 	is_stock_item?: boolean;
 	/** Made to order (a site hook names it): sold before any stock exists. */
 	is_made_to_order?: number | boolean;
+	/** Why the site couldn't price this item today (a custom mix's recipe needs review). */
+	price_error?: string;
 	has_variants?: boolean;
 	variant_of?: string;
 	is_template?: boolean;
