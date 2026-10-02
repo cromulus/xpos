@@ -15,6 +15,7 @@ import {
 	cacheTaxContexts,
 } from "@/services/dbBridge";
 import { useCacheStatus } from "@/stores/cacheStatus";
+import { replayQueuedAddresses, resolveQueuedAddress } from "@/services/addressQueue";
 import type { PendingInvoice } from "@/services/idbService";
 import type { InvoiceData, ReceiptSnapshot } from "@/types/pos.types";
 import __ from "@/lib/translate";
@@ -244,6 +245,8 @@ export const useOfflineStore = defineStore("offline", () => {
 		syncErrors.value = [];
 
 		try {
+			// Addresses added offline go first: the sales queued after them ship there (MuleCity-qajl).
+			await replayAddresses();
 			const invoices = (await getAllPendingInvoices()) as OfflineInvoice[];
 			if (invoices.length === 0) {
 				isSyncing.value = false;
@@ -268,8 +271,9 @@ export const useOfflineStore = defineStore("offline", () => {
 					invoice.status = "syncing";
 					if (invoice.id) await updatePendingInvoice(invoice.id, { status: "syncing" });
 
-					await call<{ name: string }>(queuedInvoiceMethod(invoice.data), {
-						data: JSON.stringify(invoice.data),
+					const data = await resolveQueuedAddress(invoice.data as Record<string, unknown>);
+					await call<{ name: string }>(queuedInvoiceMethod(data), {
+						data: JSON.stringify(data),
 						local_id: invoice.local_id,
 					});
 					if (invoice.id) await deletePendingInvoice(invoice.id);
@@ -338,6 +342,20 @@ export const useOfflineStore = defineStore("offline", () => {
 		}
 	}
 
+	/** Replay the delivery addresses added offline (services/addressQueue.ts); never blocks the sales. */
+	async function replayAddresses(): Promise<void> {
+		try {
+			const { refused } = await replayQueuedAddresses();
+			for (const address of refused) {
+				syncErrors.value.push(
+					__("Address {0} for {1} was refused: {2}", [address.address_line1, address.customer, address.refused || ""]),
+				);
+			}
+		} catch (error) {
+			console.warn("[XPOS Offline] Could not replay the addresses added offline:", error);
+		}
+	}
+
 	async function retrySingle(id: number): Promise<boolean> {
 		if (!isOnline.value) {
 			showError(__("Cannot sync while offline"));
@@ -357,8 +375,10 @@ export const useOfflineStore = defineStore("offline", () => {
 			invoice.status = "syncing";
 			await updatePendingInvoice(invoice.id!, { status: "syncing" });
 
-			await call<{ name: string }>(queuedInvoiceMethod(invoice.data), {
-				data: JSON.stringify(invoice.data),
+			await replayAddresses();
+			const data = await resolveQueuedAddress(invoice.data as Record<string, unknown>);
+			await call<{ name: string }>(queuedInvoiceMethod(data), {
+				data: JSON.stringify(data),
 				local_id: invoice.local_id,
 			});
 

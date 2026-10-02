@@ -8,7 +8,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_months, cint, flt, today
 
-from xpos.api.delivery import customer_delivery
+from xpos.api.delivery import ADD_ADDRESS_HOOK, _last_hook, customer_delivery, walk_in_customers
 from xpos.api.profiles import resolve_pos_profile
 from xpos.utils import row_value
 
@@ -782,6 +782,56 @@ def update_address(customer: str, name: str, args: str | dict):
 			address.set(field, args[field] or ("" if field != "country" else address.country))
 	address.save(ignore_permissions=True)
 	return {field: address.get(field) for field in ("name", "address_title", *_ADDRESS_FIELDS)}
+
+
+@frappe.whitelist()
+def add_delivery_address(
+	customer: str,
+	address_line1: str,
+	city: str,
+	state: str,
+	pincode: str,
+	address_line2: str | None = None,
+	county: str | None = None,
+	country: str = "United States",
+	title: str | None = None,
+	delivery_miles: float | None = None,
+	miles_source: str | None = None,
+	local_id: str | None = None,
+	make_primary_shipping: int = 0,
+):
+	"""Add a delivery address for ``customer`` at the till (Mule City, MuleCity-qajl).
+
+	XPOS keeps one API surface: the site does the work through its
+	``xpos_add_delivery_address`` hook (Mule City: address_lookup.add_customer_address:
+	finds the same address or makes a Shipping one, Google's miles else the typed
+	ones, and a quote). The offline queue replays it at sync with
+	``miles_source="manual_offline"``, before the sale that ships there.
+	A walk-in or unknown customer gets none (Bill 2026-10-01 22:52).
+	"""
+	add = _last_hook(ADD_ADDRESS_HOOK)
+	if not add:
+		frappe.throw(_("This site does not add delivery addresses at the till"))
+	if not customer or customer in walk_in_customers():
+		frappe.throw(
+			_("Delivery needs a named customer, not {0}. Choose the customer first.").format(customer or _("no customer")),
+			frappe.ValidationError,
+		)
+	return add(
+		customer=customer,
+		address_line1=address_line1,
+		city=city,
+		state=state,
+		pincode=pincode,
+		address_line2=address_line2,
+		county=county,
+		country=country or "United States",
+		title=title,
+		delivery_miles=delivery_miles,
+		miles_source=miles_source,
+		local_id=local_id,
+		make_primary_shipping=cint(make_primary_shipping),
+	)
 
 
 @frappe.whitelist()

@@ -15,6 +15,16 @@ import {
 	type DeliveryQuote,
 } from "@/services/delivery";
 import { isNetworkError, isOnline } from "@/utils";
+import {
+	ADD_ADDRESS_METHOD,
+	addAddressArgs,
+	cacheCustomerAddress,
+	cachedAddress,
+	queueAddress,
+	type AddedAddress,
+	type AddressForm,
+} from "@/services/addressQueue";
+import { TYPED_OFFLINE, newLocalAddressId } from "@/services/delivery";
 
 const POLICY_KEY = "delivery_policy";
 
@@ -104,4 +114,51 @@ export async function quoteDelivery(
 		}
 	}
 	return quoteOffline(policy, details, address, await cachedCartWeight(lines, policy.item_code));
+}
+
+/**
+ * Add a delivery address for the customer at the till (Bill 2026-10-01 22:52,
+ * MuleCity-qajl). Online the site makes it (xpos.api.customers.add_delivery_address:
+ * Google's miles, else the typed ones flagged "manual") and answers with its
+ * miles and a quote. Offline, or when the site cannot be reached, the add is
+ * queued (services/addressQueue.ts) under a local id and the typed miles are
+ * flagged as typed offline; the sync makes it before the sale that ships there.
+ * Either way the customer's cached row gets the address, so the picker shows it.
+ */
+export async function addDeliveryAddress(
+	customer: string,
+	form: AddressForm,
+	opts: { first?: boolean } = {},
+): Promise<AddedAddress & { queued?: boolean }> {
+	if (isOnline()) {
+		try {
+			const added = await call<AddedAddress>(ADD_ADDRESS_METHOD, addAddressArgs(customer, form, { miles_source: "manual" }));
+			await cacheCustomerAddress(customer, cachedAddress(added)).catch(() => undefined);
+			return added;
+		} catch (error) {
+			if (!isNetworkError(error)) throw error;
+		}
+	}
+	const miles = form.miles && form.miles > 0 ? form.miles : null;
+	const local: AddedAddress = {
+		name: newLocalAddressId(),
+		title: form.title || null,
+		address_type: "Shipping",
+		address_line1: form.address_line1,
+		address_line2: form.address_line2 || null,
+		city: form.city,
+		state: form.state,
+		pincode: form.pincode,
+		miles,
+		miles_source: miles ? TYPED_OFFLINE : null,
+		is_primary_address: !!opts.first,
+		is_shipping_address: !!opts.first,
+		miles_pending: !miles,
+		latitude: null,
+		longitude: null,
+		geolocation_pending: true,
+	};
+	await queueAddress({ ...form, miles, local_id: local.name, customer, queued_at: new Date().toISOString() });
+	await cacheCustomerAddress(customer, cachedAddress(local)).catch(() => undefined);
+	return { ...local, queued: true };
 }

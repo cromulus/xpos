@@ -40,7 +40,8 @@ class TestThePolicy(HookCase):
 	def test_the_site_policy_comes_with_its_delivery_item(self):
 		self.with_hooks(xpos_delivery_policy=lambda: dict(POLICY), xpos_delivery_quote=lambda *a: {})
 		item = frappe._dict(name="DEL", item_name="Delivery Charge", stock_uom="Nos", item_group="Services")
-		with patch.object(delivery.frappe.db, "get_value", return_value=item):
+		with patch.object(delivery.frappe.db, "get_value", return_value=item), \
+				patch.object(delivery, "walk_in_customers", return_value=[]):
 			policy = delivery.get_delivery_policy()
 		self.assertEqual(policy["rate_per_mile"], 5.0)
 		self.assertEqual(policy["item"], {"item_code": "DEL", "item_name": "Delivery Charge",
@@ -101,6 +102,11 @@ class TestCustomerDetails(HookCase):
 
 
 class TestAnAddressTypedOffline(HookCase):
+	def setUp(self):
+		patcher = patch.object(delivery, "walk_in_customers", return_value=["Walk-In"])
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	def sale(self, **extra):
 		return {"customer": "CUST", "xpos_new_shipping_address":
 			{"address_line1": "88 New Ground Rd", "city": "Coats", "miles": 17.4}, **extra}
@@ -139,6 +145,108 @@ class TestAnAddressTypedOffline(HookCase):
 		get_doc.assert_not_called()
 		with self.assertRaises(frappe.ValidationError):
 			delivery.resolve_new_shipping_address(self.sale(xpos_new_shipping_address={"address_line1": "", "city": "Coats"}))
+
+
+	def test_an_address_from_the_mc23_form_is_made_by_the_sites_add_address_hook(self):
+		"""The till's add-address form sends the whole address and a local id: when
+		its own replay did not run first, the sale makes it the same way (typed miles
+		flagged manual_offline)."""
+		added = []
+		self.with_hooks(xpos_add_delivery_address=lambda **args: added.append(args) or {"name": "ADDR-NEW"})
+		data = self.sale(xpos_new_shipping_address={"address_line1": "88 New Ground Rd", "city": "Coats", "state": "NC",
+			"pincode": "27521", "miles": 17.4, "local_id": "LOCAL-ADDR-1"})
+		with patch.object(delivery.frappe, "get_doc") as get_doc:
+			delivery.resolve_new_shipping_address(data)
+		get_doc.assert_not_called()
+		self.assertEqual(data["shipping_address_name"], "ADDR-NEW")
+		self.assertEqual(added, [{"customer": "CUST", "address_line1": "88 New Ground Rd", "city": "Coats", "state": "NC",
+			"pincode": "27521", "address_line2": None, "title": None, "delivery_miles": 17.4,
+			"miles_source": "manual_offline", "local_id": "LOCAL-ADDR-1"}])
+
+	def test_negative_a_walk_in_sale_typed_offline_makes_no_address(self):
+		with patch.object(delivery.frappe, "get_doc") as get_doc, self.assertRaises(frappe.ValidationError):
+			delivery.resolve_new_shipping_address(self.sale(customer="Walk-In"))
+		get_doc.assert_not_called()
+
+
+class TestNoDeliveryForWalkIns(HookCase):
+	"""Bill 2026-10-01 22:52: a delivery always needs a real customer."""
+
+	def test_the_walk_ins_are_every_profiles_default_customer_and_the_sites_own(self):
+		self.with_hooks(xpos_walk_in_customers=lambda: ["CASH 338"])
+		with patch.object(delivery.frappe, "get_all", return_value=["Walk-In", None]):
+			self.assertEqual(delivery.walk_in_customers(), ["CASH 338", "Walk-In"])
+
+	def test_the_till_caches_them_with_the_policy(self):
+		self.with_hooks(xpos_delivery_policy=lambda: dict(POLICY), xpos_delivery_quote=lambda *a: {})
+		item = frappe._dict(name="DEL", item_name="Delivery Charge", stock_uom="Nos", item_group="Services")
+		with patch.object(delivery.frappe.db, "get_value", return_value=item), \
+				patch.object(delivery, "walk_in_customers", return_value=["Walk-In"]):
+			self.assertEqual(delivery.get_delivery_policy()["walk_in_customers"], ["Walk-In"])
+
+	def refused(self, data):
+		self.with_hooks(xpos_delivery_policy=lambda: dict(POLICY))
+		with patch.object(delivery, "walk_in_customers", return_value=["Walk-In", "CASH 338"]):
+			try:
+				delivery.refuse_walk_in_delivery(data)
+			except frappe.ValidationError as error:
+				return str(error)
+		return None
+
+	def test_any_delivery_fact_on_a_walk_in_or_customerless_sale_is_refused(self):
+		facts = ({"shipping_address_name": "ADDR-1"}, {"xpos_new_shipping_address": {"address_line1": "x", "city": "y"}},
+			{"pos_delivery_miles": 12, "pos_delivery_date": "2026-10-03"}, {"items": [{"item_code": "DEL", "qty": 1}]})
+		for customer in ("Walk-In", "CASH 338", "", None):
+			for fact in facts:
+				with self.subTest(customer=customer, fact=fact):
+					self.assertIn("Delivery needs a named customer", self.refused({"customer": customer, **fact}) or "")
+
+	def test_a_named_customer_a_day_alone_and_a_return_pass(self):
+		self.assertIsNone(self.refused({"customer": "Greenview", "shipping_address_name": "ADDR-1",
+			"items": [{"item_code": "DEL"}], "pos_delivery_miles": 12}))
+		self.assertIsNone(self.refused({"customer": "Walk-In", "pos_delivery_date": "2026-10-03",
+			"items": [{"item_code": "FEED"}]}))
+		self.assertIsNone(self.refused({"customer": "CASH 338", "is_return": 1, "items": [{"item_code": "DEL", "qty": -1}]}))
+
+	def test_every_sale_path_checks_before_it_makes_or_ships_anything(self):
+		import inspect
+
+		from xpos.api import invoices
+
+		self.assertIn("refuse_walk_in_delivery(data)", inspect.getsource(invoices.apply_delivery_facts))
+		self.assertIn("refuse_walk_in_delivery(data)", inspect.getsource(delivery.resolve_new_shipping_address))
+
+
+class TestAddADeliveryAddressAtTheTill(HookCase):
+	ADDRESS = {"address_line1": "88 New Ground Rd", "city": "Coats", "state": "NC", "pincode": "27521"}
+
+	def test_xpos_hands_the_add_to_the_site(self):
+		from xpos.api import customers
+
+		added = []
+		self.with_hooks(xpos_add_delivery_address=lambda **args: added.append(args) or {"name": "ADDR-NEW", "miles": 18.2})
+		with patch.object(customers, "walk_in_customers", return_value=["Walk-In"]):
+			result = customers.add_delivery_address("Greenview", **self.ADDRESS, delivery_miles=17.4,
+				miles_source="manual_offline", local_id="LOCAL-ADDR-1")
+		self.assertEqual(result, {"name": "ADDR-NEW", "miles": 18.2})
+		self.assertEqual(added, [{"customer": "Greenview", **self.ADDRESS, "address_line2": None, "county": None,
+			"country": "United States", "title": None, "delivery_miles": 17.4, "miles_source": "manual_offline",
+			"local_id": "LOCAL-ADDR-1", "make_primary_shipping": 0}])
+		self.assertTrue(customers.add_delivery_address in frappe.whitelisted)
+
+	def test_negative_a_walk_in_no_customer_or_no_site_hook_adds_nothing(self):
+		from xpos.api import customers
+
+		added = []
+		self.with_hooks(xpos_add_delivery_address=lambda **args: added.append(args))
+		with patch.object(customers, "walk_in_customers", return_value=["Walk-In"]):
+			for customer in ("Walk-In", ""):
+				with self.subTest(customer=customer), self.assertRaises(frappe.ValidationError):
+					customers.add_delivery_address(customer, **self.ADDRESS)
+		self.assertEqual(added, [])
+		self.with_hooks()
+		with self.assertRaises(frappe.ValidationError):
+			customers.add_delivery_address("Greenview", **self.ADDRESS)
 
 
 class TestTheSaleIsFlagged(HookCase):
@@ -211,8 +319,10 @@ class TestTheSaleKeepsItsDeliveryFacts(unittest.TestCase):
 		from xpos.api import invoices
 
 		doc = frappe._dict()
-		with patch("frappe.contacts.doctype.address.address.get_address_display", return_value="12 Mill Rd<br>Angier") as display:
-			invoices.apply_delivery_facts(doc, data)
+		# A named customer's sale (a walk-in's is refused: TestNoDeliveryForWalkIns).
+		with patch("frappe.contacts.doctype.address.address.get_address_display", return_value="12 Mill Rd<br>Angier") as display, \
+				patch.object(invoices, "refuse_walk_in_delivery"):
+			invoices.apply_delivery_facts(doc, {"customer": "Greenview", **data})
 		return doc, display
 
 	def test_address_day_and_miles_from_the_address(self):

@@ -522,6 +522,12 @@ export interface NewShippingAddress {
 	address_line1: string;
 	city: string;
 	miles: number;
+	// Sent by the add-address form (mc23, MuleCity-qajl): the whole address and its local id.
+	address_line2?: string;
+	state?: string;
+	pincode?: string;
+	title?: string;
+	local_id?: string;
 }
 
 export interface InvoiceTax {
