@@ -42,3 +42,28 @@ export function applyCashier(data: InvoiceData, required: boolean, typed: string
 	if (required) data.pos_cashier = normalizeInitials(typed);
 	return data;
 }
+
+/**
+ * Initials of a person's name for the top bar's avatar (MuleCity-qajl.1): first
+ * and last word ("Leslie Ann Smith" -> "LS"), one word -> one letter, none -> "".
+ */
+export function initialsOf(fullName: string | null | undefined): string {
+	const words = (fullName ?? "")
+		.split(/\s+/)
+		.map((word) => word.replace(/[^\p{L}\p{N}]/gu, ""))
+		.filter(Boolean);
+	if (!words.length) return "";
+	const first = words[0][0];
+	const last = words.length > 1 ? words[words.length - 1][0] : "";
+	return (first + last).toUpperCase();
+}
+
+/**
+ * Who the avatar says is at the till (Bill 2026-10-01, MuleCity-qajl.1). A named
+ * login: its own initials. The shared register login (Pay asks for initials,
+ * 1p4i): the initials last accepted at Pay this session, "" (a neutral mark)
+ * before the first sale. Pay still asks every sale; this only displays.
+ */
+export function tillInitials(sharedLogin: boolean, lastCashier: string | null | undefined, fullName: string | null | undefined): string {
+	return sharedLogin ? normalizeInitials(lastCashier) : initialsOf(fullName);
+}

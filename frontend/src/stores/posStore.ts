@@ -18,7 +18,7 @@ import {
 	type ReceiptContext,
 } from "@/types/pos.types";
 import { isOnline } from "@/utils";
-import { initialsRequiredFor } from "@/utils/cashierInitials";
+import { initialsRequiredFor, normalizeInitials } from "@/utils/cashierInitials";
 import { useAuthStore } from "@/stores/authStore";
 import { symbolFor } from "@/composables/useCurrency";
 
@@ -150,6 +150,11 @@ export const usePosStore = defineStore("pos", () => {
 		return initialsRequiredFor(posProfile.value, [auth.userName, auth.userEmail]);
 	});
 	const cashiers = computed(() => posProfile.value?.xpos_cashiers ?? []);
+	/** Initials last accepted at Pay this session, for the avatar on a shared login (MuleCity-qajl.1). In memory only. */
+	const lastCashierInitials = ref("");
+	function rememberCashier(initials: string): void {
+		lastCashierInitials.value = normalizeInitials(initials);
+	}
 
 	const allowWriteOffChange = computed(() => !!posProfile.value?.allow_write_off_change);
 
@@ -595,6 +600,8 @@ export const usePosStore = defineStore("pos", () => {
 		allowedSalesPersons,
 		requireCashierInitials,
 		cashiers,
+		lastCashierInitials,
+		rememberCashier,
 		salesPersonEnabled,
 		allowWriteOffChange,
 		displayItemCode,

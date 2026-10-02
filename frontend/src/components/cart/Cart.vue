@@ -31,13 +31,7 @@
 		     Receive on Account is a Pay option now (PaymentDialog, or the empty cart's Pay button). -->
 		<div class="shrink-0 px-4 pt-3 pb-2 border-b">
 			<div class="flex items-center gap-2">
-				<h2 class="shrink-0 text-base font-bold text-foreground flex items-center gap-1.5">
-					<ShoppingCart class="w-5 h-5 text-primary dark:text-primary" />
-					{{ __("Cart") }}
-					<Badge v-if="cartStore.itemCount > 0" variant="secondary" class="text-[10px]">
-						{{ cartStore.itemCount }}
-					</Badge>
-				</h2>
+				<!-- No "Cart" heading: it took room (Bill 2026-10-01, MuleCity-qajl.1). -->
 				<button
 					type="button"
 					data-testid="cart-customer"
@@ -64,6 +58,7 @@
 					<Lock v-if="cartStore.isReturnMode" class="ms-auto w-3.5 h-3.5 shrink-0 text-muted-foreground/50" />
 					<ChevronDown v-else class="ms-auto w-3.5 h-3.5 shrink-0 text-muted-foreground/50" />
 				</button>
+				<CustomerOrdersBadge v-if="cartStore.customer && !cartStore.isReturnMode" />
 				<Button
 					v-if="cartStore.customer && !cartStore.isReturnMode"
 					variant="ghost"
@@ -75,6 +70,20 @@
 				>
 					<Pencil class="w-4 h-4" />
 				</Button>
+				<!-- Customer Mixes, now the Mule City row is gone (MuleCity-qajl.1, qajl.2). -->
+				<Button
+					v-if="cartStore.customer && !cartStore.isReturnMode"
+					variant="ghost"
+					size="sm"
+					class="shrink-0 h-7 px-2 gap-1 text-xs"
+					data-testid="customer-mixes"
+					:title="__('Customer mixes')"
+					@click.stop="openMixes"
+				>
+					<FlaskConical class="w-3.5 h-3.5" />
+					{{ __("Mixes") }}
+				</Button>
+				<ClearCustomer />
 				<Autocomplete
 					v-if="posStore.salesPersonEnabled && !cartStore.isReturnMode"
 					v-model="cartStore.salesPerson"
@@ -237,7 +246,6 @@ import { useMoney } from "@/composables/useMoney";
 import CartItem from "./CartItem.vue";
 import CartSummary from "./CartSummary.vue";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import {
 	ShoppingCart,
@@ -250,12 +258,15 @@ import {
 	Phone,
 	Pencil,
 	AlertTriangle,
+	FlaskConical,
 } from "lucide-vue-next";
 import __ from "@/lib/translate";
 import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
 import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
 import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import AddDelivery from "@/components/cart/AddDelivery.vue";
+import ClearCustomer from "@/components/cart/ClearCustomer.vue";
+import CustomerOrdersBadge from "@/components/cart/CustomerOrdersBadge.vue";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { showsCreditInfo } from "@/utils/creditPanel";
 import type { ItemUOM } from "@/types/pos.types";
@@ -345,6 +356,10 @@ function handleCustomerClick() {
 	}
 	customerStore.showCustomerDialog = true;
 	customerStore.searchCustomers();
+}
+
+function openMixes() {
+	window.dispatchEvent(new CustomEvent("xpos:open-mule-workspace", { detail: { mode: "mixes" } }));
 }
 
 function handleEditCustomer() {

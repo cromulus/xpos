@@ -124,45 +124,21 @@
 			</Button>
 		</TooltipWrapper>
 
-		<div v-if="posStore.useOfflineMode || offlineStore.hasPending" class="flex items-center gap-1">
-			<TooltipWrapper :content="offlineStore.statusLabel">
-				<Button
-					variant="ghost"
-					size="sm"
-					:class="['gap-1.5', offlineStore.statusColor]"
-					@click="handleOfflineAction"
-				>
-					<Loader2 v-if="offlineStore.isSyncing" class="w-4 h-4 animate-spin" />
-					<WifiOff v-else-if="!offlineStore.isOnline" class="w-4 h-4" />
-					<CloudUpload v-else-if="offlineStore.hasPending" class="w-4 h-4" />
-					<Wifi v-else class="w-4 h-4" />
-					<Badge
-						v-if="offlineStore.pendingCount > 0"
-						variant="destructive"
-						class="h-4 min-w-4 px-1 text-[10px] leading-none"
-					>
-						{{ offlineStore.pendingCount }}
-					</Badge>
-					<span class="hidden lg:inline text-xs">{{ offlineStore.statusLabel }}</span>
-				</Button>
-			</TooltipWrapper>
-		</div>
-
-		<CacheSyncStatus />
+		<!-- One status control: connection, pending sales and the offline cache (MuleCity-qajl.1). -->
+		<CacheSyncStatus @open-pending="showOfflinePanel = true" />
 		<OfflinePendingPanel :open="showOfflinePanel" @close="showOfflinePanel = false" />
 
-		<div class="hidden md:flex items-center">
-			<Badge variant="secondary" class="gap-1.5">
-				<Building2 class="w-3.5 h-3.5" />
-				{{ posStore.warehouse }}
-			</Badge>
-		</div>
-
+		<!-- No warehouse badge ("Main - MCSF"): Bill 2026-10-01, MuleCity-qajl.1. -->
 		<Popover>
 			<PopoverTrigger as-child>
 				<Button variant="ghost" size="icon-sm" class="rounded-full">
-					<Avatar size="sm">
-						<img v-if="authStore.user?.image" :src="authStore.user.image" alt="User Avatar" />
+					<!-- Who is at the till (MuleCity-qajl.1): a named login's initials; on the shared
+					     register login, the initials last accepted at Pay (a neutral mark before the first sale). -->
+					<Avatar size="sm" :title="avatarTitle" data-testid="till-user">
+						<AvatarFallback v-if="initials" class="text-[11px] font-bold" data-testid="till-initials">
+							{{ initials }}
+						</AvatarFallback>
+						<img v-else-if="authStore.user?.image && !posStore.requireCashierInitials" :src="authStore.user.image" alt="User Avatar" />
 						<AvatarFallback v-else>
 							<User class="w-3.5 h-3.5" />
 						</AvatarFallback>
@@ -249,13 +225,12 @@ import { __ } from "@/lib/translate";
 import { hasPermission } from "@/services/userRights";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { TooltipWrapper } from "@/components/ui/tooltip";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Popover, PopoverContentStyled, PopoverTrigger } from "@/components/ui/popover";
 import ReturnDialog from "@/components/dialogs/ReturnDialog.vue";
 import RepeatInvoiceDialog from "@/components/dialogs/RepeatInvoiceDialog.vue";
+import { tillInitials } from "@/utils/cashierInitials";
 import {
-	Building2,
 	Sun,
 	Moon,
 	Monitor,
@@ -268,10 +243,6 @@ import {
 	Repeat,
 	Printer,
 	Power,
-	Wifi,
-	WifiOff,
-	CloudUpload,
-	Loader2,
 	LayoutGrid,
 	FileText,
 	Search,
@@ -283,7 +254,6 @@ import {
 import OfflinePendingPanel from "@/components/offline/OfflinePendingPanel.vue";
 import AboutDialog from "@/components/dialogs/AboutDialog.vue";
 import KeyboardShortcutsDialog from "@/components/dialogs/KeyboardShortcutsDialog.vue";
-import { useOfflineStore } from "@/stores/offlineStore";
 
 import { useBranding } from "@/composables/useBranding";
 import { get_full_url } from "@/utils";
@@ -311,7 +281,6 @@ const themeTooltip = computed(() => {
 	if (theme.value === "dark") return __("Theme: Dark (click to switch to System)");
 	return __("Theme: System ({0}) (click to switch to Light)", [isDark.value ? __("Dark") : __("Light")]);
 });
-const offlineStore = useOfflineStore();
 
 const showReturnDialog = ref(false);
 const showRepeatDialog = ref(false);
@@ -319,11 +288,16 @@ const showOfflinePanel = ref(false);
 const showAboutDialog = ref(false);
 const showShortcutsDialog = ref(false);
 
-function handleOfflineAction() {
-	if (offlineStore.hasPending || offlineStore.hasDeadLetters || !offlineStore.isOnline) {
-		showOfflinePanel.value = true;
-	}
-}
+const initials = computed(() =>
+	tillInitials(posStore.requireCashierInitials, posStore.lastCashierInitials, authStore.userFullName),
+);
+const avatarTitle = computed(() =>
+	posStore.requireCashierInitials
+		? initials.value
+			? __("Last sale rung up by {0}", [initials.value])
+			: __("Initials are asked at Pay")
+		: authStore.userFullName || "",
+);
 
 function handleOpenOfflinePanel() {
 	showOfflinePanel.value = true;

@@ -23,7 +23,8 @@ async function loadOrder(doc: Record<string, unknown>) {
 	const request = vi.fn((method: string) => Promise.resolve(method.endsWith("find_orders") ? [order] : doc));
 	const wrapper = mount(MuleWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request }, attachTo: document.body });
 	mounted = wrapper;
-	await wrapper.findAll("button").find((b) => b.text() === "Orders for Pickup")!.trigger("click");
+	// Still reachable through the exposed open('orders'); the till's Orders view is the usual way in.
+	await (wrapper.vm as unknown as { open: (mode: string) => Promise<void> }).open("orders");
 	await flushPromises();
 	[...document.body.querySelectorAll("button")].find((b) => b.textContent === "Load for payment")!.click();
 	await flushPromises();

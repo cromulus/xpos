@@ -1463,6 +1463,8 @@ async function submitPayment(withPrint: boolean = true) {
 
 	isSubmitting.value = true;
 	printAfterSave.value = withPrint;
+	// Who is at the till: on a shared login the avatar shows these until the next sale (MuleCity-qajl.1).
+	if (posStore.requireCashierInitials) posStore.rememberCashier(cashierInitials.value);
 
 	const invoiceData = buildInvoicePayload();
 	try {

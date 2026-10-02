@@ -1,6 +1,7 @@
 import PosView from "@/views/PosView.vue";
 
-const OrdersView = () => import("@/views/OrdersView.vue");
+// Orders in flight first, sales history one tab away (MuleCity-zstm.23).
+const OrdersView = () => import("@/views/OrdersHubView.vue");
 const CashierView = () => import("@/views/CashierView.vue");
 const ReportsIndexView = () => import("@/views/ReportsIndexView.vue");
 const ReportViewerView = () => import("@/views/ReportViewerView.vue");

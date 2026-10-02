@@ -1,14 +1,10 @@
 <template>
-  <nav class="mule-counter-tools" aria-label="Mule City customer work">
-    <strong>Mule City</strong>
-    <button type="button" @click="open('mixes')">Customer Mixes</button>
-    <button type="button" @click="open('orders')">Orders for Pickup</button>
-    <!-- No desk shortcuts (new order, account payment, formula editor): the register's shared
-         login only sells. Account payments are Pay's "Receive on Account"; orders and formula
-         edits happen at each person's own computer (Bill, 2026-09-29, MuleCity-fb00). -->
-    <!-- Only off production (mulecity_erpnext site_role.py puts the flag in boot, MuleCity-nfxn.1). -->
-    <small v-if="practiceSite">Practice site</small>
-  </nav>
+  <!-- The Mule City row is gone (Bill 2026-10-01, MuleCity-qajl.1): Customer Mixes opens from the
+       customer card's "Mixes", open orders from the top-bar Orders view (MuleCity-zstm.23). The dialog
+       stays; open('mixes') / open('orders') are exposed and answer the window event
+       "xpos:open-mule-workspace" ({detail: {mode}}). No desk shortcuts (new order, account payment,
+       formula editor): the register's shared login only sells (Bill, 2026-09-29, MuleCity-fb00).
+       "Practice site" is the red banner in DefaultLayout now (PracticeSiteBanner.vue). -->
   <Teleport to="body">
     <dialog ref="dialog" class="mule-workspace" @close="mode = ''">
       <header><div><h2>{{ mode === 'mixes' ? 'Customer mixes' : 'Orders for pickup' }}</h2>
@@ -56,13 +52,11 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { formatCurrency, showInfo } from '@/services/api';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
 // customer is the Customer ID (used in every call); customerName is what people read.
 const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean});
-// A practice (staging) till says so; the real store's never does. Absent flag = not practice.
-const practiceSite = !!window.xpos?.boot?.mule_practice_site;
 const emit = defineEmits(['pickup']);
 const dialog = ref(null), mode = ref(''), term = ref(''), mine = ref(false);
 const rows = ref([]), busy = ref(false), error = ref(''), more = ref(false), start = ref(0);
@@ -114,15 +108,18 @@ async function pickup(row) {
   catch(e) { fail(e); } finally { busy.value = false; }
 }
 watch(() => props.customer, () => { if (mode.value) search(0); });
+// The customer card's "Mixes" (and anything else) opens the dialog by event.
+function onOpenEvent(event) { const next = event?.detail?.mode; if (next === 'mixes' || next === 'orders') open(next); }
+onMounted(() => window.addEventListener('xpos:open-mule-workspace', onOpenEvent));
+onUnmounted(() => window.removeEventListener('xpos:open-mule-workspace', onOpenEvent));
+defineExpose({ open });
 </script>
 
 <style scoped>
 /* A compact counter toolbar and readable recipe sheet, using host typography. */
-.mule-counter-tools { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid hsl(var(--border)); background:hsl(var(--secondary)); color:hsl(var(--foreground)); flex-shrink:0; }
-.mule-counter-tools strong { margin-right:8px; } .mule-counter-tools small { margin-left:auto; }
-.mule-counter-tools button, .mule-workspace button { border:1px solid hsl(var(--border)); border-radius:5px; padding:7px 12px; background:hsl(var(--card)); color:hsl(var(--foreground)); cursor:pointer; font:inherit; }
+.mule-workspace button { border:1px solid hsl(var(--border)); border-radius:5px; padding:7px 12px; background:hsl(var(--card)); color:hsl(var(--foreground)); cursor:pointer; font:inherit; }
 button:disabled { opacity:.5; cursor:not-allowed; } button:focus-visible, a:focus-visible, input:focus-visible { outline:3px solid hsl(var(--ring)); outline-offset:2px; }
-.mule-counter-tools a, .mule-workspace a { color:hsl(var(--primary)); text-decoration:underline; }
+.mule-workspace a { color:hsl(var(--primary)); text-decoration:underline; }
 .mule-workspace { margin:auto; width:min(950px,94vw); max-height:88vh; padding:22px; border:1px solid hsl(var(--border)); border-radius:8px; background:hsl(var(--card)); color:hsl(var(--foreground)); overflow:auto; font-size:16px; line-height:1.45; font-family:inherit; }
 .mule-workspace::backdrop { background:rgba(0,0,0,.4); }
 .mule-workspace header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }

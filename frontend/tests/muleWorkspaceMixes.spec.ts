@@ -21,7 +21,8 @@ async function openMixes() {
 	const request = vi.fn((method: string) => Promise.resolve(method.endsWith("find_mixes") ? { rows, has_more: false } : recipe));
 	const wrapper = mount(MuleWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request }, attachTo: document.body });
 	mounted = wrapper;
-	await wrapper.findAll("button").find(b => b.text() === "Customer Mixes")!.trigger("click");
+	// The customer card's "Mixes" sends this event (the Mule City row is gone, MuleCity-qajl.1).
+	window.dispatchEvent(new CustomEvent("xpos:open-mule-workspace", { detail: { mode: "mixes" } }));
 	await flushPromises();
 	return { wrapper, request };
 }

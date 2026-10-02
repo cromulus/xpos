@@ -477,6 +477,10 @@ export const useOfflineStore = defineStore("offline", () => {
 				console.warn("[XPOS Sync] Failed to sync tax contexts:", err);
 			});
 
+			// Orders in flight, so the Orders screen shows the last known list offline (MuleCity-zstm.23).
+			const { useOpenOrdersStore } = await import("@/stores/openOrdersStore");
+			void useOpenOrdersStore().prefetchAll();
+
 			if (pendingCount.value > 0) {
 				syncPendingInvoices();
 			}
