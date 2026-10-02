@@ -83,6 +83,85 @@ should show miles and cost." / the clerk picks the delivery day at the POS.
   preselected, search, a no-miles row priced from typed miles, synced sale keeps
   address, day and miles).
 
+### Clear the customer and basket (MuleCity-zstm.22)
+
+Bill: "on xpos, in staging, STILL no way to clear out the current customer."
+
+- A control beside the customer's name (`ClearCustomer.vue`, `data-testid=
+  "clear-customer"`) clears the customer, every line, discounts and delivery,
+  and puts back the profile's default (walk-in) customer (`cartStore.clearAll`;
+  the walk-in row comes from the till's cache, else the server). It asks first
+  when the basket has lines; with only a customer it clears at once. Disabled for
+  walk-in with an empty basket; hidden in return mode (the return banner has its
+  own exit). Pure client state: works offline. The trash button is unchanged
+  (basket only, customer kept).
+- Tests: `frontend/tests/clearCustomer.spec.ts`.
+
+### Orders in flight and the indicator at the customer's name (MuleCity-zstm.23, mxwy.10)
+
+Bill: the top-bar Orders defaults to the selected customer's orders, still
+searchable; no customer = every order in flight; a clear indicator next to the
+customer's name when they have orders in flight or ready for pickup.
+
+- **Needs the Mule app's `pos_workspace.find_orders` change** (customer optional,
+  `limit`, `readiness`/`progress` per row; app branch `feat/qajl-orders`). It
+  still returns a list, so mc22 keeps working against the new app; with an older
+  app this release lists orders without readiness.
+- `/orders` opens two tabs: **Orders in flight** (default) and **Sales history**
+  (the old Orders view, reprint unchanged; `?tab=history`). In flight = submitted
+  Sales Orders, not Closed/Completed, `per_billed < 100`: what the till's pickup
+  closes (`pickup_invoice` refuses a fully billed order; its invoice updates
+  stock, so one pickup bills and delivers). Scope: the cart's customer (walk-in =
+  everyone), or `?customer=`; "Show all orders" / "Only <customer>" switch it.
+  Each row says how far along it is (Ready for pickup / With the mill / Partly
+  picked up / Waiting, from the order's Work Orders); ready rows stand out.
+- **Load for payment** does what the Mule City dialog did: `pickup_invoice` (the
+  delivery-to-pickup notice, fxh advances), `cartStore.loadFromInvoice`, back to
+  the till. It needs an empty basket and the internet.
+- The indicator (`CustomerOrdersBadge.vue`) sits after the customer's name: a
+  quiet "N orders" when they have orders in flight, a green "N ready" when any is
+  ready. Click opens their orders. Walk-in or none: nothing.
+- Offline: every unsearched list is kept in the sync-meta store
+  (`open_orders::<profile>::<customer|*>`, the way the tax contexts are), and the
+  background sync refreshes the everyone list. Offline, the view and the
+  indicator show that last known list with its time, searched on the till (a
+  customer never fetched alone is read from a complete everyone list); with
+  nothing kept the view says it does not know and the indicator shows nothing.
+  Never "no orders" it does not know.
+- Tests: `frontend/tests/openOrders.spec.ts`, bench story
+  `tests/e2e/bench/offline-orders.cy.ts`; Mule `test_find_orders`.
+
+### Screen cleanup (MuleCity-qajl.1)
+
+Bill: "we don't need Cart" / "we don't need this line anymore: Mule City,
+Customer Mixes, Orders for Pickup, Practice site" / a red Practice site banner
+lower left / "online and in sync can be combined into one thing" / "we don't
+need Main - MCSF!" / "we do need the initials of the current user where the
+profile is."
+
+- No "Cart" heading: the customer button has the line.
+- The Mule City row is gone. Its dialog stays (`MuleWorkspace.vue`): `open('mixes')`
+  and `open('orders')` are exposed and answer the window event
+  `xpos:open-mule-workspace` (`{detail: {mode}}`). Customer Mixes opens from a
+  **Mixes** button on the customer card; open orders come through the Orders view.
+- **Practice site**: a fixed red banner lower left (`PracticeSiteBanner.vue` in
+  `DefaultLayout.vue`, browser and Electron), only when
+  `boot.mule_practice_site` is true. Never on production.
+- **One status control** (`CacheSyncStatus.vue`, `utils/statusSummary.ts`): one
+  label for connection, pending sales and the offline cache ("Online · in sync",
+  "Offline · 1 pending · saved data", "Online · 2 pending · check data sync");
+  the cache detail, Refresh now and Pending sales sit behind it. Shown with
+  offline mode or pending sales, as before.
+- The warehouse badge ("Main - MCSF") is gone.
+- The avatar shows initials. A named login: its own (`initialsOf(userFullName)`).
+  The shared register login (1p4i): the initials last accepted at Pay this
+  session (`posStore.lastCashierInitials`, in memory, set when Pay submits), a
+  neutral mark before the first sale. Pay still asks every sale.
+- Electron `MenuBar.vue` is unchanged (it never had the warehouse, avatar or
+  sync label).
+- Tests: `statusSummary.spec.ts`, `cashierInitials.spec.ts` (initials),
+  `muleWorkspace*.spec.ts` (banner, dialog by event).
+
 ## mule-v2.10.1-mc22
 
 ### Named logins (MuleCity-1p4i): initials only on a shared login
