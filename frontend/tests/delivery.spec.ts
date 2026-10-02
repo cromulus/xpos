@@ -32,7 +32,7 @@ const state = vi.hoisted(() => ({
 	toast: vi.fn(),
 }));
 
-vi.mock("@/services/api", () => ({ call: state.call, showSuccess: state.toast, showError: vi.fn(), showInfo: vi.fn() }));
+vi.mock("@/services/api", () => ({ call: state.call, isNetworkError: () => false, showSuccess: state.toast, showError: vi.fn(), showInfo: vi.fn() }));
 vi.mock("@/utils", async (importOriginal) => ({ ...(await importOriginal<object>()), isOnline: () => state.online }));
 vi.mock("@/services/dbBridge", async (importOriginal) => ({
 	...(await importOriginal<object>()),

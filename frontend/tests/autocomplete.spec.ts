@@ -233,13 +233,16 @@ describe("Autocomplete Component", () => {
 			const query = "test";
 			const debounceTime = 250;
 
-			// Simulate debounced search
-			await new Promise((resolve) =>
-				setTimeout(() => {
-					searchFn(query);
-					resolve(undefined);
-				}, debounceTime),
-			);
+			// Simulate debounced search on fake timers: no real wait.
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+			try {
+				setTimeout(() => searchFn(query), debounceTime);
+				await vi.advanceTimersByTimeAsync(debounceTime - 1);
+				expect(searchFn).not.toHaveBeenCalled();
+				await vi.advanceTimersByTimeAsync(1);
+			} finally {
+				vi.useRealTimers();
+			}
 
 			expect(searchFn).toHaveBeenCalledWith("test");
 		});
