@@ -8,7 +8,15 @@ import frappe
 from frappe import _
 from frappe.utils import add_months, cint, flt, today
 
-from xpos.api.delivery import ADD_ADDRESS_HOOK, _last_hook, customer_delivery, walk_in_customers
+from xpos.api.delivery import (
+	ADD_ADDRESS_HOOK,
+	AUTOCOMPLETE_HOOK,
+	RESOLVE_HOOK,
+	_last_hook,
+	customer_delivery,
+	point_args,
+	walk_in_customers,
+)
 from xpos.api.profiles import resolve_pos_profile
 from xpos.utils import row_value
 
@@ -799,6 +807,8 @@ def add_delivery_address(
 	miles_source: str | None = None,
 	local_id: str | None = None,
 	make_primary_shipping: int = 0,
+	latitude: float | None = None,
+	longitude: float | None = None,
 ):
 	"""Add a delivery address for ``customer`` at the till (Mule City, MuleCity-qajl).
 
@@ -808,6 +818,8 @@ def add_delivery_address(
 	ones, and a quote). The offline queue replays it at sync with
 	``miles_source="manual_offline"``, before the sale that ships there.
 	A walk-in or unknown customer gets none (Bill 2026-10-01 22:52).
+	``latitude``/``longitude``: the point of a typeahead pick (address_resolve),
+	passed on only when given (MuleCity-p644).
 	"""
 	add = _last_hook(ADD_ADDRESS_HOOK)
 	if not add:
@@ -831,7 +843,44 @@ def add_delivery_address(
 		miles_source=miles_source,
 		local_id=local_id,
 		make_primary_shipping=cint(make_primary_shipping),
+		**point_args(latitude, longitude),
 	)
+
+
+def _address_lookup(hook: str):
+	"""The site's address lookup for the add-address typeahead, or a refusal the till shows as
+	"type the address" (MuleCity-p644)."""
+	lookup = _last_hook(hook)
+	if not lookup:
+		frappe.throw(_("This site has no address lookup; type the address"), frappe.ValidationError)
+	return lookup
+
+
+@frappe.whitelist()
+def address_autocomplete(text: str, session_token: str | None = None) -> list[dict]:
+	"""Address suggestions for the till's add-address street field: ``[{place_id, description}]``.
+
+	XPOS keeps one API surface: the site answers through its
+	``xpos_address_autocomplete`` hook (Mule City: address_lookup.autocomplete,
+	Google Places proxied by the site, login-only, rate-limited per user; under 4
+	characters it answers [] without asking Google). One ``session_token`` (a UUID
+	the till makes) per address, also passed to ``address_resolve``. When the site
+	cannot look up (no key, Google refused, too many lookups) its error comes back
+	and the till falls back to the typed form (MuleCity-p644).
+	"""
+	return _address_lookup(AUTOCOMPLETE_HOOK)(text=text, session_token=session_token) or []
+
+
+@frappe.whitelist()
+def address_resolve(place_id: str, session_token: str | None = None) -> dict:
+	"""The picked suggestion as the add-address form's fields, its point and its miles.
+
+	Site hook ``xpos_address_resolve`` (Mule City: address_lookup.resolve):
+	``{address_line1, address_line2, city, county, state, pincode, country,
+	latitude, longitude, validated, formatted_address, place_id, delivery_miles}``
+	(MuleCity-p644).
+	"""
+	return _address_lookup(RESOLVE_HOOK)(place_id=place_id, session_token=session_token)
 
 
 @frappe.whitelist()

@@ -154,9 +154,10 @@ export async function addDeliveryAddress(
 		is_primary_address: !!opts.first,
 		is_shipping_address: !!opts.first,
 		miles_pending: !miles,
-		latitude: null,
-		longitude: null,
-		geolocation_pending: true,
+		// A typeahead pick's point rides along (MuleCity-p644); else the site finds one at sync.
+		latitude: form.latitude ?? null,
+		longitude: form.longitude ?? null,
+		geolocation_pending: form.latitude == null,
 	};
 	await queueAddress({ ...form, miles, local_id: local.name, customer, queued_at: new Date().toISOString() });
 	await cacheCustomerAddress(customer, cachedAddress(local)).catch(() => undefined);

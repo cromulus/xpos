@@ -30,7 +30,7 @@
 	</div>
 
 	<Dialog :open="open" @update:open="(value: boolean) => !value && close()">
-		<DialogContent class="max-w-lg flex flex-col gap-3">
+		<DialogContent class="max-w-lg flex flex-col gap-3" @escape-key-down="escapeList">
 			<DialogHeader>
 				<DialogTitle class="text-base">{{ __("Add delivery") }}</DialogTitle>
 				<DialogDescription class="text-xs">{{ cartStore.customerName }}</DialogDescription>
@@ -103,7 +103,47 @@
 				<p class="text-xs text-muted-foreground">
 					{{ online ? __("New address for this customer.") : __("New address (offline): saved for this customer when the till is back online.") }}
 				</p>
-				<Input v-model="draft.address_line1" :placeholder="__('Street address')" data-testid="delivery-new-line1" />
+				<!-- Online, the street field suggests Google's addresses (MuleCity-p644). -->
+				<div class="relative">
+					<Input
+						v-model="draft.address_line1"
+						:placeholder="online && !typeahead.unavailable.value ? __('Street address (type to search)') : __('Street address')"
+						role="combobox"
+						aria-autocomplete="list"
+						aria-controls="delivery-new-suggestions"
+						:aria-expanded="typeahead.listOpen.value"
+						data-testid="delivery-new-line1"
+						@keydown="(event: KeyboardEvent) => typeahead.keydown(event, pickSuggestion)"
+						@blur="typeahead.closeList()"
+					/>
+					<ul
+						v-if="typeahead.listOpen.value"
+						id="delivery-new-suggestions"
+						role="listbox"
+						class="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto rounded-md border bg-popover shadow-md"
+						data-testid="delivery-new-suggestions"
+					>
+						<li
+							v-for="(suggestion, index) in typeahead.suggestions.value"
+							:key="suggestion.place_id"
+							role="option"
+							:aria-selected="typeahead.highlighted.value === index"
+							class="cursor-pointer px-3 py-2.5 text-sm"
+							:class="typeahead.highlighted.value === index ? 'bg-primary/10' : 'hover:bg-muted'"
+							data-testid="delivery-new-suggestion"
+							@mousedown.prevent
+							@click="pickSuggestion(index)"
+						>
+							{{ suggestion.description }}
+						</li>
+					</ul>
+				</div>
+				<p v-if="typeahead.resolving.value" class="text-xs text-muted-foreground" data-testid="delivery-new-resolving">
+					{{ __("Filling in the address…") }}
+				</p>
+				<p v-else-if="online && typeahead.unavailable.value" class="text-xs text-muted-foreground" data-testid="delivery-lookup-unavailable">
+					{{ __("Address lookup isn't available — type the address") }}
+				</p>
 				<Input v-model="draft.address_line2" :placeholder="__('Address line 2 (optional)')" data-testid="delivery-new-line2" />
 				<div class="grid grid-cols-3 gap-2">
 					<Input v-model="draft.city" :placeholder="__('City')" data-testid="delivery-new-city" />
@@ -121,6 +161,16 @@
 						data-testid="delivery-new-miles"
 					/>
 				</div>
+				<!-- The picked address, as Google knows it: its miles from HQ (the site saves them). -->
+				<p v-if="pickedNow" class="text-xs text-muted-foreground" data-testid="delivery-new-found">
+					<span v-if="pickedNow.delivery_miles != null" data-testid="delivery-new-found-miles">{{
+						__("Google: {0} mi one way", [String(pickedNow.delivery_miles)])
+					}}</span>
+					<span v-else>{{ __("Google found the address but not its miles") }}</span>
+					<span v-if="!pickedNow.validated" class="ms-1 font-semibold text-amber-700" data-testid="delivery-new-not-validated">{{
+						__("· check the street number")
+					}}</span>
+				</p>
 				<p v-if="milesAsked" class="text-xs font-semibold text-amber-700" data-testid="delivery-new-miles-asked">
 					{{ __("The miles to this address could not be found. Type the one-way miles, or leave them empty to type the charge.") }}
 				</p>
@@ -184,8 +234,14 @@
  * (services/addressQueue.ts). Either way the customer's cached addresses get it.
  * The clerk picks the delivery day here (default: the day already chosen, else
  * today) and can change it on the card.
+ *
+ * Online, the new address's street field is a Google typeahead (MuleCity-p644,
+ * composables/useAddressTypeahead.ts): a pick fills street, line 2, city, state
+ * and ZIP, shows Google's miles, and the save carries its county and point. If
+ * the clerk then changes the street, city, state or ZIP, the pick is dropped.
+ * Offline, or when the site cannot look up, the form is typed as before.
  */
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
 import { showError, showSuccess } from "@/services/api";
@@ -214,6 +270,8 @@ import {
 	type DeliveryQuote,
 } from "@/services/delivery";
 import { cachedAddress, withAddress, type AddedAddress } from "@/services/addressQueue";
+import { useAddressTypeahead } from "@/composables/useAddressTypeahead";
+import type { ResolvedAddress } from "@/services/addressLookup";
 import { extractErrorMessage, isOnline } from "@/utils";
 import { nowDate } from "@/utils/datetime";
 import { Button } from "@/components/ui/button";
@@ -249,6 +307,48 @@ const pendingAdded = ref<AddedAddress | null>(null);
 // and read it again when the clerk presses the button.
 const online = ref(isOnline());
 const syncOnline = () => (online.value = isOnline());
+const typeahead = useAddressTypeahead({ online });
+// The address the clerk picked from Google's suggestions (while the form still shows it).
+const picked = ref<ResolvedAddress | null>(null);
+const PICKED_FIELDS = ["address_line1", "city", "state", "pincode"] as const;
+const pickedNow = computed(() => {
+	const place = picked.value;
+	if (!place) return null;
+	const same = (a: unknown, b: unknown) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+	return PICKED_FIELDS.every((field) => same(draft.value[field], place[field])) ? place : null;
+});
+
+watch(
+	() => draft.value.address_line1,
+	(text) => {
+		if (mode.value !== "new" || !open.value) return;
+		// The pick filled it: nothing to look up.
+		if (picked.value && text === picked.value.address_line1) return;
+		syncOnline();
+		typeahead.typed(text);
+	},
+);
+
+async function pickSuggestion(index: number) {
+	const place = await typeahead.pick(index);
+	if (!place) return;
+	picked.value = place;
+	draft.value = {
+		...draft.value,
+		address_line1: place.address_line1 || draft.value.address_line1,
+		address_line2: place.address_line2 || "",
+		city: place.city || draft.value.city,
+		state: place.state || draft.value.state,
+		pincode: place.pincode || draft.value.pincode,
+	};
+}
+
+/** Esc closes the suggestions first, the dialog only after. */
+function escapeList(event: Event) {
+	if (!typeahead.listOpen.value) return;
+	event.preventDefault();
+	typeahead.closeList();
+}
 
 const addresses = computed(() => details.value?.addresses || []);
 const shown = computed(() => searchAddresses(addresses.value, search.value));
@@ -390,6 +490,9 @@ function resetDraft() {
 	draft.value = { ...EMPTY_DRAFT };
 	milesAsked.value = false;
 	pendingAdded.value = null;
+	picked.value = null;
+	// One Google session per address form.
+	typeahead.newSession();
 }
 
 function startNewAddress() {
@@ -417,6 +520,10 @@ async function saveNewAddress() {
 				pincode: draft.value.pincode.trim(),
 				title: draft.value.title.trim() || null,
 				miles: typed,
+				// A Google pick the form still shows: its county and point go on the Address.
+				county: pickedNow.value?.county || null,
+				latitude: pickedNow.value?.latitude ?? null,
+				longitude: pickedNow.value?.longitude ?? null,
 			},
 			{ first: !addresses.value.length },
 		);

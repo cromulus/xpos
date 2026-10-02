@@ -1,5 +1,41 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc26 (unreleased)
+
+### Google address typeahead in the till's add-address form (MuleCity-p644)
+
+Bill 2026-10-01 (MuleCity-gvxs): type the address, pick Google's suggestion,
+and the fields fill in, with the miles. The site already proxies Google Places
+(Mule app `address_lookup.autocomplete` / `resolve`, login-only, rate-limited
+per user, the key never leaves the server); the till's add-address form now
+uses it.
+
+- Online, the street field of "Add new address" is a typeahead: from 4
+  characters and a ~300 ms pause the site's suggestions show under it; arrows
+  move, Enter or a tap picks, Esc closes the list (not the dialog). A pick fills
+  street, line 2, city, state and ZIP, shows "Google: N mi one way" (and "check
+  the street number" when Google does not know it as one door), and the save
+  sends the county and the point (`latitude`/`longitude`) with the address.
+  Changing the street, city, state or ZIP after a pick drops the pick's point.
+- One UUID session token per address form; a new one after a pick and when the
+  form closes.
+- Fallbacks: offline, no lookups (the typed form and the queued add as before).
+  When the site cannot look up (no key, Google refusing, e.g. Places API (New)
+  not enabled, which comes back as AddressLookupUnavailable; too many lookups;
+  no site hook) the form says "Address lookup isn't available — type the
+  address", stops asking for 5 minutes, and the typed address with typed miles
+  saves as before. A network failure is treated as offline (no note).
+- Fork API (one surface, as `add_delivery_address`):
+  `xpos.api.customers.address_autocomplete(text, session_token)` and
+  `address_resolve(place_id, session_token)` call the site hooks
+  `xpos_address_autocomplete` / `xpos_address_resolve`; with no hook they refuse
+  and the till types. `add_delivery_address` takes optional `latitude` /
+  `longitude`, passed to the site hook only when given (older hooks keep
+  working); an offline-queued add replays them too.
+- Needs the Mule app commit that registers the two hooks (MuleCity-p644).
+  Until Places API (New) is enabled on the key, the till shows the note and
+  works as typed.
+
 ## mule-v2.10.1-mc25 (unreleased)
 
 ### Close Shift counts the till's Payment Entries (MuleCity-49ue)

@@ -33,6 +33,16 @@ What (site hooks, all optional; with none, XPOS offers no quoted delivery)
       ...)`` -> the cached address shape plus ``address_display``,
       ``miles_pending`` and ``quote``: add (or find) the customer's delivery
       address at the till; ``xpos.api.customers.add_delivery_address`` calls it.
+      Optional ``latitude``/``longitude`` (the point a typeahead pick resolved)
+      are passed only when the till has them.
+    * ``xpos_address_autocomplete(text, session_token)`` -> ``[{place_id,
+      description}]`` and ``xpos_address_resolve(place_id, session_token)`` ->
+      ``{address_line1, address_line2, city, county, state, pincode, country,
+      latitude, longitude, validated, formatted_address, place_id,
+      delivery_miles}``: the add-address form's street typeahead (Mule City:
+      address_lookup.autocomplete / resolve, Google Places proxied by the site,
+      MuleCity-p644). ``xpos.api.customers.address_autocomplete`` /
+      ``address_resolve`` call them; with none, the till types the address.
 
 How
     ``quote_delivery`` weighs the cart as ERPNext weighs a sale (``total_weight
@@ -54,6 +64,8 @@ CUSTOMERS_HOOK = "xpos_delivery_customers"
 TYPED_MILES_HOOK = "xpos_delivery_typed_miles"
 WALK_IN_HOOK = "xpos_walk_in_customers"
 ADD_ADDRESS_HOOK = "xpos_add_delivery_address"
+AUTOCOMPLETE_HOOK = "xpos_address_autocomplete"
+RESOLVE_HOOK = "xpos_address_resolve"
 # Miles the site looked up itself; anything else was typed and is flagged.
 LOOKED_UP_MILES = "routes"
 
@@ -240,7 +252,19 @@ def _add_address_args(customer: str, new: dict) -> dict:
 		"delivery_miles": flt(new.get("miles")) or None,
 		"miles_source": "manual_offline",
 		"local_id": new.get("local_id") or None,
+		# A point the till resolved from a typeahead pick, when it has one (MuleCity-p644).
+		**point_args(new.get("latitude"), new.get("longitude")),
 	}
+
+
+def point_args(latitude, longitude) -> dict:
+	"""``{latitude, longitude}`` for the add-address hook, or {} when the till has no point.
+
+	Left out rather than None, so a site hook without these parameters still works.
+	"""
+	if latitude in (None, "") or longitude in (None, ""):
+		return {}
+	return {"latitude": flt(latitude), "longitude": flt(longitude)}
 
 
 def note_typed_miles(invoice_doc, data: dict) -> None:

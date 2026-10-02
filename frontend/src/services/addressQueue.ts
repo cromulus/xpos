@@ -35,6 +35,10 @@ export interface AddressForm {
 	title?: string | null;
 	/** One-way miles the clerk typed (optional). */
 	miles?: number | null;
+	/** From a typeahead pick (MuleCity-p644): the county and Google's point, kept on the Address. */
+	county?: string | null;
+	latitude?: number | null;
+	longitude?: number | null;
 }
 
 export interface QueuedAddress extends AddressForm {
@@ -77,6 +81,9 @@ export function addAddressArgs(customer: string, form: AddressForm, extra: Recor
 		pincode: form.pincode,
 		title: form.title || null,
 		delivery_miles: form.miles && form.miles > 0 ? form.miles : null,
+		// Only a picked address has these; a typed one sends what it always did.
+		...(form.county ? { county: form.county } : {}),
+		...(form.latitude != null && form.longitude != null ? { latitude: form.latitude, longitude: form.longitude } : {}),
 		...extra,
 	};
 }
