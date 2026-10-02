@@ -9,7 +9,7 @@ from frappe import _, cstr
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 from frappe.utils.background_jobs import enqueue
 
-from xpos.api.delivery import note_typed_miles, resolve_new_shipping_address
+from xpos.api.delivery import note_typed_miles, refuse_walk_in_delivery, resolve_new_shipping_address
 from xpos.api.exchange import get_currency_precision
 from xpos.api.items import selling_price
 from xpos.api.profiles import resolve_pos_profile
@@ -103,7 +103,10 @@ def apply_delivery_facts(invoice_doc, data: dict):
 	``pos_delivery_miles_source``: "address" when they were the Address's,
 	"manual" when the clerk typed them). Prints read these, never today's
 	Address. They travel in the sale's data, so an offline sale keeps them.
+	A walk-in or customer-less sale carrying a delivery is refused first
+	(Bill 2026-10-01 22:52, ``delivery.refuse_walk_in_delivery``).
 	"""
+	refuse_walk_in_delivery(data)
 	if data.get("pos_delivery_date"):
 		invoice_doc.pos_delivery_date = data["pos_delivery_date"]
 	if data.get("shipping_address_name"):

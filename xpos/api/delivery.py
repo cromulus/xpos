@@ -24,6 +24,15 @@ What (site hooks, all optional; with none, XPOS offers no quoted delivery)
       these, MuleCity-qajl.4).
     * ``xpos_delivery_typed_miles(address_doc, miles)``: record miles a clerk typed
       at the till while offline on a new Address, before it is inserted.
+    * ``xpos_walk_in_customers()`` -> [customer]: the site's walk-in accounts,
+      besides every POS Profile's default customer (Mule City: Walk-In Customer
+      and FilePro's CASH 338). A delivery never goes to them (Bill 2026-10-01
+      22:52, MuleCity-qajl): the till hides "Add delivery" and the server
+      refuses a sale to them that carries a delivery.
+    * ``xpos_add_delivery_address(customer, address_line1, city, state, pincode,
+      ...)`` -> the cached address shape plus ``address_display``,
+      ``miles_pending`` and ``quote``: add (or find) the customer's delivery
+      address at the till; ``xpos.api.customers.add_delivery_address`` calls it.
 
 How
     ``quote_delivery`` weighs the cart as ERPNext weighs a sale (``total_weight
@@ -37,12 +46,14 @@ How
 
 import frappe
 from frappe import _
-from frappe.utils import cstr, flt
+from frappe.utils import cint, cstr, flt
 
 POLICY_HOOK = "xpos_delivery_policy"
 QUOTE_HOOK = "xpos_delivery_quote"
 CUSTOMERS_HOOK = "xpos_delivery_customers"
 TYPED_MILES_HOOK = "xpos_delivery_typed_miles"
+WALK_IN_HOOK = "xpos_walk_in_customers"
+ADD_ADDRESS_HOOK = "xpos_add_delivery_address"
 # Miles the site looked up itself; anything else was typed and is flagged.
 LOOKED_UP_MILES = "routes"
 
@@ -71,7 +82,54 @@ def get_delivery_policy() -> dict | None:
 		"stock_uom": item.stock_uom,
 		"item_group": item.item_group,
 	}
+	# Cached with the policy, so the till hides "Add delivery" for them offline too.
+	policy["walk_in_customers"] = walk_in_customers()
 	return policy
+
+
+def walk_in_customers() -> list[str]:
+	"""Customers a delivery never goes to: every POS Profile's default customer and the site's own."""
+	names = set(frappe.get_all("POS Profile", filters={"customer": ["is", "set"]}, pluck="customer"))
+	for method in frappe.get_hooks(WALK_IN_HOOK):
+		names.update(frappe.get_attr(method)() or [])
+	return sorted(name for name in names if name)
+
+
+def _delivery_item_code() -> str | None:
+	policy_of = _last_hook(POLICY_HOOK)
+	return (policy_of() or {}).get("item_code") if policy_of else None
+
+
+def refuse_walk_in_delivery(data: dict) -> None:
+	"""A delivery needs a real customer (Bill 2026-10-01 22:52, MuleCity-qajl).
+
+	A sale (or parked tab, or preview) that carries a delivery, i.e. a shipping
+	address (chosen or typed offline), delivery miles, or the site's delivery
+	line, is refused when it has no customer or is the walk-in account. A day
+	alone (``pos_delivery_date``) is not a delivery. Returns are let through: a
+	FilePro-era walk-in sale with a delivery line can still be returned.
+	"""
+	if cint(data.get("is_return")):
+		return
+	delivery_item = _delivery_item_code()
+	facts = [
+		data.get("shipping_address_name"),
+		data.get("xpos_new_shipping_address"),
+		flt(data.get("pos_delivery_miles")) > 0,
+		bool(delivery_item) and any((row or {}).get("item_code") == delivery_item for row in data.get("items") or []),
+	]
+	if not any(facts):
+		return
+	customer = cstr(data.get("customer")).strip()
+	if customer and customer not in walk_in_customers():
+		return
+	frappe.throw(
+		_("Delivery needs a named customer, not {0}. Choose the customer (or add them) before adding delivery.").format(
+			customer or _("no customer")
+		),
+		frappe.ValidationError,
+		title=_("No delivery for walk-in sales"),
+	)
 
 
 def cart_weight(items: list[dict], skip_item: str | None = None) -> float:
@@ -123,6 +181,7 @@ def resolve_new_shipping_address(data: dict) -> None:
 	by preview). A replayed sale finds the address it made the first time: the same
 	customer, street and town.
 	"""
+	refuse_walk_in_delivery(data)
 	new = data.get("xpos_new_shipping_address")
 	customer = data.get("customer")
 	if not new or data.get("shipping_address_name") or not customer:
@@ -130,6 +189,13 @@ def resolve_new_shipping_address(data: dict) -> None:
 	line1, city = cstr(new.get("address_line1")).strip(), cstr(new.get("city")).strip()
 	if not line1 or not city:
 		frappe.throw(_("Street address and city are required to save an address"))
+	add = _last_hook(ADD_ADDRESS_HOOK)
+	if add and cstr(new.get("state")).strip() and cstr(new.get("pincode")).strip():
+		# The till's add-address form (mc23) sends the whole address: made as the
+		# till's own add is (normally already replayed before this sale; this is
+		# the fallback when that replay did not happen).
+		data["shipping_address_name"] = add(**_add_address_args(customer, new))["name"]
+		return
 	existing = frappe.db.sql(
 		"""SELECT a.name FROM `tabAddress` a JOIN `tabDynamic Link` dl ON dl.parent = a.name
 		WHERE dl.parenttype = 'Address' AND dl.link_doctype = 'Customer' AND dl.link_name = %(customer)s
@@ -159,6 +225,22 @@ def resolve_new_shipping_address(data: dict) -> None:
 			frappe.get_attr(method)(address, miles)
 	address.insert(ignore_permissions=True)
 	data["shipping_address_name"] = address.name
+
+
+def _add_address_args(customer: str, new: dict) -> dict:
+	"""An address typed offline, as the site's add-address hook takes it (miles flagged manual_offline)."""
+	return {
+		"customer": customer,
+		"address_line1": new.get("address_line1"),
+		"city": new.get("city"),
+		"state": new.get("state"),
+		"pincode": new.get("pincode"),
+		"address_line2": new.get("address_line2") or None,
+		"title": new.get("title") or None,
+		"delivery_miles": flt(new.get("miles")) or None,
+		"miles_source": "manual_offline",
+		"local_id": new.get("local_id") or None,
+	}
 
 
 def note_typed_miles(invoice_doc, data: dict) -> None:
