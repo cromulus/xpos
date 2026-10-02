@@ -15,7 +15,11 @@ Chrome is required: going offline uses the Chrome DevTools Protocol
 real. The browser then fires `offline` and `navigator.onLine` turns false.
 Chrome is started with `--unsafely-treat-insecure-origin-as-secure` for the
 bench origin (cypress.bench.config.ts), so a plain-http bench such as erp2's
-slots gets the service worker it would have on https.
+slots gets the service worker it would have on https. Cypress's
+`document.domain` injection is skipped for the bench host
+(`experimentalSkipDomainInjection`): a page the service worker serves from its
+cache never passes Cypress's proxy, and without this Cypress waits forever for
+its load event.
 
 ## Settings (`frontend/.env.local`, never committed)
 

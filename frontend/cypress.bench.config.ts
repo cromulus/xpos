@@ -8,9 +8,16 @@ loadEnv();
  * `yarn test:e2e:bench`. They log in, sell and read back real documents, so
  * they need a site with XPOS installed and the settings in tests/e2e/bench/README.md.
  */
+const baseUrl = process.env.XPOS_BENCH_URL || "http://localhost:8000";
+
 export default defineConfig({
 	e2e: {
-		baseUrl: process.env.XPOS_BENCH_URL || "http://localhost:8000",
+		baseUrl,
+		// Cypress injects document.domain into every page its proxy serves. A page the service
+		// worker serves from its cache (the offline app shell, offline-reload.cy.ts, MuleCity-q8aq)
+		// never passes the proxy, so it would look cross-origin to the runner and Cypress would wait
+		// for its load forever. Everything here is one origin, so the injection is not needed.
+		experimentalSkipDomainInjection: [new URL(baseUrl).hostname],
 		env: {
 			slowMo: Number(process.env.CYPRESS_SLOW_MO || 0),
 			user: process.env.XPOS_BENCH_USER || "Administrator",
