@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="{{ lang }}" dir="{{ layout_direction }}">
+	<head>
+		<meta charset="UTF-8" />
+		<link rel="icon" href="/assets/xpos/xpos/assets/xpos-logo-light-DImvnUtT.svg" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+		<meta name="theme-color" content="#f97316" />
+		<meta name="description" content="X POS - Modern Point of Sale with offline support" />
+		<link rel="apple-touch-icon" href="./apple-touch-icon.svg" />
+		<link rel="manifest" href="./manifest.webmanifest" />
+		<title>{{ app_name }}</title>
+		<script>
+			(function () {
+				const theme = localStorage.getItem("xpos-theme") || "dark";
+				let effectiveTheme = theme;
+
+				if (theme === "system") {
+					effectiveTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
+						? "dark"
+						: "light";
+				}
+
+				const html = document.documentElement;
+				if (effectiveTheme === "dark") {
+					html.classList.add("dark");
+					html.classList.remove("light");
+				} else {
+					html.classList.add("light");
+					html.classList.remove("dark");
+				}
+			})();
+		</script>
+		<script type="module" crossorigin src="/assets/xpos/xpos/assets/index-sDFGewAf.js"></script>
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/rolldown-runtime-hePW80VL.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-@floating-ui-core-Bc8SjDAw.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-@floating-ui-dom-DhoFEkoD.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-@floating-ui-vue-CkhVAxHJ.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-@vue-runtime-dom-D4iw6qa0.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-vue-C4q8qd2k.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-dayjs-l2tye_Z7.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/idbSanitize-BRa0hLCH.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/dbBridge-DmocB5ha.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/numberFormat-DffL2se7.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/useCurrency-B30rBrJc.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/api-DY242Mmo.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/offlineDbStatus-C7-aCoAk.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/userRights-DSuqleQF.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/authStore-D_YlP0bf.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/posStore-COeWB6lN.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vfdOffline-B19U6WHC.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/settingsStore-DWEWsuZ4.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/translate-AxzbRkRV.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/delivery-azdk0GfB.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/cacheStatus-Cv_RA4GT.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/addressQueue-BljYdeD_.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/customerStore-DYZa6YlY.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/itemStore-C8AdFK93.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-lucide-vue-next-CxwRudYM.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/offlineStore-o0LhA94l.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-class-variance-authority-BTDqmYkl.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-@internationalized-date-C9dTk9_y.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-@internationalized-number-DCQZ9tlI.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-radix-vue-CzafXnxy.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-tailwind-merge-BicNWLTg.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/button-D7l2IQ2_.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-@vueuse-core-efrtDobk.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-dexie-DT0nUSev.js">
+		<link rel="modulepreload" crossorigin href="/assets/xpos/xpos/assets/vendor-@zxing-browser-D8mJUPAZ.js">
+		<link rel="stylesheet" crossorigin href="/assets/xpos/xpos/assets/index-EX5jxsA9.css">
+	<link rel="manifest" href="/assets/xpos/xpos/manifest.webmanifest"></head>
+
+	<body>
+		<div id="app"></div>
+		<script>
+			window.xpos = window.xpos || {};
+			window.xpos.boot = {{ boot | json }};
+			window.xpos._messages = window.xpos.boot["__messages"];
+			window.xpos.csrf_token = "{{ csrf_token }}";
+		</script>
+		<script>
+			(function () {
+				try {
+					var b = (window.xpos && window.xpos.boot && window.xpos.boot.xpos_branding) || null;
+					if (!b) return;
+					var TOKENS = ["background","foreground","card","card_foreground","popover","popover_foreground","primary","primary_foreground","secondary","secondary_foreground","muted","muted_foreground","accent","accent_foreground","destructive","destructive_foreground","border","input","ring"];
+					function hexToHsl(hex) {
+						if (!hex) return null;
+						hex = ("" + hex).trim().replace(/^#/, "");
+						if (hex.length === 3) hex = hex.split("").map(function (c) { return c + c; }).join("");
+						if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+						var r = parseInt(hex.slice(0, 2), 16) / 255, g = parseInt(hex.slice(2, 4), 16) / 255, bl = parseInt(hex.slice(4, 6), 16) / 255;
+						var mx = Math.max(r, g, bl), mn = Math.min(r, g, bl), l = (mx + mn) / 2, s = 0, h = 0;
+						if (mx !== mn) { var d = mx - mn; s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn); if (mx === r) h = (g - bl) / d + (g < bl ? 6 : 0); else if (mx === g) h = (bl - r) / d + 2; else h = (r - g) / d + 4; h /= 6; }
+						return Math.round(h * 360) + " " + (Math.round(s * 1000) / 10) + "% " + (Math.round(l * 1000) / 10) + "%";
+					}
+					function block(sel, tokens, radius) {
+						var d = [];
+						if (tokens) { for (var i = 0; i < TOKENS.length; i++) { var t = TOKENS[i]; var v = hexToHsl(tokens[t]); if (v) d.push("--" + t.replace(/_/g, "-") + ": " + v + ";"); } }
+						if (sel === ":root" && radius > 0) d.push("--radius: " + radius + "rem;");
+						return d.length ? sel + " {" + d.join("") + "}" : "";
+					}
+					var css = [block(":root", b.light, b.radius), block(".dark", b.dark)].filter(Boolean).join("");
+					if (css) { var st = document.getElementById("xpos-branding"); if (!st) { st = document.createElement("style"); st.id = "xpos-branding"; document.head.appendChild(st); } st.textContent = css; }
+					var fav = b.favicon || b.logo_light;
+					if (fav) { var lk = document.querySelector('link[rel="icon"]'); if (!lk) { lk = document.createElement("link"); lk.rel = "icon"; document.head.appendChild(lk); } lk.href = fav; }
+					var tc = b.splash_background || (b.light && b.light.primary);
+					if (tc) { var m = document.querySelector('meta[name="theme-color"]'); if (!m) { m = document.createElement("meta"); m.name = "theme-color"; document.head.appendChild(m); } m.content = tc; }
+				} catch (e) {}
+			})();
+		</script>
+	</body>
+</html>

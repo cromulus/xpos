@@ -1,0 +1,11 @@
+apple-touch-icon.svg
+assets
+index.html
+manifest.webmanifest
+offline-shell-ad6317b44e7b.html
+pwa-192x192.svg
+pwa-512x512.svg
+sw.js
+sw.js.map
+xpos-logo-dark.svg
+xpos-logo-light.svg

@@ -2,12 +2,13 @@
 <html lang="{{ lang }}" dir="{{ layout_direction }}">
 	<head>
 		<meta charset="UTF-8" />
-		<link rel="icon" href="/public/xpos-logo-light.svg" />
+		<link rel="icon" href="/src/assets/images/xpos-logo-light.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 		<meta name="theme-color" content="#f97316" />
 		<meta name="description" content="X POS - Modern Point of Sale with offline support" />
-		<link rel="apple-touch-icon" href="./apple-touch-icon.svg" />
-		<link rel="manifest" href="./manifest.webmanifest" />
+		<link rel="apple-touch-icon" href="/src/assets/pwa/apple-touch-icon.svg" />
+		<!-- Absolute, and served by xpos/pwa.py with no-store (MuleCity-68mo); "./" pointed at /manifest.webmanifest from /xpos. -->
+		<link rel="manifest" href="/xpos/manifest.webmanifest" />
 		<title>{{ app_name }}</title>
 		<script>
 			(function () {

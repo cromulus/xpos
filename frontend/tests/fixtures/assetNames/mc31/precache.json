@@ -1,0 +1,306 @@
+[
+ {
+  "revision": "fe1a5636912fe4b1cf20ec548ce2b32c",
+  "url": "/assets/xpos/xpos/xpos-logo-light.svg"
+ },
+ {
+  "revision": "fe1a5636912fe4b1cf20ec548ce2b32c",
+  "url": "/assets/xpos/xpos/xpos-logo-dark.svg"
+ },
+ {
+  "revision": "c1d15718a736d576d1100caa7311f2a4",
+  "url": "/assets/xpos/xpos/pwa-512x512.svg"
+ },
+ {
+  "revision": "76d0dcb4118fe6299ddcac9f3c82ef37",
+  "url": "/assets/xpos/xpos/pwa-192x192.svg"
+ },
+ {
+  "revision": "22008f5b09c260f19e3dc437a83542d2",
+  "url": "/assets/xpos/xpos/apple-touch-icon.svg"
+ },
+ {
+  "revision": "fe1a5636912fe4b1cf20ec548ce2b32c",
+  "url": "/assets/xpos/xpos/assets/xpos-logo-light-DImvnUtT.svg"
+ },
+ {
+  "revision": "2db81e3894d11cc2c9783612c54b7dec",
+  "url": "/assets/xpos/xpos/assets/vfdOffline-B19U6WHC.js"
+ },
+ {
+  "revision": "3ff5c60956d1b303b2c3bf46b50dea38",
+  "url": "/assets/xpos/xpos/assets/vendor-vue-C4q8qd2k.js"
+ },
+ {
+  "revision": "a3cb0fe55460b07341e18d3ecb700d92",
+  "url": "/assets/xpos/xpos/assets/vendor-tailwind-merge-BicNWLTg.js"
+ },
+ {
+  "revision": "16f18610e6b7a5a0fd0ed8432a32759d",
+  "url": "/assets/xpos/xpos/assets/vendor-radix-vue-CzafXnxy.js"
+ },
+ {
+  "revision": "cfb1decc3fac1abbb70d9abac58065f2",
+  "url": "/assets/xpos/xpos/assets/vendor-lucide-vue-next-CxwRudYM.js"
+ },
+ {
+  "revision": "d79ec2764aa9d7e864fd9805652559ac",
+  "url": "/assets/xpos/xpos/assets/vendor-dexie-DT0nUSev.js"
+ },
+ {
+  "revision": "18a79f1c6b7cfe0aa787f94a16b534a3",
+  "url": "/assets/xpos/xpos/assets/vendor-dayjs-l2tye_Z7.js"
+ },
+ {
+  "revision": "9a3ae3c5260d53da2f06134c3026f98c",
+  "url": "/assets/xpos/xpos/assets/vendor-class-variance-authority-BTDqmYkl.js"
+ },
+ {
+  "revision": "9ab4f0b1adfa2ae104170564a9a9746b",
+  "url": "/assets/xpos/xpos/assets/vendor-@zxing-browser-D8mJUPAZ.js"
+ },
+ {
+  "revision": "1e2a7a13ed964b4feccf5e9422358866",
+  "url": "/assets/xpos/xpos/assets/vendor-@vueuse-core-efrtDobk.js"
+ },
+ {
+  "revision": "4d3bbe6ba902b00798d5210978185f8f",
+  "url": "/assets/xpos/xpos/assets/vendor-@vue-runtime-dom-D4iw6qa0.js"
+ },
+ {
+  "revision": "6ec2ea195ebb6ea350d459989da91aec",
+  "url": "/assets/xpos/xpos/assets/vendor-@internationalized-number-DCQZ9tlI.js"
+ },
+ {
+  "revision": "db6a3600db8c0510b9da3f38ad79e4d8",
+  "url": "/assets/xpos/xpos/assets/vendor-@internationalized-date-C9dTk9_y.js"
+ },
+ {
+  "revision": "8e82929e17eab0bcad2cb17c700f43a4",
+  "url": "/assets/xpos/xpos/assets/vendor-@floating-ui-vue-CkhVAxHJ.js"
+ },
+ {
+  "revision": "09f1bb729d98b77ac6c57dffbf00e45a",
+  "url": "/assets/xpos/xpos/assets/vendor-@floating-ui-dom-DhoFEkoD.js"
+ },
+ {
+  "revision": "bce1eabd15cf683ca0604efee9bc314e",
+  "url": "/assets/xpos/xpos/assets/vendor-@floating-ui-core-Bc8SjDAw.js"
+ },
+ {
+  "revision": "fd1937d74343206ac1efe26ff0c6249d",
+  "url": "/assets/xpos/xpos/assets/userRights-DSuqleQF.js"
+ },
+ {
+  "revision": "924df8eda31651c622895044abe0dca5",
+  "url": "/assets/xpos/xpos/assets/useCurrency-B30rBrJc.js"
+ },
+ {
+  "revision": "3ac8fb51f8fbc4ec39176276d188ed09",
+  "url": "/assets/xpos/xpos/assets/translate-AxzbRkRV.js"
+ },
+ {
+  "revision": "cf9afa6309fefccae7a457737f51712c",
+  "url": "/assets/xpos/xpos/assets/settingsStore-DWEWsuZ4.js"
+ },
+ {
+  "revision": "026deff3b32fe7b54729af120c91375e",
+  "url": "/assets/xpos/xpos/assets/rolldown-runtime-hePW80VL.js"
+ },
+ {
+  "revision": "9ba519c385defe0e6d167d29fd21ae9d",
+  "url": "/assets/xpos/xpos/assets/reports-CtYaJm9v.js"
+ },
+ {
+  "revision": "95320771cb183c0be0b0e3392f24f947",
+  "url": "/assets/xpos/xpos/assets/purchaseStore-DtS1KyM1.js"
+ },
+ {
+  "revision": "21450bc57a558b647e579741f9478abd",
+  "url": "/assets/xpos/xpos/assets/purchase-DqqHSPiu.css"
+ },
+ {
+  "revision": "57364589376fc04a7f4efe6371c36926",
+  "url": "/assets/xpos/xpos/assets/purchase-B2QPApAT.js"
+ },
+ {
+  "revision": "6594faa5a6d7b82a12c3f8170477d98f",
+  "url": "/assets/xpos/xpos/assets/posStore-COeWB6lN.js"
+ },
+ {
+  "revision": "4b66419dbf4e62bc515d9aa9ca82a729",
+  "url": "/assets/xpos/xpos/assets/offlineStore-o0LhA94l.js"
+ },
+ {
+  "revision": "249e6e9f24b36849569d94aa5ea40402",
+  "url": "/assets/xpos/xpos/assets/offlineDbStatus-C7-aCoAk.js"
+ },
+ {
+  "revision": "5190229603fe8ce5519bae03fe482f87",
+  "url": "/assets/xpos/xpos/assets/numberFormat-DffL2se7.js"
+ },
+ {
+  "revision": "ce84296cb3ac01c53c4493537f079415",
+  "url": "/assets/xpos/xpos/assets/itemStore-C8AdFK93.js"
+ },
+ {
+  "revision": "1e1ecb4b2d25aa7bd2b36fb2e6e6b05d",
+  "url": "/assets/xpos/xpos/assets/index-sDFGewAf.js"
+ },
+ {
+  "revision": "493c0bf6da03fe452742d75ba7954b59",
+  "url": "/assets/xpos/xpos/assets/index-EX5jxsA9.css"
+ },
+ {
+  "revision": "4ec3448e8be84d405b02fd8b2b293f2e",
+  "url": "/assets/xpos/xpos/assets/idbSanitize-BRa0hLCH.js"
+ },
+ {
+  "revision": "7f3762690e088e1a2ef358b8599b248f",
+  "url": "/assets/xpos/xpos/assets/delivery-azdk0GfB.js"
+ },
+ {
+  "revision": "fdeefbe11c9bb5401261cadb54222c60",
+  "url": "/assets/xpos/xpos/assets/dbBridge-DmocB5ha.js"
+ },
+ {
+  "revision": "c3567d9b7e4d82371010325b99fe0186",
+  "url": "/assets/xpos/xpos/assets/customerStore-DYZa6YlY.js"
+ },
+ {
+  "revision": "807bc0cf7403bdb1b0bc36bcd4b7ad1f",
+  "url": "/assets/xpos/xpos/assets/cacheStatus-Cv_RA4GT.js"
+ },
+ {
+  "revision": "f26803e795855e622a700957816fd6a8",
+  "url": "/assets/xpos/xpos/assets/button-D7l2IQ2_.js"
+ },
+ {
+  "revision": "db6f5347e0af6709fa51e169500a4317",
+  "url": "/assets/xpos/xpos/assets/authStore-D_YlP0bf.js"
+ },
+ {
+  "revision": "325770a3164ddceda10ff2fadf812544",
+  "url": "/assets/xpos/xpos/assets/api-DY242Mmo.js"
+ },
+ {
+  "revision": "bb48175ff482bdabc14288df8755302a",
+  "url": "/assets/xpos/xpos/assets/addressQueue-BljYdeD_.js"
+ },
+ {
+  "revision": "9a57d613a04722fb2038e1fe2b46471d",
+  "url": "/assets/xpos/xpos/assets/StockReceivingView-D41rkqhX.js"
+ },
+ {
+  "revision": "d00cb5d88e43dc09850e9fac31a231a5",
+  "url": "/assets/xpos/xpos/assets/StockReceiving-B_JEcxAe.js"
+ },
+ {
+  "revision": "e57d21c67d4a65609e14e1dfbe58bbb6",
+  "url": "/assets/xpos/xpos/assets/SetupWizardView-NEA851kH.js"
+ },
+ {
+  "revision": "c9b194ae3dc30cd5ed3378fbfcdd3ea7",
+  "url": "/assets/xpos/xpos/assets/SettingsView-VVBcsv2F.js"
+ },
+ {
+  "revision": "4a45b14a747dc007b5fb66f78045f1dd",
+  "url": "/assets/xpos/xpos/assets/RolePermissionsView-CXO02VrV.js"
+ },
+ {
+  "revision": "92d3681779432e123e9b8e0fdf5fcf20",
+  "url": "/assets/xpos/xpos/assets/ResetPasswordView-BjsaaJXo.js"
+ },
+ {
+  "revision": "30fc7a96e5d9b694cc88fbcbd7f25f9c",
+  "url": "/assets/xpos/xpos/assets/ReportsIndexView-HQhXXb3d.js"
+ },
+ {
+  "revision": "e198168efbbc908c4f80fd6b74f630e4",
+  "url": "/assets/xpos/xpos/assets/ReportViewerView-CHlXPoAI.js"
+ },
+ {
+  "revision": "586aa757058ed4b0464990c3fb1473ba",
+  "url": "/assets/xpos/xpos/assets/PurchaseOrderView-D8I98VY7.js"
+ },
+ {
+  "revision": "6f29dfbbb98963ba9bd67a955bdbee3e",
+  "url": "/assets/xpos/xpos/assets/PurchaseOrderListView-DJ3O4-SU.js"
+ },
+ {
+  "revision": "93154efe6eb72a64b54f3b6e43024282",
+  "url": "/assets/xpos/xpos/assets/PurchaseInvoiceView-BtrlfFHR.js"
+ },
+ {
+  "revision": "dd3adc4499ae0e75bcd9e0d04a656a80",
+  "url": "/assets/xpos/xpos/assets/PurchaseInvoiceListView-C3FOLthu.js"
+ },
+ {
+  "revision": "53757c8cad9c323112ed745c4b039e8c",
+  "url": "/assets/xpos/xpos/assets/PriceChecker-Drqmzkyd.js"
+ },
+ {
+  "revision": "f6f0b3ba753bf3ca844035d1bfd5bba5",
+  "url": "/assets/xpos/xpos/assets/PriceChecker-D_g_QWFU.css"
+ },
+ {
+  "revision": "c0b69d47a966f61e629b76f6c559c3a1",
+  "url": "/assets/xpos/xpos/assets/Pagination-DPwBFdwq.js"
+ },
+ {
+  "revision": "195fcc638b5c85d7faa51285175a8bb2",
+  "url": "/assets/xpos/xpos/assets/OrdersHubView-CcKbrwY9.js"
+ },
+ {
+  "revision": "2e79cf46aa2984443e98db265f228028",
+  "url": "/assets/xpos/xpos/assets/LoginView-BlTZH5WR.js"
+ },
+ {
+  "revision": "e86680ccf3e3deee8dc5942444b17844",
+  "url": "/assets/xpos/xpos/assets/ListView-DcJTnZPf.js"
+ },
+ {
+  "revision": "862178b8dae6a61d7c43b6de6dc7d948",
+  "url": "/assets/xpos/xpos/assets/ExpenseView-BCwisPHh.js"
+ },
+ {
+  "revision": "79c46b1f1a1454686bec6d86cad2c959",
+  "url": "/assets/xpos/xpos/assets/Checkbox-BBn75Azz.js"
+ },
+ {
+  "revision": "cb1bf17d43ce515105d5619b4bcaea4d",
+  "url": "/assets/xpos/xpos/assets/CashierView-0Tbr08_t.js"
+ },
+ {
+  "revision": "fb48cb5122f4cbed73f3e2a375044567",
+  "url": "/assets/xpos/xpos/assets/CardTitle-B7Ib26rf.js"
+ },
+ {
+  "revision": "f15ce28458d53fd3c527552aa429f6c5",
+  "url": "/assets/xpos/xpos/assets/BarcodePrintView-DRh83uho.js"
+ },
+ {
+  "revision": "bfef890b59634cdc2204a7a6bf5442fb",
+  "url": "/assets/xpos/xpos/assets/BankDropView-Dupb_u9Y.js"
+ },
+ {
+  "revision": "51eb74782d278eb15b03c5b3887d414a",
+  "url": "/assets/xpos/xpos/offline-shell-ad6317b44e7b.html"
+ },
+ {
+  "revision": "22008f5b09c260f19e3dc437a83542d2",
+  "url": "apple-touch-icon.svg"
+ },
+ {
+  "revision": "76d0dcb4118fe6299ddcac9f3c82ef37",
+  "url": "pwa-192x192.svg"
+ },
+ {
+  "revision": "c1d15718a736d576d1100caa7311f2a4",
+  "url": "pwa-512x512.svg"
+ },
+ {
+  "revision": "2decfe09ea8eeb8d790d7fea73dc7c4b",
+  "url": "manifest.webmanifest"
+ }
+]

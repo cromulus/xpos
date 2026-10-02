@@ -46,3 +46,10 @@ class TestServiceWorkerScope(unittest.TestCase):
 		request = SimpleNamespace(path="/xpos/index.html")
 		with patch("xpos.pwa.frappe.local", SimpleNamespace(request=request)):
 			self.assertIsNone(pwa.resolve())
+
+	def test_the_manifest_is_served_with_no_store(self):
+		"""The page links /xpos/manifest.webmanifest (MuleCity-68mo): never a fixed /assets name, which
+		Frappe serves with a one-year max-age and Cloudflare would keep across deploys."""
+		headers = self._render("manifest.webmanifest")
+		self.assertEqual(headers["Cache-Control"], "no-cache, no-store, must-revalidate")
+		self.assertTrue(headers["Content-Type"].startswith("application/manifest+json"))

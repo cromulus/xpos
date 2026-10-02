@@ -14,7 +14,7 @@
   "scripts": {
     "dev": "vite",
     "dev:electron": "vite --config vite.config.electron.ts",
-    "build": "vite build --base=/assets/xpos/xpos/ && yarn copy-html-entry",
+    "build": "vite build --base=/assets/xpos/xpos/ && yarn copy-html-entry && node scripts/checkAssetNames.mjs",
     "build:electron": "vite build --config vite.config.electron.ts && node scripts/build-electron.mjs",
     "copy-html-entry": "cp ../xpos/public/xpos/index.html ../xpos/www/xpos.html",
     "preview": "vite preview",

@@ -4,6 +4,7 @@ import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 import { fileURLToPath } from "url";
 import { offlineShellPlugin } from "./scripts/offlineShell";
+import { webManifestPlugin } from "./scripts/webManifest";
 import { ASSET_PREFIX, OFFLINE_SHELL_GLOB } from "./sw/policy";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,58 +15,16 @@ export default defineConfig({
 	plugins: [
 		vue(),
 		offlineShellPlugin(),
+		webManifestPlugin(),
 		VitePWA({
 			registerType: "autoUpdate",
 			injectRegister: false,
-			includeAssets: ["pwa-192x192.svg", "pwa-512x512.svg", "apple-touch-icon.svg"],
-			manifest: {
-				name: "X POS - Point of Sale",
-				short_name: "X POS",
-				description: "Modern Point of Sale application with offline support",
-				theme_color: "#f97316",
-				background_color: "#ffffff",
-				display: "standalone",
-				orientation: "any",
-				// The worker's scope (MuleCity-q8aq): /xpos itself, as Frappe serves it.
-				scope: "/xpos",
-				start_url: "/xpos",
-				id: "/xpos/",
-				categories: ["business", "finance"],
-				icons: [
-					{
-						src: "pwa-192x192.svg",
-						sizes: "192x192",
-						type: "image/svg+xml",
-					},
-					{
-						src: "pwa-512x512.svg",
-						sizes: "512x512",
-						type: "image/svg+xml",
-					},
-					{
-						src: "pwa-512x512.svg",
-						sizes: "512x512",
-						type: "image/svg+xml",
-						purpose: "any maskable",
-					},
-				],
-				screenshots: [
-					{
-						src: "pwa-512x512.svg",
-						sizes: "512x512",
-						type: "image/svg+xml",
-						form_factor: "wide",
-						label: "X POS Dashboard",
-					},
-					{
-						src: "pwa-512x512.svg",
-						sizes: "512x512",
-						type: "image/svg+xml",
-						form_factor: "narrow",
-						label: "X POS Mobile",
-					},
-				],
-			},
+			// The manifest and its icons come from scripts/webManifest.ts (MuleCity-68mo): content-named
+			// icons, the manifest linked at /xpos/manifest.webmanifest (no-store). The plugin's own
+			// manifest sat at a fixed /assets name and put bare icon names in the precache, which
+			// resolved to /xpos/<name>: the logged-in till page.
+			manifest: false,
+			includeManifestIcons: false,
 			devOptions: {
 				enabled: false,
 			},

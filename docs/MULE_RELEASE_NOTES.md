@@ -1,5 +1,37 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc32 (unreleased)
+
+### No fixed-name file under /assets, and no logged-in page in the precache (MuleCity-68mo, staging audit 2026-10-02)
+
+- **The precache held the logged-in till page as "icons".** vite-plugin-pwa
+  added `pwa-192x192.svg`, `pwa-512x512.svg`, `apple-touch-icon.svg` and
+  `manifest.webmanifest` to the precache as bare names. `modifyURLPrefix` only
+  rewrites glob entries, so these resolved against `/xpos/sw.js` to
+  `/xpos/<name>`. Frappe answers any `/xpos/<path>` with the till page, so on
+  staging (mc31) the precache stored that page, with its CSRF token, three
+  times. Removed: the plugin no longer writes the manifest or adds icons
+  (`manifest: false`, `includeManifestIcons: false`). Workbox deletes
+  precache entries a new build does not list, so a till sheds them on its
+  first online load of mc32.
+- **One manifest, at a no-store URL.** The page linked `./manifest.webmanifest`
+  (from `/xpos` that is `/manifest.webmanifest`, a 404) and the plugin's
+  `/assets/xpos/xpos/manifest.webmanifest`, a fixed name cached for a year.
+  The page now links only `/xpos/manifest.webmanifest`, which `xpos/pwa.py`
+  serves with `no-store`. `scripts/webManifest.ts` writes it.
+- **Icons are content-named.** The PWA icons moved from `public/` to
+  `src/assets/pwa/` and build as `assets/pwa-192x192-<hash>.svg`. The manifest
+  links them by absolute URL, and `apple-touch-icon` too. The duplicate
+  `public/xpos-logo-*.svg` copies are gone; the favicon was already hashed.
+  The build's top level now holds only `index.html`, `sw.js`,
+  `manifest.webmanifest` and `offline-shell-<hash>.html`.
+- **Build check.** `yarn build` ends with `scripts/checkAssetNames.mjs`. It
+  fails the build when the page or shell references a fixed-name or relative
+  URL, when a precache entry is not an absolute content-named URL under
+  `/assets/xpos/xpos/`, when a manifest icon is not, or when a new
+  fixed-name file appears at the top level. `tests/assetNames.spec.ts` runs
+  it against mc31's real build (fixture), which it rejects.
+
 ## mule-v2.10.1-mc31 (unreleased)
 
 ### Offline starts run this build's code, and a page the server sent keeps the till (MuleCity-q8aq, mc30 staging walk 2026-10-02)
