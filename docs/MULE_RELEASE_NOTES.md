@@ -82,7 +82,10 @@ Profiles' default customers only and adding an address is refused.
   miles. Online `xpos.api.customers.add_delivery_address` (thin wrapper on the
   site hook) makes a Shipping Address of the customer, or returns the one with the
   same lines, looks up Google's miles and answers with the cached address shape,
-  `address_display`, `miles_pending` and a quote; when Google finds no miles the
+  `address_display`, `miles_pending`, `latitude`/`longitude` with
+  `geolocation_pending` (coordinates are None until MuleCity-gvxs adds the
+  Address fields; cached addresses carry them too, nothing geocodes) and a
+  quote; when Google finds no miles the
   form asks for typed miles (kept on the Address as `manual`, flagged for review)
   or the clerk types the charge. The new address goes on the customer's cached
   row at once.
