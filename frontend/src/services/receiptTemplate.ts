@@ -34,6 +34,47 @@ function fmtTime(time: string): string {
 	return `${String(hour).padStart(2, "0")}:${minute} ${period}`;
 }
 
+/**
+ * The delivery's miles as the Mule City Ticket prints them (mulecity_erpnext
+ * print_delivery.miles_label): "12 mi", "12 mi, typed" when the clerk typed them,
+ * or "miles not known".
+ */
+export function deliveryMilesLabel(miles: number | null | undefined, source?: string | null): string {
+	const value = Number(miles) || 0;
+	if (!value) return "miles not known";
+	const label = `${Number(value.toPrecision(6))} mi`;
+	return source === "manual" ? `${label}, typed` : label;
+}
+
+/**
+ * The delivery day in the prints' long style, "Monday, October 5, 2026"
+ * (print_delivery.day_label). Read as a local date: `new Date("2026-10-05")` is
+ * UTC midnight, the day before in US time zones.
+ */
+export function deliveryDayLabel(date: string | null | undefined): string {
+	const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ""));
+	if (!match) return "";
+	const day = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+	return day.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
+
+/**
+ * The Delivery section, worded like the Mule City Ticket's (MuleCity-qajl.5) so an
+ * offline print matches the online one. The DEL line still prints with the items;
+ * a pickup sale (no delivery on the snapshot) prints no section.
+ */
+function deliverySectionHtml(delivery: ReceiptSnapshot["delivery"]): string {
+	if (!delivery) return "";
+	const address = delivery.address ? esc(delivery.address) : "Address not recorded";
+	return `<div class="customer-section delivery-section">
+        <div class="meta-row"><span class="meta-label">Delivery</span></div>
+        <div>${address}</div>
+        <div>Miles: <strong>${esc(deliveryMilesLabel(delivery.miles, delivery.miles_source))}</strong> &middot; Day: <strong>${esc(
+			deliveryDayLabel(delivery.date) || "not set",
+		)}</strong></div>
+    </div>`;
+}
+
 export function buildReceiptHtml(snapshot: ReceiptSnapshot, ctx: ReceiptContext): string {
 	const currency = ctx.currency;
 	const money = (amount: number) => fmtMoney(amount, currency);
@@ -239,6 +280,7 @@ export function buildReceiptHtml(snapshot: ReceiptSnapshot, ctx: ReceiptContext)
     </div>`
 			: ""
 	}
+    ${deliverySectionHtml(snapshot.delivery)}
 
     <hr class="div-solid">
 
@@ -277,7 +319,7 @@ export function buildReceiptHtml(snapshot: ReceiptSnapshot, ctx: ReceiptContext)
     ${
 		snapshot.notes
 			? `<hr class="div-dashed">
-    <div style="font-size:9px;color:#000;padding:2px 0;"><strong>Notes:</strong> ${esc(snapshot.notes)}</div>`
+    <div style="font-size:9px;color:#000;padding:2px 0;"><strong>Notes:</strong> ${esc(snapshot.notes).replace(/\n/g, "<br>")}</div>`
 			: ""
 	}
 

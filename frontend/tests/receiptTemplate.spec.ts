@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
-import { buildReceiptHtml } from "@/services/receiptTemplate";
+import { buildReceiptHtml, deliveryDayLabel, deliveryMilesLabel } from "@/services/receiptTemplate";
 import { resetCurrencyCache } from "@/composables/useCurrency";
 import type { ReceiptContext, ReceiptSnapshot } from "@/types/pos.types";
 
@@ -222,5 +222,94 @@ describe("the tax line", () => {
 		);
 		expect(html).toContain("Sales Tax 7%");
 		expect(html).not.toContain("Captured tax 0%");
+	});
+});
+
+/**
+ * Bill (2026-10-01, MuleCity-qajl.5): "delivery should both be a line item on the
+ * printed receipt, but also a section on the receipt." The offline receipt prints
+ * the same Delivery section as the Mule City Ticket: the address, the miles used
+ * at sale time ("miles not known" when none) and the day in the prints' long style.
+ */
+describe("the Delivery section", () => {
+	const delLine = {
+		item_code: "DEL",
+		item_name: "Delivery",
+		qty: 1,
+		rate: 25,
+		amount: 25,
+	};
+	const delivery = {
+		address_name: "Smith Farm-Shipping",
+		address: "1202 N Wall St, Benson, NC 27504",
+		miles: 12,
+		miles_source: "address" as const,
+		date: "2026-10-05",
+	};
+	const section = (html: string) => html.match(/<div class="customer-section delivery-section">[\s\S]*?<\/div>\s*<\/div>/)?.[0] || "";
+
+	it("prints the address, the miles and the day, and keeps the DEL line", () => {
+		const html = buildReceiptHtml({ ...snapshot, items: [...snapshot.items, delLine], delivery }, context);
+		const text = section(html);
+		expect(text).toContain("Delivery");
+		expect(text).toContain("1202 N Wall St, Benson, NC 27504");
+		expect(text).toContain("Miles: <strong>12 mi</strong>");
+		expect(text).toContain("Day: <strong>Monday, October 5, 2026</strong>");
+		// The DEL item line still prints with the items, after the section.
+		expect(html.indexOf("delivery-section")).toBeLessThan(html.indexOf("items-header"));
+		expect(html.slice(html.indexOf("items-header"))).toContain(">Delivery</div>");
+	});
+
+	it("says 'miles not known' when the address has no miles, and marks typed miles", () => {
+		expect(section(buildReceiptHtml({ ...snapshot, delivery: { ...delivery, miles: null, miles_source: null } }, context))).toContain(
+			"Miles: <strong>miles not known</strong>",
+		);
+		expect(section(buildReceiptHtml({ ...snapshot, delivery: { ...delivery, miles: 7.5, miles_source: "manual" } }, context))).toContain(
+			"Miles: <strong>7.5 mi, typed</strong>",
+		);
+	});
+
+	it("prints no section for a pickup sale", () => {
+		const html = buildReceiptHtml({ ...snapshot, delivery: undefined }, context);
+		expect(html).not.toContain("delivery-section");
+		expect(html).not.toContain("Miles:");
+	});
+
+	it("escapes the address, and says so when none was recorded", () => {
+		expect(section(buildReceiptHtml({ ...snapshot, delivery: { ...delivery, address: "<b>Barn</b>" } }, context))).toContain(
+			"&lt;b&gt;Barn&lt;/b&gt;",
+		);
+		expect(section(buildReceiptHtml({ ...snapshot, delivery: { ...delivery, address: "" } }, context))).toContain(
+			"Address not recorded",
+		);
+	});
+
+	it("reads the day as a local date, like the ticket's day_label", () => {
+		expect(deliveryDayLabel("2026-10-05")).toBe("Monday, October 5, 2026");
+		expect(deliveryDayLabel("2026-01-01")).toBe("Thursday, January 1, 2026");
+		expect(deliveryDayLabel("")).toBe("");
+		expect(deliveryMilesLabel(12)).toBe("12 mi");
+		expect(deliveryMilesLabel(0)).toBe("miles not known");
+	});
+});
+
+/**
+ * Bill (2026-10-01, MuleCity-qajl.7): "we should be able to add notes to sales,
+ * orders, and returns as well." The note prints on the offline receipt for a sale
+ * and a return; an empty note prints nothing.
+ */
+describe("the note", () => {
+	it("prints on a sale and on a return, line breaks kept", () => {
+		expect(buildReceiptHtml({ ...snapshot, notes: "Call Steve first" }, context)).toContain(
+			"<strong>Notes:</strong> Call Steve first",
+		);
+		const html = buildReceiptHtml({ ...snapshot, is_return: true, change: 0, notes: "Torn bag\nrefund cash" }, context);
+		expect(html).toContain("RETURN / REFUND");
+		expect(html).toContain("<strong>Notes:</strong> Torn bag<br>refund cash");
+	});
+
+	it("prints nothing for an empty note", () => {
+		expect(buildReceiptHtml({ ...snapshot, notes: undefined }, context)).not.toContain("Notes:");
+		expect(buildReceiptHtml({ ...snapshot, notes: "" }, context)).not.toContain("Notes:");
 	});
 });
