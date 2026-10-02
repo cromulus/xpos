@@ -3,6 +3,13 @@ from frappe.sessions import get, get_csrf_token
 
 from xpos.constants import RTL_LANGUAGES
 
+# The page embeds the session's boot and CSRF token, so it must never go into Frappe's website
+# page cache (keyed by path, shared by every visitor): a cached copy would hand one user's boot
+# and token to everyone, and a cached logged-out copy breaks login with CSRFTokenError.
+no_cache = 1
+# An app shell behind a login has no place in sitemap.xml.
+sitemap = 0
+
 
 def get_context(context):
 	context.boot = get()
