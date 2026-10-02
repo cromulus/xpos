@@ -52,6 +52,7 @@ import {
 	type DiscountKind,
 } from "@/utils/discountCap";
 import { lineDiscountFromPerUnit, perUnitDiscount } from "@/utils/lineDiscount";
+import { roundTo } from "@/utils/numberFormat";
 import {
 	TYPED_OFFLINE,
 	isLocalAddress,
@@ -309,7 +310,7 @@ export const useCartStore = defineStore("cart", () => {
 	/** The additional discount taken off the net before tax ("Net Total"), else 0. */
 	const netTotalDiscount = computed(() => {
 		if (applyDiscountOn.value !== "Net Total") return 0;
-		if (discountPercentage.value > 0) return Math.round(subtotal.value * discountPercentage.value) / 100;
+		if (discountPercentage.value > 0) return money((subtotal.value * discountPercentage.value) / 100);
 		return discountAmount.value > 0 ? discountAmount.value : 0;
 	});
 	const isPricingCart = ref(false);
@@ -367,17 +368,30 @@ export const useCartStore = defineStore("cart", () => {
 		items.value.reduce((sum: number, item: CartItem) => sum + Math.abs(item.qty), 0),
 	);
 
+	/**
+	 * Money to the cent as ERPNext rounds it on this site (System Settings
+	 * "Commercial Rounding": half away from zero). JS ``Math.round`` rounds
+	 * half toward +infinity, so a return's -$0.405 tax came to -$0.40 while
+	 * the invoice posted -$0.41 and the refund left -$0.01 owing (MuleCity-2un7).
+	 */
+	function money(value: number): number {
+		return roundTo(value, 2) || 0;
+	}
+
+	/** A line's net as the invoice posts it: qty × rate less its discount, to the cent. */
+	function lineNet(item: CartItem): number {
+		const itemTotal = item.qty * item.rate;
+		let discount = 0;
+		if (item.discount_percentage) {
+			discount = (itemTotal * item.discount_percentage) / 100;
+		} else if (item.discount_amount) {
+			discount = item.qty < 0 ? -item.discount_amount : item.discount_amount;
+		}
+		return money(itemTotal - discount);
+	}
+
 	const subtotal = computed(() =>
-		items.value.reduce((sum: number, item: CartItem) => {
-			const itemTotal = item.qty * item.rate;
-			let discount = 0;
-			if (item.discount_percentage) {
-				discount = (itemTotal * item.discount_percentage) / 100;
-			} else if (item.discount_amount) {
-				discount = item.qty < 0 ? -item.discount_amount : item.discount_amount;
-			}
-			return sum + (itemTotal - discount);
-		}, 0),
+		items.value.reduce((sum: number, item: CartItem) => sum + lineNet(item), 0),
 	);
 
 	const calculatedTaxes = computed(() => {
@@ -387,17 +401,7 @@ export const useCartStore = defineStore("cart", () => {
 
 		const itemNets: { net: number; taxMap: Record<string, number> | undefined }[] = [];
 		for (const item of items.value) {
-			const itemTotal = item.qty * item.rate;
-			let discount = 0;
-			if (item.discount_percentage) {
-				discount = (itemTotal * item.discount_percentage) / 100;
-			} else if (item.discount_amount) {
-				discount = item.qty < 0 ? -item.discount_amount : item.discount_amount;
-			}
-			itemNets.push({
-				net: itemTotal - discount,
-				taxMap: item.item_tax_map,
-			});
+			itemNets.push({ net: lineNet(item), taxMap: item.item_tax_map });
 		}
 
 		if (itemNets.length === 0) return [];
@@ -411,7 +415,7 @@ export const useCartStore = defineStore("cart", () => {
 				const share =
 					i === itemNets.length - 1
 						? remaining
-						: Math.round((discount * line.net * 100) / subtotal.value) / 100;
+						: money((discount * line.net) / subtotal.value);
 				line.net -= share;
 				remaining -= share;
 			});
@@ -446,7 +450,7 @@ export const useCartStore = defineStore("cart", () => {
 				result.push({
 					description: tax.description || "Tax",
 					rate: tax.rate,
-					amount: Math.round(totalTaxAmount * 100) / 100,
+					amount: money(totalTaxAmount),
 					included_in_print_rate: isIncluded,
 				});
 			}
@@ -470,7 +474,7 @@ export const useCartStore = defineStore("cart", () => {
 				result.push({
 					description: desc,
 					rate: 0,
-					amount: Math.round(amount * 100) / 100,
+					amount: money(amount),
 					included_in_print_rate: false,
 				});
 			}
@@ -539,9 +543,9 @@ export const useCartStore = defineStore("cart", () => {
 		if (!isReturnMode.value && selectedDeliveryCharge.value) {
 			total += selectedDeliveryCharge.value.rate || 0;
 		}
-		total = isReturnMode.value ? total : Math.max(0, total);
+		total = isReturnMode.value ? money(total) : Math.max(0, money(total));
 		if (!posStore.disableRoundedTotal && total !== 0) {
-			total = Math.round(total);
+			total = roundTo(total, 0) || 0;
 		}
 		return total;
 	});
@@ -1735,11 +1739,7 @@ export const useCartStore = defineStore("cart", () => {
 		return items.value.reduce((sum: number, item: CartItem) => {
 			const quoted = item.uid ? quotedLineAmounts.value.get(item.uid) : undefined;
 			if (quoted !== undefined) return sum + quoted;
-			const itemTotal = item.qty * item.rate;
-			let discount = 0;
-			if (item.discount_percentage) discount = (itemTotal * item.discount_percentage) / 100;
-			else if (item.discount_amount) discount = item.qty < 0 ? -item.discount_amount : item.discount_amount;
-			return sum + (itemTotal - discount);
+			return sum + lineNet(item);
 		}, 0);
 	});
 
@@ -2271,10 +2271,10 @@ export const useCartStore = defineStore("cart", () => {
 				item_name: item.local_item_name || item.item_name,
 				qty: item.qty,
 				rate: item.rate,
-				amount: Math.round(gross * 100) / 100,
+				amount: money(gross),
 				uom: item.uom || item.stock_uom,
 				discount_percentage: item.discount_percentage,
-				discount_amount: Math.round(discount * 100) / 100,
+				discount_amount: money(discount),
 				price_list_rate: item.rate,
 				serial_no: item.serial_no,
 				batch_no: item.batch_no,
@@ -2283,7 +2283,7 @@ export const useCartStore = defineStore("cart", () => {
 		});
 
 		const itemDiscountTotal = snapshotItems.reduce((sum, it) => sum + (it.discount_amount || 0), 0);
-		const totalDiscount = Math.round((itemDiscountTotal + (discountAmount.value || 0)) * 100) / 100;
+		const totalDiscount = money(itemDiscountTotal + (discountAmount.value || 0));
 		const totalQty = items.value.reduce((sum: number, item: CartItem) => sum + item.qty, 0);
 		const paid = totalPayments.value;
 		const change = paid - grandTotal.value;
@@ -2316,9 +2316,9 @@ export const useCartStore = defineStore("cart", () => {
 							}
 						: {}),
 				})),
-			subtotal: Math.round(subtotal.value * 100) / 100,
+			subtotal: money(subtotal.value),
 			total_discount: totalDiscount,
-			net_total: Math.round((subtotal.value + includedTaxAmount.value) * 100) / 100,
+			net_total: money(subtotal.value + includedTaxAmount.value),
 			grand_total: grandTotal.value,
 			total_qty: totalQty,
 			change: change > 0.01 && !isReturnMode.value ? Math.round(change * 100) / 100 : 0,
