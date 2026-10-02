@@ -727,6 +727,31 @@ class TestCloseSheetByCashier(unittest.TestCase):
 		self.assertEqual(shifts.shift_totals_by_cashier([]), [])
 
 
+class TestCloseTaxBreakdown(unittest.TestCase):
+	"""User story (50i proof 2026-10-02, MuleCity-uimf): a shift with taxed and
+	tax-exempt sales listed "NC Sales Tax Payable" twice on the close, once at
+	0.00 from the 0% exempt/resale template rows. The close shows each tax
+	account once, with what it collected."""
+
+	ACCOUNT = "NC Sales Tax Payable - MCSF"
+
+	@patch("xpos.api.shifts.frappe")
+	def test_a_zero_rate_row_on_the_same_account_is_not_listed(self, mock_frappe):
+		mock_frappe.get_all.return_value = [
+			{"account_head": self.ACCOUNT, "rate": 0.0, "amount": 0.0},
+			{"account_head": self.ACCOUNT, "rate": 6.75, "amount": 0.62},
+		]
+		summary = shifts._get_shift_tax_summary([{"name": "SINV-1"}, {"name": "SINV-2"}])
+		self.assertEqual(summary, [{"account_head": self.ACCOUNT, "rate": 6.75, "amount": 0.62}])
+
+	@patch("xpos.api.shifts.frappe")
+	def test_negative_a_returned_tax_still_shows(self, mock_frappe):
+		"""Only rows totalling nothing go: a shift of returns shows its negative tax."""
+		mock_frappe.get_all.return_value = [{"account_head": self.ACCOUNT, "rate": 6.75, "amount": -0.07}]
+		summary = shifts._get_shift_tax_summary([{"name": "SINV-RET-1"}])
+		self.assertEqual(summary, [{"account_head": self.ACCOUNT, "rate": 6.75, "amount": -0.07}])
+
+
 class TestTillPaymentsInTheShift(unittest.TestCase):
 	"""User story (MuleCity-49ue, mc24 walk 2026-10-02): Leslie (LE on the shared counter login)
 	takes $40 cash for a custom mix order paid now. That is an advance Payment Entry, not an

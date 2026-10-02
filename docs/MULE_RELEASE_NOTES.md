@@ -1,5 +1,18 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc34 (unreleased)
+
+### Close Shift lists each tax account once (MuleCity-uimf, 50i proof 2026-10-02)
+
+- **No 0.00 tax row on the close.** A shift with taxed and tax-exempt or
+  resale sales listed "NC Sales Tax Payable" twice in the Close Shift tax
+  breakdown: 0.00 from the 0% Tax Exempt / Resale template rows, and the real
+  total. `_get_shift_tax_summary` (used by `get_shift_summary` and the saved
+  POS Closing Shift's `taxes`) now leaves out any account/rate row that totals
+  0.00. Rows of one account at different nonzero rates still stay apart, as
+  ERPNext's own closing keeps them; a negative total (returns) still shows.
+- **Tests.** Python `test_shifts.TestCloseTaxBreakdown`.
+
 ## mule-v2.10.1-mc33 (unreleased)
 
 ### Walk-in cash sales offline (MuleCity-yn4b, mc31 staging check 2026-10-02)

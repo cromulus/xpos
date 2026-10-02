@@ -764,7 +764,11 @@ def _get_shift_tax_summary(invoices: list, doctype: str = "Sales Invoice") -> li
 		order_by="account_head",
 	)
 
-	return taxes
+	# A 0% template row (tax exempt, resale) posts to the same account as the
+	# taxed sales, so the close listed that account twice, once at 0.00
+	# (MuleCity-uimf). A row that totals nothing is not shown. Rows of one
+	# account at different nonzero rates stay apart, as ERPNext's closing keeps them.
+	return [tax for tax in taxes if flt(tax.get("amount"), 2)]
 
 
 @frappe.whitelist()
