@@ -11,11 +11,28 @@
 export const ASSET_PREFIX = "/assets/xpos/xpos/";
 
 /**
- * The static app shell: the built index.html with no boot and no CSRF token (vite.config.ts,
- * offlineShellPlugin). Precached; served only for an /xpos navigation the network could not answer.
+ * The static app shell: the built index.html with no boot and no CSRF token (scripts/
+ * offlineShell.ts), named after its content, offline-shell-<hash>.html. Precached; served only
+ * for an /xpos navigation the network could not answer.
+ *
+ * Content-named because Frappe serves /assets with max-age one year and Cloudflare keeps it:
+ * workbox precaches from the plain URL (its revision is only in the cache key), so mc30's fixed
+ * name offline-shell.html came back from Cloudflare as mc29's shell, which ran mc29's code offline
+ * (MuleCity-q8aq, mc30 staging walk). A new build has a new name, which no cache has seen.
  */
-export const OFFLINE_SHELL_FILE = "offline-shell.html";
-export const OFFLINE_SHELL_URL = `${ASSET_PREFIX}${OFFLINE_SHELL_FILE}`;
+export const OFFLINE_SHELL_PREFIX = "offline-shell-";
+export const OFFLINE_SHELL_PATTERN = /\/offline-shell-[0-9a-f]{12}\.html$/;
+/** The glob the build precaches the shell by. */
+export const OFFLINE_SHELL_GLOB = "offline-shell-*.html";
+
+export function offlineShellFile(hash: string): string {
+	return `${OFFLINE_SHELL_PREFIX}${hash}.html`;
+}
+
+/** The shell's URL in a precache manifest, or undefined. */
+export function offlineShellUrl(manifest: ReadonlyArray<string | { url: string }>): string | undefined {
+	return manifest.map((entry) => (typeof entry === "string" ? entry : entry.url)).find((url) => OFFLINE_SHELL_PATTERN.test(url));
+}
 
 /** The till's own pages (/xpos, /xpos/, /xpos/orders, ...): never Desk or any other route. */
 export const NAVIGATION_ALLOWLIST: RegExp[] = [/^\/xpos(?:\/.*)?$/];

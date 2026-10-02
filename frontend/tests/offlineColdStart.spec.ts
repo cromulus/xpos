@@ -60,8 +60,20 @@ describe("an offline cold start from the app shell", () => {
 		expect(await useAuthStore().checkAuth()).toBe(true);
 	});
 
-	it("never resumes from a saved boot in a page the server rendered", async () => {
+	it("carries on offline in a page the server rendered while the browser was offline (mc30 walk, /xpos/)", async () => {
+		// The browser was offline, but its worker still reached the server: the page has its own
+		// boot and token, and the app's calls fail. Before mc31 this ended on the login.
 		(window as any).xpos = { boot: { user: { name: "pos@mulecity.com" } }, csrf_token: "t" };
-		expect(await useAuthStore().checkAuth()).toBe(false);
+		const auth = useAuthStore();
+		expect(await auth.checkAuth()).toBe(true);
+		expect(auth.isOfflineAuth).toBe(true);
+		expect(auth.userName).toBe("pos@mulecity.com");
+	});
+
+	it("does not sign in a Guest page, and keeps the offline notice for the shell only", async () => {
+		(window as any).xpos = { boot: { user: { name: "Guest" } }, csrf_token: "" };
+		const auth = useAuthStore();
+		expect(await auth.checkAuth()).toBe(false);
+		expect(auth.notice).toBe("");
 	});
 });

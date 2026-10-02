@@ -1,5 +1,35 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc31 (unreleased)
+
+### Offline starts run this build's code, and a page the server sent keeps the till (MuleCity-q8aq, mc30 staging walk 2026-10-02)
+
+- **The app shell is named after its content: `offline-shell-<hash>.html`.**
+  On staging, mc30's worker precached `/assets/xpos/xpos/offline-shell.html`,
+  and Cloudflare answered with mc29's shell (`cf-cache-status: HIT`; Frappe
+  serves `/assets` with `max-age=31536000`). Workbox fetches the plain URL and
+  keeps its revision only in the cache key, so a cached older file goes into
+  the precache. Offline, the till then started on mc29's code. That code
+  registered the old `/xpos/` worker and showed the old "No profiles found",
+  which is why mc30's offline message never appeared. Every build now has a
+  new shell URL that no cache has seen. The worker finds it in its precache
+  manifest. No infra change: `/assets` keeps its year-long cache, which is
+  right for content-named files.
+- **The browser offline while the worker still reaches the server.** A
+  page's offline switch does not always reach its service worker. Chromium's
+  emulation (ATC's walk) shows this, and a laptop whose Wi-Fi drops mid-request
+  can see it too. The worker then passes the server's page through, with its
+  own boot and token, and every call from the page fails. The till now carries
+  on offline as that page's user instead of showing the login, and fetches a
+  fresh boot and token before its first write, as from the shell.
+- **Tests.** The bench story `offline-cold-start.cy.ts` now runs behind a
+  stand-in for that cache: the fixed shell URL answers with an earlier
+  build's shell. It adds a case where the page is offline but the worker is
+  not. Locally, ATC's Playwright method (fresh context, one online load of
+  `/xpos`, `setOffline`, new tabs at `/xpos/` and `/xpos`) gets the earlier
+  build's shell and the login on mc30, and the till or the offline message
+  on mc31.
+
 ## mule-v2.10.1-mc30 (unreleased)
 
 ### The till starts offline from /xpos, the bookmark (MuleCity-q8aq, mc29 staging walk 2026-10-02)

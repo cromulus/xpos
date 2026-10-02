@@ -17,6 +17,14 @@
  * Before mc30, /xpos and /xpos/ failed with "No internet": the worker's scope was /xpos/, and
  * Frappe's /xpos/ redirects to /xpos, outside it.
  *
+ * Two things from the mc30 staging walk (real Chromium, new tab) are reproduced here:
+ * - Cloudflare keeps /assets for a year, and handed the worker an older build's shell for the
+ *   fixed URL offline-shell.html, so the till started offline on old code. Every story here runs
+ *   behind such a cache: the fixed URL answers with a shell from "an earlier build".
+ * - The browser offline while its service worker still reaches the server (Chromium's offline
+ *   switch for a page does not cover its worker): the worker returns the server's page, whose
+ *   calls then fail. It must carry on as the till, not drop to the login.
+ *
  * Runs against a real bench (tests/e2e/bench/README.md).
  */
 import {
@@ -35,9 +43,18 @@ import {
 
 const ENTRIES = ["/xpos", "/xpos/"];
 
+/** What a year-long CDN cache hands back for the fixed shell URL: an earlier build's shell. */
+const STALE_SHELL =
+	"<!doctype html><html><body><script>window.xpos = { offlineShell: true, staleShell: true };</script>" +
+	"<p>X POS shell from an earlier build</p></body></html>";
+
 /** First run of X POS in this browser, online, at `entry`; waits for the worker and the warm-up. */
 function firstRunOnline(entry: string) {
 	freshBrowser();
+	cy.intercept({ method: "GET", pathname: "/assets/xpos/xpos/offline-shell.html" }, {
+		body: STALE_SHELL,
+		headers: { "content-type": "text/html", "cache-control": "max-age=31536000", "cf-cache-status": "HIT" },
+	});
 	cy.visit(entry);
 	cy.window().then((win) => win.navigator.serviceWorker.ready).its("active").should("not.equal", null);
 	cy.window().then((win) => win.navigator.serviceWorker.getRegistrations()).should((registrations) => {
@@ -53,13 +70,21 @@ function bootSaved() {
 	});
 }
 
-/** Open the till as a new page (a fresh document, not a reload) while offline. */
-function coldStart(entry: string) {
+/**
+ * Open the till as a new page (a fresh document, not a reload) while offline. `shell`: whether
+ * the worker had to answer from its precached shell (server out of reach) or passed the server's
+ * page through (browser offline, worker still reaching the server).
+ */
+function coldStart(entry: string, shell = true) {
 	cy.window().then((win) => win.location.assign(entry));
-	cy.window().its("xpos.offlineShell", { timeout: 30000 }).should("equal", true);
+	cy.window().its("xpos.boot.user.name", { timeout: 30000 }).should("be.a", "string");
 	cy.window().should((win) => {
-		expect(till(win).csrf_token, "no token in an offline-started page").to.equal(undefined);
-		expect(till(win).boot?.user?.name, "the boot saved at the online start").to.be.a("string");
+		const globals = till(win) as ReturnType<typeof till> & { staleShell?: boolean };
+		expect(globals.staleShell, "not an earlier build's shell").to.equal(undefined);
+		if (shell) {
+			expect(globals.offlineShell, "started from the app shell").to.equal(true);
+			expect(globals.csrf_token, "no token in an offline-started page").to.equal(undefined);
+		}
 	});
 	cy.location("pathname").should("not.equal", "/xpos/login");
 }
@@ -86,6 +111,33 @@ describe("starting the till while the store's internet is down", () => {
 				internetDown(server);
 				coldStart(entry);
 				cy.contains(item(), { timeout: 30000 }).should("exist");
+
+				ringUpOneBag("Cash");
+				cy.pendingInvoices().should((rows) => {
+					expect(rows.map((r) => r.status)).to.deep.equal(["pending"]);
+				});
+
+				internetBackAndSynced(server);
+				customerInvoices().then((after: Array<{ name: string }>) => {
+					expect(after.filter((i) => !known.has(i.name)), "the offline sale posted").to.have.length(1);
+				});
+			});
+		});
+
+		it(`opens ${entry} as the till when the browser is offline but its worker still reaches the server`, () => {
+			const server = interceptServer();
+			customerInvoices().then((before: Array<{ name: string }>) => {
+				const known = new Set(before.map((i) => i.name));
+
+				firstRunOnline(entry);
+				cy.contains(item(), { timeout: 30000 }).should("exist");
+				cy.wait(3000);
+
+				// The page's network only: the worker's fetch of the page still succeeds.
+				cy.networkOff();
+				coldStart(entry, false);
+				cy.contains(item(), { timeout: 30000 }).should("exist");
+				cy.contains("Sign in").should("not.exist");
 
 				ringUpOneBag("Cash");
 				cy.pendingInvoices().should((rows) => {

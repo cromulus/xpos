@@ -4,7 +4,7 @@ import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 import { fileURLToPath } from "url";
 import { offlineShellPlugin } from "./scripts/offlineShell";
-import { ASSET_PREFIX, OFFLINE_SHELL_FILE } from "./sw/policy";
+import { ASSET_PREFIX, OFFLINE_SHELL_GLOB } from "./sw/policy";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,9 +77,9 @@ export default defineConfig({
 			filename: "sw.ts",
 			injectManifest: {
 				rollupFormat: "iife",
-				// offline-shell.html (no boot, no CSRF) is precached; index.html, the template
+				// offline-shell-<hash>.html (no boot, no CSRF) is precached; index.html, the template
 				// Frappe fills with the session's boot and token, never is.
-				globPatterns: ["**/*.{js,css,svg,png,ico,woff,woff2,ttf,eot}", OFFLINE_SHELL_FILE],
+				globPatterns: ["**/*.{js,css,svg,png,ico,woff,woff2,ttf,eot}", OFFLINE_SHELL_GLOB],
 				globIgnores: ["**/index.html"],
 				modifyURLPrefix: { "": ASSET_PREFIX },
 				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB

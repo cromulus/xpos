@@ -8,8 +8,9 @@
  * network could not answer; the page then starts from the last boot saved on the device
  * (src/services/sessionBoot.ts).
  */
+import { createHash } from "crypto";
 import type { Plugin } from "vite";
-import { OFFLINE_SHELL_FILE } from "../sw/policy";
+import { offlineShellFile } from "../sw/policy";
 
 const BOOT_SCRIPT = /<script>\s*window\.xpos = window\.xpos \|\| \{\};\s*window\.xpos\.boot = \{\{ boot \| json \}\};[\s\S]*?<\/script>/;
 
@@ -38,7 +39,7 @@ export function toOfflineShell(indexHtml: string): string {
 	return html;
 }
 
-/** Emit offline-shell.html next to index.html, for the service worker to precache. */
+/** Emit offline-shell-<content hash>.html next to index.html, for the service worker to precache. */
 export function offlineShellPlugin(): Plugin {
 	return {
 		name: "xpos-offline-shell",
@@ -49,11 +50,9 @@ export function offlineShellPlugin(): Plugin {
 			if (!index || index.type !== "asset") {
 				this.error("offline shell: index.html is not in the bundle");
 			}
-			this.emitFile({
-				type: "asset",
-				fileName: OFFLINE_SHELL_FILE,
-				source: toOfflineShell(String(index.source)),
-			});
+			const shell = toOfflineShell(String(index.source));
+			const hash = createHash("sha256").update(shell).digest("hex").slice(0, 12);
+			this.emitFile({ type: "asset", fileName: offlineShellFile(hash), source: shell });
 		},
 	};
 }

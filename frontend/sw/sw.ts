@@ -25,7 +25,7 @@ import {
 	ASSETS_CACHE,
 	FILES_CACHE,
 	NAVIGATION_ALLOWLIST,
-	OFFLINE_SHELL_URL,
+	offlineShellUrl,
 	RETIRED_CACHES,
 	isAsset,
 	isCacheableApiGet,
@@ -38,7 +38,9 @@ self.addEventListener("message", (event) => {
 	if (event.data && event.data.type === "SKIP_WAITING") void self.skipWaiting();
 });
 
-precacheAndRoute(self.__WB_MANIFEST);
+const manifest = self.__WB_MANIFEST;
+const OFFLINE_SHELL_URL = offlineShellUrl(manifest);
+precacheAndRoute(manifest);
 cleanupOutdatedCaches();
 
 self.addEventListener("activate", (event) => {
@@ -51,7 +53,7 @@ registerRoute(
 			try {
 				return await fetch(request);
 			} catch (error) {
-				const shell = await matchPrecache(OFFLINE_SHELL_URL);
+				const shell = OFFLINE_SHELL_URL ? await matchPrecache(OFFLINE_SHELL_URL) : undefined;
 				if (shell) return shell;
 				throw error;
 			}

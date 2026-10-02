@@ -92,21 +92,25 @@ export const useAuthStore = defineStore("auth", () => {
 	}
 
 	/**
-	 * Started from the app shell with the network down (MuleCity-q8aq): carry on as the user of
-	 * the boot saved at the last online start, offline. The first write after reconnecting asks the
-	 * server for a fresh boot and token (services/sessionBoot.ts); an expired session then shows
-	 * the login, with the offline queue kept.
+	 * The server cannot be asked who is logged in (offline, or out of reach), but the page has a
+	 * boot (MuleCity-q8aq): carry on offline as that boot's user. From the app shell that is the
+	 * boot saved at the last online start; from a server-rendered page it is the page's own boot
+	 * (the page loaded, then the network went, or the browser was already offline while its
+	 * service worker still reached the server). The first write after reconnecting asks the server
+	 * for a fresh boot and token (services/sessionBoot.ts); an expired session then shows the
+	 * login, with the offline queue kept.
 	 */
 	function resumeFromSavedBoot(err: unknown): boolean {
-		if (isElectron() || !startedFromShell()) return false;
+		if (isElectron()) return false;
 		if (isOnline() && !isNetworkError(err)) return false;
 		const boot = window.xpos?.boot as Record<string, any> | undefined;
 		const name = bootUser(boot);
 		if (!name) {
 			// Nothing to resume: say why the login cannot help right now.
-			notice.value = OFFLINE_NO_SESSION;
+			if (startedFromShell()) notice.value = OFFLINE_NO_SESSION;
 			return false;
 		}
+		markSessionStale();
 		const info = (boot?.user_info?.[name] || {}) as Record<string, string>;
 		isAuthenticated.value = true;
 		isOfflineAuth.value = true;

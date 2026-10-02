@@ -3,15 +3,16 @@
  * fall back to the static shell only when the network cannot be reached; no HTML is cached; GET
  * API answers are cached only from an allowlist (empty) that can never hold the session's token or
  * boot; assets and public files are cached, private files are not. The last block checks the built
- * sw.js and offline-shell.html when a build is present (`yarn build`; erp2's offline suite builds
+ * sw.js and offline-shell-<hash>.html when a build is present (`yarn build`; erp2's offline suite builds
  * first).
  */
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { resolve } from "path";
+import { createHash } from "crypto";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
 	API_GET_CACHE_ALLOWLIST,
-	OFFLINE_SHELL_URL,
+	OFFLINE_SHELL_PATTERN,
 	isCacheableApiGet,
 	isPublicFile,
 	isTillNavigation,
@@ -49,6 +50,7 @@ vi.mock("workbox-expiration", () => ({ ExpirationPlugin: class {} }));
 vi.mock("workbox-cacheable-response", () => ({ CacheableResponsePlugin: class {} }));
 
 const ORIGIN = "https://erp.mulecity.com";
+const SHELL_URL = "/assets/xpos/xpos/offline-shell-0123456789ab.html";
 const url = (path: string) => new URL(path, ORIGIN);
 
 describe("what the worker may serve and cache", () => {
@@ -85,7 +87,10 @@ describe("the worker (sw/sw.ts)", () => {
 	const shell = new Response("<html>shell</html>", { status: 200 });
 
 	beforeAll(async () => {
-		(self as any).__WB_MANIFEST = [];
+		(self as any).__WB_MANIFEST = [
+			{ url: "/assets/xpos/xpos/assets/index-abc.js", revision: null },
+			{ url: SHELL_URL, revision: null },
+		];
 		await import("../sw/sw");
 		navigation = routes[0].match as typeof navigation;
 	});
@@ -122,7 +127,7 @@ describe("the worker (sw/sw.ts)", () => {
 		matchPrecache.mockReset().mockResolvedValue(shell);
 
 		expect(await navigation.handler({ request: new Request(`${ORIGIN}/xpos/pos`) })).toBe(shell);
-		expect(matchPrecache).toHaveBeenCalledWith(OFFLINE_SHELL_URL);
+		expect(matchPrecache).toHaveBeenCalledWith(SHELL_URL);
 		vi.unstubAllGlobals();
 	});
 
@@ -157,16 +162,25 @@ describe("the app shell", () => {
 });
 
 const BUILD = resolve(__dirname, "../../xpos/public/xpos");
-const built = existsSync(resolve(BUILD, "sw.js")) && existsSync(resolve(BUILD, "offline-shell.html"));
+const shellFile = existsSync(BUILD) ? readdirSync(BUILD).find((name) => /^offline-shell-[0-9a-f]{12}\.html$/.test(name)) : undefined;
+const built = existsSync(resolve(BUILD, "sw.js")) && !!shellFile;
 if (!built) console.warn(`[offlineServiceWorker.spec] no build in ${BUILD}: run \`yarn build\` to check sw.js`);
 
-describe.skipIf(!built)("the built sw.js and offline-shell.html", () => {
+describe.skipIf(!built)("the built sw.js and offline shell", () => {
 	const sw = built ? readFileSync(resolve(BUILD, "sw.js"), "utf8") : "";
-	const shellHtml = built ? readFileSync(resolve(BUILD, "offline-shell.html"), "utf8") : "";
+	const shellHtml = built ? readFileSync(resolve(BUILD, shellFile!), "utf8") : "";
 	const precached = [...sw.matchAll(/["']?url["']?\s*:\s*["'`]([^"'`]+)["'`]/g)].map((m) => m[1]);
 
+	it("names the shell after its content, so no CDN or browser cache can hand back an older one", () => {
+		// mc30 precached a fixed offline-shell.html; Cloudflare (Frappe's /assets max-age is a year)
+		// returned mc29's shell, and the till started offline on mc29's code.
+		expect(existsSync(resolve(BUILD, "offline-shell.html")), "no fixed-name shell").toBe(false);
+		const hash = createHash("sha256").update(shellHtml).digest("hex").slice(0, 12);
+		expect(shellFile).toBe(`offline-shell-${hash}.html`);
+		expect(precached.filter((u) => OFFLINE_SHELL_PATTERN.test(u))).toEqual([`/assets/xpos/xpos/${shellFile}`]);
+	});
+
 	it("precaches the shell and never index.html", () => {
-		expect(precached).toContain(OFFLINE_SHELL_URL);
 		// (workbox's own code still names createHandlerBoundToURL; the worker no longer binds a route to it)
 		expect(precached.filter((u) => /index\.html$/.test(u))).toEqual([]);
 	});
