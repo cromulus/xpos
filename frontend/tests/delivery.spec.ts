@@ -191,6 +191,9 @@ describe("Add delivery at the counter (online: the site quotes)", () => {
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
 		expect(deliveryLines(cart)).toEqual([[1, 80, "Standing rate"]]);
+		// Priced by the standing charge, the sale still keeps the address's miles for the prints.
+		const sale = cart.getInvoiceData("Till", "SHIFT-1");
+		expect([sale.pos_delivery_miles, sale.pos_delivery_miles_source]).toEqual([42, "address"]);
 	});
 
 	it("a free-delivery exception adds a $0 line", async () => {
@@ -199,6 +202,8 @@ describe("Add delivery at the counter (online: the site quotes)", () => {
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
 		expect(deliveryLines(cart)).toEqual([[1, 0, "No delivery charge (standing exception)"]]);
+		const sale = cart.getInvoiceData("Till", "SHIFT-1");
+		expect([sale.pos_delivery_miles, sale.pos_delivery_miles_source]).toEqual([42, "address"]);
 	});
 
 	it("no quote (no miles yet): the picker says no miles; leaving them empty, Leslie types the charge", async () => {
@@ -259,6 +264,7 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		await wrapper.get("[data-testid='delivery-use']").trigger("click");
 		await flushPromises();
 		expect(deliveryLines(cart)).toEqual([[1, 80, "Standing rate"]]);
+		expect(cart.getInvoiceData("Till", "SHIFT-1").pos_delivery_miles).toBe(42);
 	});
 
 	it("a new address typed offline is priced from the typed miles, and the sale and address are flagged", async () => {

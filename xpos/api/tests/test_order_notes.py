@@ -38,7 +38,18 @@ class TestSalesOrderNoteField(unittest.TestCase):
 		self.assertEqual(order["fieldtype"], invoice["fieldtype"])
 		# Mapped to the pickup invoice by fieldname: neither side may be no_copy.
 		self.assertEqual((order["no_copy"], invoice["no_copy"]), (0, 0))
-		self.assertEqual(order["insert_after"], "delivery_date")
+		self.assertEqual(order["insert_after"], "pos_delivery_miles_source")
+
+	def test_the_order_keeps_its_delivery_miles_like_the_invoices(self):
+		"""MuleCity-qajl.5: the prints need the miles at order time on a counter Sales
+		Order; same definitions as Sales Invoice (the Mule app fills them)."""
+		for fieldname in ("pos_delivery_miles", "pos_delivery_miles_source"):
+			order = custom_field("sales_order.json", fieldname)
+			invoice = custom_field("sales_invoice.json", fieldname)
+			self.assertIsNotNone(order, f"Sales Order has no {fieldname}")
+			for key in ("fieldtype", "options", "no_copy", "read_only", "label"):
+				self.assertEqual(order.get(key), invoice.get(key), f"{fieldname}.{key}")
+		self.assertEqual(custom_field("sales_order.json", "pos_delivery_miles")["insert_after"], "delivery_date")
 
 	def test_the_field_is_installed_on_this_site(self):
 		"""On a migrated site (erp2 slots), both doctypes carry the field."""
@@ -47,9 +58,12 @@ class TestSalesOrderNoteField(unittest.TestCase):
 		if not getattr(frappe.local, "site", None):
 			self.skipTest("No site: the custom JSON check above covers the field")
 		for doctype in ("Sales Order", "Sales Invoice"):
-			field = frappe.get_meta(doctype).get_field("pos_notes")
+			meta = frappe.get_meta(doctype)
+			field = meta.get_field("pos_notes")
 			self.assertIsNotNone(field, f"{doctype} has no pos_notes; run bench migrate")
 			self.assertFalse(field.no_copy)
+			self.assertTrue(meta.has_field("pos_delivery_miles"))
+			self.assertTrue(meta.has_field("pos_delivery_miles_source"))
 
 
 class TestCreateSalesOrderKeepsTheNote(unittest.TestCase):

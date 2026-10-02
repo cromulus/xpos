@@ -3,8 +3,8 @@
 ## mule-v2.10.1-mc23 (unreleased)
 
 Bill's counter review of 2026-10-01 (epic MuleCity-qajl). **Migrate needed**
-(new custom fields on Sales Invoice and POS Invoice, and `pos_notes` on the
-Sales Order header). Needs the Mule app's
+(new custom fields on Sales Invoice and POS Invoice, and `pos_notes`,
+`pos_delivery_miles` and `pos_delivery_miles_source` on the Sales Order header). Needs the Mule app's
 `xpos_delivery_customers` change (address title, line 2, state, ZIP and the
 primary/shipping flags); with an older app the picker still works but has
 nothing to preselect or search by beyond street and town.
@@ -98,6 +98,15 @@ section on the receipt."
 - The DEL line still prints with the items. A pickup sale (no `delivery` on the
   snapshot, including snapshots queued by an older till) prints no section.
 - The receipt note keeps its line breaks.
+- New custom fields `pos_delivery_miles` (Float) and `pos_delivery_miles_source`
+  (Select: `address` | `manual`) on the **Sales Order header**, defined as on
+  Sales Invoice (read-only, `no_copy`), after `delivery_date`. **Migrate
+  needed.** The till does not fill them; the Mule app writes the miles at order
+  time on counter orders for the order slip and Work Order.
+- A delivery priced by a standing charge or a no-charge exception still keeps the
+  address's miles on the sale (`pos_delivery_miles`, source `address`) whenever
+  the address has miles: the quote carries them and `apply_delivery_facts`
+  stores what the cart sends. Pinned in `frontend/tests/delivery.spec.ts`.
 - Tests: `frontend/tests/receiptTemplate.spec.ts` ("the Delivery section").
 
 ### Cashier initials on returns, and the close sheet by cashier (MuleCity-qajl.6)
