@@ -108,6 +108,9 @@ Cypress.Commands.add("queueInvoice", (row: Record<string, unknown>) => {
 					tx.objectStore("pendingInvoices").add(row);
 					tx.oncomplete = () => {
 						db.close();
+						// The till announces a queued sale so its pending count (which gates
+						// sync on reconnect) sees it; a row written behind its back would not.
+						win.dispatchEvent(new win.Event("xpos:pending-invoices-changed"));
 						resolve();
 					};
 					tx.onerror = () => reject(tx.error);

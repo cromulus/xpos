@@ -4,6 +4,10 @@
  */
 import { ensureOpenShift, openTillOnline, restoreNetworkAfterEach, waitUntil } from '../support/offline';
 
+/** The queue's sync state, not its payload, so a timeout names the server's refusal. */
+const queueState = () => cy.pendingInvoices().then(rows =>
+  rows.map(({ local_id, status, retry_count, error }) => ({ local_id, status, retry_count, error })));
+
 describe('the medicated pickup sold before expiry reconnects later', () => {
   beforeEach(() => { cy.benchLogin(); ensureOpenShift(); });
   restoreNetworkAfterEach();
@@ -17,7 +21,7 @@ describe('the medicated pickup sold before expiry reconnects later', () => {
       customer_name: data.customer, created_at: new Date().toISOString() });
     cy.pendingInvoices().should('have.length', 1);
     cy.networkOn();
-    waitUntil(() => cy.pendingInvoices(), rows => rows.length === 0, 'VFD pickup replay to post');
+    waitUntil(queueState, rows => rows.length === 0, 'VFD pickup replay to post');
     const filters = JSON.stringify({ xpos_local_id: data.local_id });
     cy.benchCall('frappe.client.get_list', { doctype: 'Sales Invoice', filters,
       fields: JSON.stringify(['name', 'docstatus', '_comments']) }).then((invoices: any[]) => {
@@ -40,7 +44,7 @@ describe('the medicated pickup sold before expiry reconnects later', () => {
       cy.queueInvoice({ local_id: data.local_id, data, status: 'pending', retry_count: 0,
         customer_name: data.customer, created_at: new Date().toISOString() });
       cy.networkOn();
-      waitUntil(() => cy.pendingInvoices(), rows => rows.length === 0, 'duplicate VFD pickup replay');
+      waitUntil(queueState, rows => rows.length === 0, 'duplicate VFD pickup replay');
       cy.benchCall('frappe.client.get_list', { doctype: 'Sales Invoice', filters,
         fields: JSON.stringify(['name', '_comments']) }).then((again: any[]) => {
         expect(again).to.have.length(1);
