@@ -25,6 +25,15 @@ import {
 	waitUntil,
 } from "../support/offline";
 
+/** The add-address form (Bill 2026-10-01 22:52): street, city, state (NC by default), ZIP, miles. */
+function typeNewAddress(fields: { line1: string; city: string; zip: string; miles?: string }) {
+	cy.get("[data-testid='delivery-new-line1']").type(fields.line1);
+	cy.get("[data-testid='delivery-new-city']").type(fields.city);
+	cy.get("[data-testid='delivery-new-state']").should("have.value", "NC");
+	cy.get("[data-testid='delivery-new-zip']").type(fields.zip);
+	if (fields.miles) cy.get("[data-testid='delivery-new-miles']").type(fields.miles);
+}
+
 describe("delivery while the store's internet is down", () => {
 	beforeEach(() => {
 		cy.benchLogin();
@@ -64,9 +73,9 @@ describe("delivery while the store's internet is down", () => {
 							chooseCustomer(name);
 							cy.contains(item()).first().click();
 							cy.get("[data-testid='add-delivery']:visible").first().click();
-							cy.get("[data-testid='delivery-new-address'] input[placeholder='Street address']").type(street);
-							cy.get("[data-testid='delivery-new-address'] input[placeholder='City']").type("Coats");
-							cy.get("[data-testid='delivery-new-address'] input[placeholder='Miles one way']").type("12.5");
+							// Their one address has no miles, so the picker opens on it; Leslie adds the new place.
+							cy.get("[data-testid='delivery-add-address']").click();
+							typeNewAddress({ line1: street, city: "Coats", zip: "27521", miles: "12.5" });
 							cy.get("[data-testid='delivery-new-address-use']").click();
 							cy.cartRows().should("have.length", 2);
 
@@ -192,6 +201,111 @@ describe("delivery while the store's internet is down", () => {
 						},
 					);
 				});
+		});
+	});
+
+	/**
+	 * Bill 2026-10-01 22:52 (MuleCity-qajl): a named customer with no address on
+	 * file still gets a delivery. The internet is down; Leslie presses "Add
+	 * delivery", which opens the add-address form straight away, types the farm
+	 * and its miles, and sells. On reconnect the till first makes the Address on
+	 * the site (a Shipping address of the customer, miles typed offline), then
+	 * posts the sale shipped there: one Address, never two.
+	 */
+	it("offline, a customer with no address adds one at the till, sells with delivery, and the address syncs before the sale", function () {
+		cy.benchCall("xpos.api.delivery.get_delivery_policy").then((policy: DeliveryPolicy | null) => {
+			if (!policy?.item) this.skip();
+			const stamp = Date.now();
+			const name = `Offline No Address ${stamp}`;
+			const street = `${stamp % 10000} Long Branch Rd`;
+			cy.benchCall("frappe.client.get_value", { doctype: "Customer", filters: customer(), fieldname: "customer_group" })
+				.then((row: { customer_group?: string } | null) =>
+					cy.benchCall("xpos.api.customers.create_customer", {
+						customer_name: name,
+						customer_type: "Individual",
+						...(row?.customer_group ? { customer_group: row.customer_group } : {}),
+					}),
+				)
+				.then((created: { name: string }) => {
+					cy.benchCall("frappe.client.get_value", { doctype: "Item", filters: item(), fieldname: "weight_per_unit" }).then(
+						(weight: { weight_per_unit?: number } | null) => {
+							const expected = deliveryCharge(policy!, 12.5, Number(weight?.weight_per_unit) || 0);
+
+							openTillOnline();
+							cy.wait(3000);
+							cy.networkOff();
+
+							chooseCustomer(name);
+							cy.contains(item()).first().click();
+							cy.get("[data-testid='add-delivery']:visible").first().click();
+							cy.get("[data-testid='delivery-address']").should("not.exist");
+							typeNewAddress({ line1: street, city: "Dunn", zip: "28334", miles: "12.5" });
+							cy.get("[data-testid='delivery-new-address-use']").click();
+							cy.cartRows().should("have.length", 2);
+
+							cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
+							cy.get("[data-testid='payment-method'][data-mode='Cash']").click();
+							payWithEnter();
+							cy.get("[role='dialog']").should("not.exist");
+							cy.pendingInvoices().should((rows) => expect(rows, "one queued sale").to.have.length(1));
+
+							cy.networkOn();
+							waitUntil(() => cy.pendingInvoices(), (rows) => rows.length === 0, "the offline sale to sync");
+							customerInvoices(created.name, ["name", "shipping_address_name", "pos_delivery_miles", "pos_delivery_miles_source"]).then(
+								(posted: Array<{ name: string; shipping_address_name: string; pos_delivery_miles: number;
+									pos_delivery_miles_source: string }>) => {
+									expect(posted, "one Sales Invoice").to.have.length(1);
+									const sale = posted[0];
+									expect([Number(sale.pos_delivery_miles), sale.pos_delivery_miles_source]).to.deep.equal([12.5, "manual"]);
+									cy.benchCall("frappe.client.get", { doctype: "Address", name: sale.shipping_address_name }).then(
+										(address: { address_line1: string; city: string; state: string; pincode: string; address_type: string;
+											mule_delivery_miles?: number; mule_delivery_miles_source?: string;
+											links: Array<{ link_doctype: string; link_name: string }> }) => {
+											expect([address.address_line1, address.city, address.state, address.pincode, address.address_type])
+												.to.deep.equal([street, "Dunn", "NC", "28334", "Shipping"]);
+											expect(address.links.map((link) => [link.link_doctype, link.link_name]))
+												.to.deep.equal([["Customer", created.name]]);
+											// The clerk's miles, flagged as typed offline (Google replaces them when it can).
+											expect(address.mule_delivery_miles_source).to.be.oneOf(["manual_offline", "routes"]);
+											if (address.mule_delivery_miles_source === "manual_offline")
+												expect(Number(address.mule_delivery_miles)).to.equal(12.5);
+										},
+									);
+									cy.benchCall("frappe.client.get_list", { doctype: "Address", fields: ["name"],
+										filters: { address_line1: street } }).then((rows: Array<{ name: string }>) =>
+										expect(rows, "one Address, made once").to.have.length(1));
+									cy.benchCall("frappe.client.get", { doctype: "Sales Invoice", name: sale.name }).then(
+										(doc: { items: Array<{ item_code: string; rate: number }> }) => {
+											const lines = doc.items.filter((row) => row.item_code === policy!.item!.item_code);
+											expect(lines.map((row) => Number(row.rate))).to.deep.equal([expected]);
+										},
+									);
+								},
+							);
+						},
+					);
+				});
+		});
+	});
+
+	/** Bill 2026-10-01 22:52: no delivery for the walk-in account, online or offline. */
+	it("the walk-in customer is never offered Add delivery, online or offline", function () {
+		cy.benchCall("xpos.api.delivery.get_delivery_policy").then((policy: DeliveryPolicy | null) => {
+			if (!policy?.item) this.skip();
+			cy.benchCall("frappe.client.get_value", { doctype: "POS Profile", filters: Cypress.env("profile"), fieldname: "customer" }).then(
+				(profile: { customer?: string } | null) => {
+					if (!profile?.customer) this.skip();
+					expect(policy!.walk_in_customers || [], "the till caches the walk-ins with the policy").to.include(profile!.customer);
+					openTillOnline();
+					chooseCustomer(profile!.customer);
+					cy.contains(item()).first().click();
+					cy.cartRows().should("have.length", 1);
+					cy.get("[data-testid='add-delivery']").should("not.exist");
+					cy.networkOff();
+					cy.wait(500);
+					cy.get("[data-testid='add-delivery']").should("not.exist");
+				},
+			);
 		});
 	});
 });

@@ -46,11 +46,62 @@ still do shipping!"
 ### Customer card (MuleCity-qajl.2)
 
 - Recent purchases is gone (Repeat in the top bar does it). Credit limit stays.
-- Add delivery is its own button on a line below the account row. Same rule:
-  online when the site quotes delivery and the customer has an address; offline
-  for any named customer (a new address can be typed with its miles); never for
-  the walk-in default; never in return mode. Once added, the line shows where it
-  goes, its miles and the day, which can be changed there.
+- Add delivery is its own button on a line below the account row. Once added,
+  the line shows where it goes, its miles and the day, which can be changed
+  there. Who sees it: see "The delivery address rule" below (it replaced "only
+  when the customer has an address").
+
+### The delivery address rule (Bill 2026-10-01 22:52, MuleCity-qajl.2/.3)
+
+Bill: a delivery always needs a real customer; use the customer's one address,
+else their one shipping address, else pick from the list, or add a new address
+right at the till. **Needs the Mule app's `address_lookup.py`**
+(`xpos_add_delivery_address`, `xpos_walk_in_customers` hooks) and its
+`address_type` on cached addresses; without them the walk-in list is the POS
+Profiles' default customers only and adding an address is refused.
+
+- **No delivery for walk-ins.** `xpos.api.delivery.walk_in_customers()` = every
+  POS Profile's default customer plus the site's `xpos_walk_in_customers` hook
+  (Mule City: Walk-In Customer and FilePro's CASH 338). It rides on the cached
+  delivery policy (`walk_in_customers`), so the till hides Add delivery for them
+  online and offline. The server refuses (`refuse_walk_in_delivery`, called by
+  `apply_delivery_facts` and `resolve_new_shipping_address`) a sale, parked tab
+  or preview to a walk-in or no customer that carries a shipping address, an
+  address typed offline, delivery miles or the site's delivery line: "Delivery
+  needs a named customer, not ...". A day alone is not a delivery. Returns pass
+  (a FilePro-era 338 sale with a DEL line can still be returned).
+- **Who sees the button:** any named, non-walk-in customer on a sale (not a
+  return) when the site quotes delivery, online or offline, address or not.
+- **Which address:** the only address; else the only Shipping-type address
+  (`address_type`; `is_shipping_address` is Frappe's single *preferred* shipping
+  flag, so it cannot say "one shipping address"); quoted and added at once when
+  it has a price. Otherwise the picker (primary shipping preselected). "Change
+  delivery" always opens the picker.
+- **Add new address**, always in the picker; with no addresses the button opens
+  it directly: street, line 2, city, state (NC by default), ZIP, optional name and
+  miles. Online `xpos.api.customers.add_delivery_address` (thin wrapper on the
+  site hook) makes a Shipping Address of the customer, or returns the one with the
+  same lines, looks up Google's miles and answers with the cached address shape,
+  `address_display`, `miles_pending` and a quote; when Google finds no miles the
+  form asks for typed miles (kept on the Address as `manual`, flagged for review)
+  or the clerk types the charge. The new address goes on the customer's cached
+  row at once.
+- **Offline:** the add is queued (`services/addressQueue.ts`, sync meta, browser
+  and Electron) under a `LOCAL-ADDR-` id that the cart uses as the address name.
+  At sync the queue is replayed first, with typed miles as `manual_offline`; the
+  local id -> Address pair goes to the sync id map, and each queued sale's local
+  id is swapped for the real name before it is sent. A sale still carries the
+  whole address (`xpos_new_shipping_address` with state, ZIP and `local_id`), so
+  if the replay did not run (the Electron sync engine pushes sales on its own),
+  `resolve_new_shipping_address` makes it through the same site hook: one
+  Address either way. An add the site refuses is kept and listed in the sync
+  errors, not retried.
+- Tests: `frontend/tests/delivery.spec.ts` ("Bill's address rule"),
+  `frontend/tests/addressQueue.spec.ts` (replay order, refusal, network drop),
+  `xpos.api.tests.test_delivery` (TestNoDeliveryForWalkIns,
+  TestAddADeliveryAddressAtTheTill), Mule `test_address_lookup` and
+  `test_xpos_delivery`, bench stories in `tests/e2e/bench/offline-delivery.cy.ts`
+  (no-address customer adds one offline and syncs; walk-in sees no Add delivery).
 
 ### Add delivery picker and the delivery day (MuleCity-qajl.3)
 
@@ -76,7 +127,9 @@ should show miles and cost." / the clerk picks the delivery day at the POS.
   uses as the Sales Order's `delivery_date`.
 - Removing the delivery line drops the delivery (address, miles, day facts) from
   the sale.
-- Offline it behaves the same from the cache; the new-address form stays.
+- Offline it behaves the same from the cache. One address with a price is now
+  added at once offline too (the rule above); the add-address form is in the
+  picker online and offline.
 - Tests: `frontend/tests/delivery.spec.ts` (picker stories online and offline),
   `xpos.api.tests.test_delivery`, bench story in
   `tests/e2e/bench/offline-delivery.cy.ts` (three addresses, primary shipping
