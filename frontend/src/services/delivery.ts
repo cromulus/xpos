@@ -43,6 +43,9 @@ export interface DeliveryAddress {
 	is_shipping_address?: boolean;
 	/** "Shipping" or "Billing": a customer's only Shipping address is used without asking (MuleCity-qajl). */
 	address_type?: string | null;
+	/** Where it is on a map (MuleCity-gvxs fills them later); null until then. */
+	latitude?: number | null;
+	longitude?: number | null;
 }
 
 /** Where a sale's delivery miles came from at the till: the Address's, or typed by the clerk. */

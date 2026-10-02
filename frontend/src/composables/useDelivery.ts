@@ -154,6 +154,9 @@ export async function addDeliveryAddress(
 		is_primary_address: !!opts.first,
 		is_shipping_address: !!opts.first,
 		miles_pending: !miles,
+		latitude: null,
+		longitude: null,
+		geolocation_pending: true,
 	};
 	await queueAddress({ ...form, miles, local_id: local.name, customer, queued_at: new Date().toISOString() });
 	await cacheCustomerAddress(customer, cachedAddress(local)).catch(() => undefined);

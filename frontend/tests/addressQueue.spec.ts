@@ -43,6 +43,7 @@ vi.mock("@/services/dbBridge", () => ({
 
 import { useOfflineStore } from "@/stores/offlineStore";
 import {
+	cachedAddress,
 	queueAddress,
 	queuedAddresses,
 	replayQueuedAddresses,
@@ -172,6 +173,12 @@ describe("the queue itself", () => {
 		);
 		const unknown = { xpos_new_shipping_address: { local_id: "LOCAL-ADDR-9" } };
 		expect(await resolveQueuedAddress(unknown, deps)).toBe(unknown);
+	});
+
+	it("the cached address keeps the site's coordinates (null until gvxs fills them)", () => {
+		const base = { name: "ADDR-FARM", address_line1: "88 New Ground Rd", city: "Coats", miles: 42, miles_source: "routes" };
+		expect(cachedAddress({ ...base, latitude: 35.38, longitude: -78.55, geolocation_pending: false })).toMatchObject({ latitude: 35.38, longitude: -78.55 });
+		expect(cachedAddress(base)).toMatchObject({ latitude: null, longitude: null });
 	});
 
 	it("a new primary shipping address goes first in the customer's cached list and takes the flag", () => {

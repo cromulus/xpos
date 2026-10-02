@@ -49,6 +49,7 @@ export interface QueuedAddress extends AddressForm {
 export interface AddedAddress extends DeliveryAddress {
 	address_display?: string;
 	miles_pending?: boolean;
+	geolocation_pending?: boolean;
 	local_id?: string | null;
 	/** The site's quote to it with no cart (the till re-quotes with the cart's weight). */
 	quote?: DeliveryQuote;
@@ -207,6 +208,8 @@ export function cachedAddress(added: AddedAddress): DeliveryAddress {
 		miles_source: added.miles_source ?? null,
 		is_primary_address: !!added.is_primary_address,
 		is_shipping_address: !!added.is_shipping_address,
+		latitude: added.latitude ?? null,
+		longitude: added.longitude ?? null,
 	};
 }
 
