@@ -157,6 +157,108 @@ export function restoreNetworkAfterEach() {
 	});
 }
 
+/** The session refresh a till asks before its first write after reconnecting (MuleCity-q8aq). */
+export const SESSION_BOOT = "/api/method/xpos.api.auth.get_session_boot";
+
+/** The page's X POS globals (window.xpos). */
+export type TillGlobals = { offlineShell?: boolean; csrf_token?: string; boot?: { user?: { name?: string } } };
+export const till = (win: Cypress.AUTWindow) => (win as unknown as { xpos: TillGlobals }).xpos;
+
+/** What the till saved for an offline start (IndexedDB meta "offline_boot"). */
+export function savedBoot() {
+	return cy.window().then(
+		(win) =>
+			new Cypress.Promise<Record<string, any> | undefined>((resolve, reject) => {
+				const open = win.indexedDB.open(IDB_NAME);
+				open.onerror = () => reject(open.error);
+				open.onsuccess = () => {
+					const db = open.result;
+					const get = db.transaction("meta").objectStore("meta").get("offline_boot");
+					get.onsuccess = () => {
+						db.close();
+						resolve(get.result?.value);
+					};
+					get.onerror = () => reject(get.error);
+				};
+			}),
+	);
+}
+
+/**
+ * The server as the browser reaches it. While `down`, every request to it fails as a network
+ * error, the service worker's fetches included (a page-level CDP offline does not reach the
+ * worker). Requests to /xpos and /api are recorded, in order, with the CSRF token they carried;
+ * the session refresh is aliased "@freshBoot". Register before any cy.intercept that stubs a
+ * response (the newer one answers first).
+ */
+export function interceptServer() {
+	const server = {
+		down: false,
+		seen: [] as Array<{ method: string; path: string; token?: string }>,
+	};
+	cy.intercept({ url: /.*/ }, (req) => {
+		const path = new URL(req.url).pathname;
+		if (server.down) {
+			req.destroy();
+			return;
+		}
+		if (!/^\/(xpos|api)(\/|$)/.test(path)) return;
+		server.seen.push({ method: req.method, path, token: req.headers["x-frappe-csrf-token"] as string | undefined });
+		if (path === SESSION_BOOT) req.alias = "freshBoot";
+	});
+	return server;
+}
+
+/** The internet drops: the server out of reach and the browser offline. */
+export function internetDown(server: ReturnType<typeof interceptServer>) {
+	cy.then(() => {
+		server.down = true;
+	});
+	cy.networkOff();
+}
+
+/**
+ * The internet returns. The till must fetch a fresh boot and CSRF token before any write, and
+ * every write after that carries the fresh token; resolves once the offline queue is empty.
+ */
+export function internetBackAndSynced(server: ReturnType<typeof interceptServer>) {
+	cy.then(() => {
+		server.down = false;
+		server.seen.length = 0;
+	});
+	cy.networkOn();
+	cy.wait("@freshBoot", { timeout: 30000 }).then(({ response }) => {
+		const fresh = response?.body?.message?.csrf_token as string;
+		expect(fresh, "the server's token").to.be.a("string").and.not.equal("");
+		waitUntil(() => cy.pendingInvoices(), (rows) => rows.length === 0, "the offline sale to sync");
+		cy.then(() => {
+			const posts = server.seen.filter((r) => r.method === "POST");
+			const firstBoot = server.seen.findIndex((r) => r.path === SESSION_BOOT);
+			const firstPost = server.seen.findIndex((r) => r.method === "POST");
+			expect(firstBoot, "the boot is fetched before any write").to.be.within(0, firstPost);
+			expect(posts.length, "writes after reconnecting").to.be.greaterThan(0);
+			posts.forEach((r) => expect(r.token, `${r.path} carries the fresh token`).to.equal(fresh));
+		});
+		cy.window().its("xpos.csrf_token").should("equal", fresh);
+	});
+}
+
+/**
+ * A browser that has never run X POS: no service worker, no caches, no offline database. Done
+ * from a page outside the till (a 404), so no till code re-registers the worker meanwhile.
+ */
+export function freshBrowser() {
+	cy.visit("/q8aq-fresh-browser", { failOnStatusCode: false });
+	cy.window().then(async (win) => {
+		for (const registration of await win.navigator.serviceWorker.getRegistrations()) await registration.unregister();
+		for (const name of await win.caches.keys()) await win.caches.delete(name);
+		await new Promise((resolve) => {
+			const request = win.indexedDB.deleteDatabase(IDB_NAME);
+			request.onsuccess = request.onerror = request.onblocked = () => resolve(null);
+		});
+	});
+}
+
 Cypress.Commands.add("cartRows", () => cy.get("[data-cart-index]:visible"));
 
 declare global {

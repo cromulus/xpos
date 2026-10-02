@@ -5,6 +5,11 @@ import frappe
 from frappe.website.page_renderers.base_renderer import BaseRenderer
 
 PREFIX = "/xpos/"
+# The worker's widest scope. "/xpos", not "/xpos/": Frappe redirects /xpos/ to /xpos, which is what
+# staff bookmark and Desk links to, and a worker scoped /xpos/ cannot answer /xpos, so the till
+# could not start offline from it (MuleCity-q8aq). A scope wider than the script's folder (/xpos/)
+# needs this header; main.ts registers with scope "/xpos".
+SCOPE = "/xpos"
 
 ALLOWED = re.compile(r"\A(sw\.js(\.map)?|workbox-[A-Za-z0-9_-]+\.js(\.map)?|manifest\.webmanifest)\Z")
 
@@ -53,7 +58,7 @@ class ServiceWorkerPage(BaseRenderer):
 			data,
 			headers={
 				"Content-Type": content_type,
-				"Service-Worker-Allowed": PREFIX,
+				"Service-Worker-Allowed": SCOPE,
 				"Cache-Control": "no-cache, no-store, must-revalidate",
 			},
 		)

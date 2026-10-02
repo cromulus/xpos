@@ -18,7 +18,6 @@ import { getApiBaseUrlSync, isElectron } from "@/services/electronBridge";
 export const OFFLINE_BOOT_KEY = "offline_boot";
 export const SESSION_EXPIRED_EVENT = "xpos:session-expired";
 const SESSION_BOOT_METHOD = "xpos.api.auth.get_session_boot";
-const BOOT_READ_TIMEOUT_MS = 5000;
 
 /** Key names never stored on the device, at any depth. */
 const SECRET_KEY = /csrf|token|secret|password|passwd|api_?key|^sid$|sentry_dsn|^ipinfo$/i;
@@ -113,12 +112,11 @@ export async function initSessionBoot(): Promise<void> {
 	if (startedFromShell()) {
 		markSessionStale();
 		try {
-			// Never hang the start on a blocked database: no saved boot means the login page.
-			const saved = await Promise.race([
-				loadOfflineBoot(),
-				new Promise<null>((resolve) => setTimeout(() => resolve(null), BOOT_READ_TIMEOUT_MS)),
-			]);
+			// The database's own open gives up after DB_OPEN_TIMEOUT_MS (idbService), so this
+			// cannot hang the start; no extra, shorter timeout that would drop a slow read.
+			const saved = await loadOfflineBoot();
 			if (saved) applyBoot(saved.boot);
+			else console.warn("[XPOS] Offline start: no boot saved on this device");
 		} catch (error) {
 			console.warn("[XPOS] Could not read the saved boot for an offline start", error);
 		}

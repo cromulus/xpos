@@ -26,8 +26,9 @@ export default defineConfig({
 				background_color: "#ffffff",
 				display: "standalone",
 				orientation: "any",
-				scope: "/xpos/",
-				start_url: "/xpos/",
+				// The worker's scope (MuleCity-q8aq): /xpos itself, as Frappe serves it.
+				scope: "/xpos",
+				start_url: "/xpos",
 				id: "/xpos/",
 				categories: ["business", "finance"],
 				icons: [

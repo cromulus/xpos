@@ -188,6 +188,12 @@ describe.skipIf(!built)("the built sw.js and offline-shell.html", () => {
 		for (const name of ["xpos-api-get-cache", "xpos-assets-cache", "xpos-files-cache"]) expect(sw).toContain(name);
 	});
 
+	it("declares the app at /xpos, the worker's scope (Frappe redirects /xpos/ there)", () => {
+		const manifest = JSON.parse(readFileSync(resolve(BUILD, "manifest.webmanifest"), "utf8"));
+		expect(manifest.scope).toBe("/xpos");
+		expect(manifest.start_url).toBe("/xpos");
+	});
+
 	it("ships a shell with no boot, no token and no placeholder", () => {
 		expect(shellHtml).toContain("offlineShell: true");
 		expect(shellHtml).not.toMatch(/\{\{|\{%|csrf/i);

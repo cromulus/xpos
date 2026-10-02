@@ -20,6 +20,15 @@
 			<CardContent>
 				<form @submit.prevent="handleLogin" class="space-y-4">
 					<div
+						v-if="authStore.notice || !online"
+						data-testid="login-notice"
+						class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm flex items-start gap-2"
+					>
+						<WifiOff v-if="!online" class="w-4 h-4 mt-0.5 shrink-0" />
+						<AlertCircle v-else class="w-4 h-4 mt-0.5 shrink-0" />
+						<span>{{ authStore.notice || __("You are offline. Signing in needs the internet.") }}</span>
+					</div>
+					<div
 						v-if="authStore.error"
 						class="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-start gap-2"
 					>
@@ -103,7 +112,8 @@ import { useAuthStore } from "@/stores/authStore";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { User, Lock, Eye, EyeOff, LogIn, Loader2, AlertCircle } from "lucide-vue-next";
+import { User, Lock, Eye, EyeOff, LogIn, Loader2, AlertCircle, WifiOff } from "lucide-vue-next";
+import __ from "@/lib/translate";
 import { useBranding } from "@/composables/useBranding";
 const isDark = inject("isDark")! as boolean;
 const { logoLight, logoDark } = useBranding();
@@ -114,6 +124,8 @@ const authStore = useAuthStore();
 const username = ref("");
 const password = ref("");
 const showPassword = ref(false);
+const online = ref(typeof navigator === "undefined" ? true : navigator.onLine);
+const updateOnline = () => (online.value = navigator.onLine);
 
 async function handleLogin() {
 	if (!username.value || !password.value) return;
@@ -127,9 +139,13 @@ async function handleLogin() {
 
 onMounted(() => {
 	authStore.clearError();
+	window.addEventListener("online", updateOnline);
+	window.addEventListener("offline", updateOnline);
 });
 
 onUnmounted(() => {
 	authStore.clearError();
+	window.removeEventListener("online", updateOnline);
+	window.removeEventListener("offline", updateOnline);
 });
 </script>

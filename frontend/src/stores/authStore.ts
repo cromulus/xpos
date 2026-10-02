@@ -14,6 +14,9 @@ function friendlyMessage(err: unknown, fallback: string): string {
 	return message;
 }
 
+export const OFFLINE_NO_SESSION =
+	"You are offline, and X POS has no saved session on this device. Connect to the internet and open X POS once; after that it can start offline.";
+
 export const useAuthStore = defineStore("auth", () => {
 	const isLoading = ref(false);
 	const isAuthenticated = ref(false);
@@ -21,6 +24,8 @@ export const useAuthStore = defineStore("auth", () => {
 	const error = ref("");
 	const resetEmailSent = ref(false);
 	const isOfflineAuth = ref(false);
+	/** Why the login is showing (expired session, offline with nothing saved); not cleared by clearError. */
+	const notice = ref("");
 
 	const userName = computed(() => user.value?.user || "Guest");
 	const userEmail = computed(() => user.value?.user_email || "");
@@ -97,7 +102,11 @@ export const useAuthStore = defineStore("auth", () => {
 		if (isOnline() && !isNetworkError(err)) return false;
 		const boot = window.xpos?.boot as Record<string, any> | undefined;
 		const name = bootUser(boot);
-		if (!name) return false;
+		if (!name) {
+			// Nothing to resume: say why the login cannot help right now.
+			notice.value = OFFLINE_NO_SESSION;
+			return false;
+		}
 		const info = (boot?.user_info?.[name] || {}) as Record<string, string>;
 		isAuthenticated.value = true;
 		isOfflineAuth.value = true;
@@ -116,7 +125,7 @@ export const useAuthStore = defineStore("auth", () => {
 		isAuthenticated.value = false;
 		isOfflineAuth.value = false;
 		user.value = null;
-		error.value = "Your session has expired. Please sign in again.";
+		notice.value = "Your session has expired. Sign in again; the sales waiting on this till are kept and sync after you sign in.";
 	}
 
 	async function checkOfflineAuth(): Promise<boolean> {
@@ -168,6 +177,7 @@ export const useAuthStore = defineStore("auth", () => {
 			// A new session has a new token, and the page's boot may be a Guest's or an expired
 			// one's: fetch both before the next call (MuleCity-q8aq).
 			markSessionStale();
+			notice.value = "";
 
 			isAuthenticated.value = true;
 			isOfflineAuth.value = false;
@@ -310,6 +320,7 @@ export const useAuthStore = defineStore("auth", () => {
 		isOfflineAuth,
 		user,
 		error,
+		notice,
 		resetEmailSent,
 		userName,
 		userEmail,

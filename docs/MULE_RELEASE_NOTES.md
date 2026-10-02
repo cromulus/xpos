@@ -1,5 +1,41 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc30 (unreleased)
+
+### The till starts offline from /xpos, the bookmark (MuleCity-q8aq, mc29 staging walk 2026-10-02)
+
+- **`/xpos` and `/xpos/` start offline.** On mc29 an offline cold start of
+  either failed with "No internet": the worker was registered with scope
+  `/xpos/`, and Frappe redirects `/xpos/` to `/xpos` (what staff bookmark and
+  Desk links to), which is outside that scope. The worker is now registered
+  with scope `/xpos`, which covers `/xpos` and every `/xpos/...` page. Its
+  script stays at `/xpos/sw.js`; the wider scope is allowed by the header the
+  app already sends with it, now `Service-Worker-Allowed: /xpos`
+  (`xpos/pwa.py`). This is an app change only: nothing in nginx, Cloudflare or
+  site config. The manifest's `scope` and `start_url` are `/xpos`. On the first
+  online load of mc30 the till unregisters mc29's `/xpos/` worker, which would
+  otherwise keep `/xpos/...` pages (the longer scope wins).
+- **An offline start with nothing saved says so.** The boot is saved at every
+  online start of the till, before anything else runs, whether or not a shift
+  is open. The offline start now waits for the database's own open (8 s limit)
+  instead of a 5 s timer that could give up on a slow device, which ended on
+  the login page. With no boot saved on the device, the login says the till is
+  offline and has no saved session, and that it must be opened online once.
+  An expired session after reconnecting is said there too, and that the
+  waiting sales are kept.
+- **No shift open, offline: a clear message.** Opening a shift needs the
+  server, so offline it is not offered. Instead of "No profiles found. Check
+  server connection", the opening screen says the till is offline and that a
+  shift can only be opened with the internet on. The profiles load by
+  themselves when the internet is back, or with Try again. A till with a shift
+  open starts from its cached shift and sells offline as before.
+- **Tests.** `tests/e2e/bench/offline-cold-start.cy.ts`: a fresh browser runs
+  X POS online once, then `/xpos` and `/xpos/` are opened as a new page
+  offline, with a shift open (sells, syncs with a fresh CSRF token) and
+  without one (the offline message). Also `tests/offlineColdStart.spec.ts`,
+  `xpos/api/tests/test_service_worker.py`, and a manifest check in
+  `tests/offlineServiceWorker.spec.ts`.
+
 ## mule-v2.10.1-mc29 (unreleased)
 
 ### The till opens and reloads with the internet down (MuleCity-q8aq)

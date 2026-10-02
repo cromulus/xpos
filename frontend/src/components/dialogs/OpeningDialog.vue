@@ -19,6 +19,23 @@
 						<Loader2 class="w-8 h-8 text-primary animate-spin" />
 					</div>
 
+					<div
+						v-else-if="!online"
+						data-testid="opening-offline"
+						class="py-4 text-center space-y-2"
+					>
+						<WifiOff class="w-8 h-8 mx-auto text-muted-foreground" />
+						<p class="text-sm font-semibold text-foreground">{{ __("You are offline") }}</p>
+						<p class="text-sm text-muted-foreground">
+							{{
+								__(
+									"No shift is open on this till, and a shift can only be opened with the internet on. It opens here as soon as the internet is back.",
+								)
+							}}
+						</p>
+						<Button variant="outline" size="sm" @click="onOnline">{{ __("Try again") }}</Button>
+					</div>
+
 					<template v-else>
 						<div class="flex items-center justify-between">
 							<label class="text-sm font-semibold text-foreground">{{
@@ -134,15 +151,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue";
+import { ref, onMounted, onUnmounted, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
-import { showError } from "@/services/api";
+import { showError, isNetworkError } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { NumberInput } from "@/components/ui/number-input";
 import { Card, CardContent } from "@/components/ui/card";
 import { TooltipWrapper } from "@/components/ui/tooltip";
-import { Loader2, Lock, RefreshCw } from "lucide-vue-next";
+import { Loader2, Lock, RefreshCw, WifiOff } from "lucide-vue-next";
 import { useSyncStatus } from "@/composables/useSyncStatus";
 import { isElectron } from "@/services/electronBridge";
 import __ from "@/lib/translate";
@@ -176,7 +193,24 @@ const selectedProfile = ref("");
 const selectedCompany = ref("");
 const paymentMethodsList = ref<PaymentMethodEntry[]>([]);
 
+/**
+ * Opening a shift needs the server (MuleCity-q8aq): offline the dialog says so instead of
+ * "No profiles found", and loads the profiles once the internet is back.
+ */
+const online = ref(typeof navigator === "undefined" ? true : navigator.onLine);
+function onOnline() {
+	online.value = navigator.onLine;
+	void loadProfiles();
+}
+function onOffline() {
+	online.value = false;
+}
+
 async function loadProfiles() {
+	if (!online.value) {
+		isLoadingData.value = false;
+		return;
+	}
 	isLoadingData.value = true;
 	try {
 		const data = await posStore.fetchOpeningData();
@@ -187,13 +221,24 @@ async function loadProfiles() {
 			onProfileChange();
 		}
 	} catch (error) {
-		showError("Failed to load POS data. Please refresh.");
+		// The server out of reach with the network up (the store's internet down): the offline note.
+		if (isNetworkError(error)) online.value = false;
+		else showError("Failed to load POS data. Please refresh.");
 	} finally {
 		isLoadingData.value = false;
 	}
 }
 
-onMounted(loadProfiles);
+onMounted(() => {
+	window.addEventListener("online", onOnline);
+	window.addEventListener("offline", onOffline);
+	void loadProfiles();
+});
+
+onUnmounted(() => {
+	window.removeEventListener("online", onOnline);
+	window.removeEventListener("offline", onOffline);
+});
 
 watch(syncStatus.syncCompleteCount, (count, prev) => {
 	if (count > prev) {

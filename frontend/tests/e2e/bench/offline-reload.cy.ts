@@ -17,34 +17,19 @@
  * Runs against a real bench (tests/e2e/bench/README.md). Chrome treats the bench origin as secure
  * (cypress.bench.config.ts), so the page has its service worker as on https.
  */
-import { IDB_NAME } from "../support/bench";
-import { customerInvoices, ensureOpenShift, item, openTillOnline, restoreNetworkAfterEach, ringUpOneBag, waitUntil } from "../support/offline";
-
-const SESSION_BOOT = "/api/method/xpos.api.auth.get_session_boot";
-
-/** The page's X POS globals (window.xpos). */
-type TillGlobals = { offlineShell?: boolean; csrf_token?: string; boot?: { user?: { name?: string } } };
-const till = (win: Cypress.AUTWindow) => (win as unknown as { xpos: TillGlobals }).xpos;
-
-/** What the till saved for an offline start (IndexedDB meta "offline_boot"). */
-function savedBoot() {
-	return cy.window().then(
-		(win) =>
-			new Cypress.Promise<Record<string, any> | undefined>((resolve, reject) => {
-				const open = win.indexedDB.open(IDB_NAME);
-				open.onerror = () => reject(open.error);
-				open.onsuccess = () => {
-					const db = open.result;
-					const get = db.transaction("meta").objectStore("meta").get("offline_boot");
-					get.onsuccess = () => {
-						db.close();
-						resolve(get.result?.value);
-					};
-					get.onerror = () => reject(get.error);
-				};
-			}),
-	);
-}
+import {
+	customerInvoices,
+	ensureOpenShift,
+	interceptServer,
+	internetBackAndSynced,
+	internetDown,
+	item,
+	openTillOnline,
+	restoreNetworkAfterEach,
+	ringUpOneBag,
+	savedBoot,
+	till,
+} from "../support/offline";
 
 /** The page came from the server (fresh boot + token), not from the shell. */
 function expectServerPage() {
@@ -65,22 +50,7 @@ describe("reloading and starting the till while the store's internet is down", (
 	restoreNetworkAfterEach();
 
 	it("reloads offline from the app shell, sells, and syncs with a fresh CSRF token when the internet returns", () => {
-		// The server, as the browser reaches it: when down, every request to it fails as a network
-		// error, the service worker's fetches included (the page's CDP offline may not reach the
-		// worker). Requests are recorded to check the order on reconnect.
-		let serverDown = false;
-		const seen: Array<{ method: string; path: string; token?: string; at: number }> = [];
-		cy.intercept({ url: /.*/ }, (req) => {
-			const path = new URL(req.url).pathname;
-			if (serverDown) {
-				req.destroy();
-				return;
-			}
-			if (!/^\/(xpos|api)(\/|$)/.test(path)) return;
-			const token = req.headers["x-frappe-csrf-token"] as string | undefined;
-			seen.push({ method: req.method, path, token, at: Date.now() });
-			if (path === SESSION_BOOT) req.alias = "freshBoot";
-		});
+		const server = interceptServer();
 
 		customerInvoices().then((before: Array<{ name: string }>) => {
 			const known = new Set(before.map((i) => i.name));
@@ -104,10 +74,7 @@ describe("reloading and starting the till while the store's internet is down", (
 			});
 
 			// The internet drops, then Leslie presses F5.
-			cy.then(() => {
-				serverDown = true;
-			});
-			cy.networkOff();
+			internetDown(server);
 			cy.reload();
 			cy.window().its("xpos.offlineShell", { timeout: 30000 }).should("equal", true);
 			cy.contains(item(), { timeout: 30000 }).should("exist");
@@ -131,25 +98,7 @@ describe("reloading and starting the till while the store's internet is down", (
 			});
 
 			// The internet returns: a fresh boot and token first, then the sale, with that token.
-			cy.then(() => {
-				serverDown = false;
-				seen.length = 0;
-			});
-			cy.networkOn();
-			cy.wait("@freshBoot", { timeout: 30000 }).then(({ response }) => {
-				const fresh = response?.body?.message?.csrf_token as string;
-				expect(fresh, "the server's token").to.be.a("string").and.not.equal("");
-				waitUntil(() => cy.pendingInvoices(), (rows) => rows.length === 0, "the offline sale to sync");
-				cy.then(() => {
-					const posts = seen.filter((r) => r.method === "POST");
-					const firstBoot = seen.findIndex((r) => r.path === SESSION_BOOT);
-					const firstPost = seen.findIndex((r) => r.method === "POST");
-					expect(firstBoot, "the boot is fetched before any write").to.be.within(0, firstPost);
-					expect(posts.length, "writes after reconnecting").to.be.greaterThan(0);
-					posts.forEach((r) => expect(r.token, `${r.path} carries the fresh token`).to.equal(fresh));
-				});
-				cy.window().its("xpos.csrf_token").should("equal", fresh);
-			});
+			internetBackAndSynced(server);
 			customerInvoices().then((after: Array<{ name: string }>) => {
 				expect(after.filter((i) => !known.has(i.name)), "the offline sale posted").to.have.length(1);
 			});

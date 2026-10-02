@@ -22,10 +22,23 @@ import { useAuthStore } from "@/stores/authStore";
 
 if (!isElectron() && import.meta.env.PROD) {
 	if ("serviceWorker" in navigator) {
+		// Scope "/xpos", not "/xpos/": Frappe redirects /xpos/ to /xpos (the bookmarked page), and
+		// only a worker scoped /xpos can answer it offline. xpos/pwa.py sends
+		// Service-Worker-Allowed: /xpos for this (MuleCity-q8aq).
 		navigator.serviceWorker
-			.register("/xpos/sw.js", { scope: "/xpos/" })
+			.register("/xpos/sw.js", { scope: "/xpos" })
 			.then((registration) => {
 				console.log("[XPOS PWA] Service worker registered for", registration.scope);
+				// Builds up to mc29 registered scope /xpos/, which would keep controlling /xpos/*
+				// (the narrower scope wins) next to the new one: drop it.
+				navigator.serviceWorker
+					.getRegistrations()
+					.then((all) =>
+						all
+							.filter((other) => other !== registration && new URL(other.scope).pathname === "/xpos/")
+							.forEach((other) => void other.unregister()),
+					)
+					.catch(() => {});
 
 				registration.addEventListener("updatefound", () => {
 					const installing = registration.installing;
