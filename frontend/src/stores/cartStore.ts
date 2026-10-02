@@ -1814,12 +1814,15 @@ export const useCartStore = defineStore("cart", () => {
 			serial_no?: string;
 			batch_no?: string;
 		}>;
+		pos_notes?: string;
 	}): void {
 		clearCart();
 		customer.value = {
 			name: invoiceData.customer,
 			customer_name: invoiceData.customer_name,
 		};
+		// An order loaded for pickup brings its note (Sales Order pos_notes, MuleCity-qajl.7).
+		if (invoiceData.pos_notes?.trim()) orderNotes.value = invoiceData.pos_notes.trim();
 		for (const item of invoiceData.items) {
 			items.value.push({
                 ...muleOrderFields(item),
@@ -1930,7 +1933,8 @@ export const useCartStore = defineStore("cart", () => {
 		}
 
 		if (hasOrderLines.value) (data as any).pickup_date = pickupDate.value;
-		if (orderNotes.value) data.pos_notes = orderNotes.value;
+		// Sales, returns and counter orders keep the cart's note (MuleCity-qajl.7); blank sends none.
+		if (orderNotes.value.trim()) data.pos_notes = orderNotes.value.trim();
 		// The day belongs to a delivery: a pickup sale (or one whose delivery line was removed) has none.
 		if (deliveryDate.value && (activeDelivery.value || selectedDeliveryCharge.value)) data.pos_delivery_date = deliveryDate.value;
 		if (salesPerson.value) data.sales_person = salesPerson.value;
@@ -2100,7 +2104,7 @@ export const useCartStore = defineStore("cart", () => {
 			change: change > 0.01 && !isReturnMode.value ? Math.round(change * 100) / 100 : 0,
 			change_legs: changeLegs.value.length ? changeLegs.value : undefined,
 			currency: currency.value || posStore.currency || undefined,
-			notes: orderNotes.value || undefined,
+			notes: orderNotes.value.trim() || undefined,
 			delivery: receiptDelivery(),
 		};
 	}

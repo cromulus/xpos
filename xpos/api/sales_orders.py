@@ -111,6 +111,9 @@ def create_sales_order(data: str | dict):
 		so.apply_discount_on = data.get("apply_discount_on") or "Grand Total"
 
 	apply_sales_person(so, data.get("sales_person") or None, pos_profile)
+	# The cart's note, on the order's header (MuleCity-qajl.7); a pickup invoice made
+	# from the order copies it, since Sales Invoice has the same pos_notes field.
+	so.pos_notes = (data.get("pos_notes") or "").strip()
 
 	so.save(ignore_permissions=True)
 
