@@ -16,7 +16,9 @@ question).
   the user's row is a Shared Login). Take Payment stays disabled until the
   initials match the profile's cashier list (`cashierInitialsOk`); they are sent
   as `pos_cashier`, and after the payment is taken the avatar shows them
-  (`rememberCashier`). The box is cleared for each customer/ticket. A named
+  (`rememberCashier`). The box is cleared for each customer/ticket. Enter in the box does
+  nothing here (in Pay it moves to the amount); the amount is prefilled with the
+  whole balance, so a quick "LE"+Enter must not take it in one keystroke. A named
   login sees no box and sends no `pos_cashier`; the server records their name.
   Shared by both dialogs through `composables/useTillCashier`. Both payments are
   online only (no offline queue), as before.

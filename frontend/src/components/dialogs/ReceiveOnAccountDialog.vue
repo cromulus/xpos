@@ -54,7 +54,6 @@
 					v-model="till.initials.value"
 					:cashiers="till.cashiers.value"
 					:hint="__('Required to take the payment')"
-					@done="submit"
 				/>
 			</div>
 
