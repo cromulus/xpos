@@ -49,6 +49,13 @@
 						:placeholder="__('Select mode of payment')"
 					/>
 				</div>
+				<CashierInitialsField
+					v-if="till.required.value"
+					v-model="till.initials.value"
+					:cashiers="till.cashiers.value"
+					:hint="__('Required to take the payment')"
+					@done="submit"
+				/>
 			</div>
 
 			<DialogFooter class="shrink-0 border-t border-border px-5 py-4">
@@ -88,6 +95,8 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Select } from "@/components/ui/select";
 import { Banknote, Loader2 } from "lucide-vue-next";
 import { __ } from "@/lib/translate";
+import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
+import { useTillCashier } from "@/composables/useTillCashier";
 
 const props = defineProps<{ customer: string | null; customerLabel?: string; balance: number }>();
 const emit = defineEmits<{ (e: "close"): void; (e: "received"): void }>();
@@ -98,6 +107,8 @@ const { money } = useMoney();
 const amount = ref(0);
 const modeOfPayment = ref("");
 const isSaving = ref(false);
+// On the shared login, who took the money (MuleCity-b9df), as at Pay.
+const till = useTillCashier();
 
 const modeOptions = computed(() =>
 	(posStore.posProfile?.payments || []).map((p) => ({
@@ -107,12 +118,15 @@ const modeOptions = computed(() =>
 );
 
 const overBalance = computed(() => amount.value > props.balance + 0.009);
-const canSubmit = computed(() => !isSaving.value && amount.value > 0 && !!modeOfPayment.value);
+const canSubmit = computed(
+	() => !isSaving.value && amount.value > 0 && !!modeOfPayment.value && till.ok.value,
+);
 
 watch(
 	() => props.customer,
 	(customer) => {
 		if (!customer) return;
+		till.reset();
 		amount.value = Math.max(Number(props.balance) || 0, 0);
 		modeOfPayment.value =
 			posStore.posProfile?.payments?.find((p) => p.default)?.mode_of_payment ||
@@ -139,7 +153,9 @@ async function submit() {
 			mode_of_payment: modeOfPayment.value,
 			pos_opening_shift: shiftName,
 			pos_profile: posStore.profileName,
+			...till.payload(),
 		});
+		till.remember();
 		showSuccess(__("Payment of {0} recorded on account", [money(amount.value)]));
 		emit("received");
 	} catch (error: unknown) {

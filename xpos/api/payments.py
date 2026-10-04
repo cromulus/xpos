@@ -199,19 +199,18 @@ def stamp_till_payment(pe, pos_profile: str | None, pos_opening_shift: str, type
 	``reference_no`` is the POS Opening Shift: the tag ``shifts.get_shift_till_payments``
 	(and the desk closing's ``get_payments_entries``) reads. ``pos_cashier`` follows the
 	invoice rule (``invoices.apply_pos_cashier``): a named login records its full name; on
-	the shared login the typed initials must be on the profile's cashier list. A shared-login
-	payment with no initials typed (the Receive on Account and Settle dialogs don't ask yet)
-	is saved without, and counts under "(none)" on the close sheet.
+	the shared login the typed initials must be on the profile's cashier list, and a payment
+	without them, or with initials not on the list, is refused before anything is saved
+	(MuleCity-b9df: Receive on Account and Settle ask for them like Pay). Payments are taken
+	online only, so there is no offline replay leniency here.
 	"""
-	from xpos.api.invoices import apply_pos_cashier, is_shared_login, normalize_initials
+	from xpos.api.invoices import apply_pos_cashier
 
 	pe.reference_no = pos_opening_shift
 	if not pos_profile or not frappe.get_meta("Payment Entry").has_field("pos_cashier"):
 		return
 	pos = frappe.get_cached_doc("POS Profile", pos_profile)
-	if is_shared_login(pos, frappe.session.user) and not normalize_initials(typed_cashier):
-		return
-	apply_pos_cashier(pe, pos, typed_cashier)
+	apply_pos_cashier(pe, pos, typed_cashier, payment=True)
 
 
 def create_payment_entry(data: str | dict) -> dict:

@@ -12,7 +12,8 @@ import { __ } from "@/lib/translate";
 import { matchCashier, normalizeInitials } from "@/utils/cashierInitials";
 import type { XposCashier } from "@/types/pos.types";
 
-const props = defineProps<{ cashiers: XposCashier[] }>();
+// `hint`: what the initials are for, shown while the box is empty (Receive on Account and Settle, MuleCity-b9df).
+const props = defineProps<{ cashiers: XposCashier[]; hint?: string }>();
 const initials = defineModel<string>({ default: "" });
 // Enter moves on to the amount, whose own Enter completes the sale.
 const emit = defineEmits<{ done: [] }>();
@@ -63,7 +64,7 @@ defineExpose({ focus });
 				{{ __("{0} is not on the cashier list", [typed]) }}
 			</span>
 			<span v-else class="text-xs text-muted-foreground">
-				{{ __("Required to complete the sale") }}
+				{{ hint || __("Required to complete the sale") }}
 			</span>
 		</div>
 	</div>

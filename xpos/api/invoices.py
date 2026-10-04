@@ -536,7 +536,7 @@ def is_shared_login(pos, user: str) -> bool:
 	)
 
 
-def apply_pos_cashier(invoice_doc, pos, typed, replay: bool = False) -> str | None:
+def apply_pos_cashier(invoice_doc, pos, typed, replay: bool = False, payment: bool = False) -> str | None:
 	"""Stamp who rang this sale (Mule City, MuleCity-fb00.2, MuleCity-1p4i).
 
 	When the POS Profile's ``xpos_require_cashier_initials`` is on, a sale rung
@@ -550,6 +550,10 @@ def apply_pos_cashier(invoice_doc, pos, typed, replay: bool = False) -> str | No
 	offline; the customer has gone, so refusing it would lose a paid sale. It is
 	saved with whatever was typed and a note for the invoice's timeline is
 	returned. Otherwise returns None.
+
+	``payment``: the document is a Payment Entry taken at the till (Receive on
+	Account, Settle; ``payments.stamp_till_payment``, MuleCity-b9df). Same rule,
+	worded for a payment.
 	"""
 	if not cint(pos.get("xpos_require_cashier_initials")):
 		return None
@@ -567,6 +571,8 @@ def apply_pos_cashier(invoice_doc, pos, typed, replay: bool = False) -> str | No
 
 	if not replay:
 		if not initials:
+			if payment:
+				frappe.throw(_("Enter your cashier initials to take this payment."))
 			frappe.throw(_("Enter your cashier initials to complete this sale."))
 		frappe.throw(
 			_("Cashier initials {0} are not on the cashier list of POS Profile {1}.").format(

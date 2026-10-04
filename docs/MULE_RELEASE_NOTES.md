@@ -1,5 +1,39 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc37 (unreleased)
+
+### Cashier initials on Receive on Account and Settle (MuleCity-b9df)
+
+Bill (2026-10-03): payments taken at the till on the shared pos@ login must ask
+for listed cashier initials like Pay does, so the close sheet's By Cashier table
+files them under the cashier instead of "(none)" (the mc25 49ue walk's open
+question).
+
+- **Till.** The Receive on Account dialog and the Settle Invoice dialog (Orders
+  → an unpaid ticket → settle) show the same Cashier initials box as Pay
+  (`CashierInitialsField`, hint "Required to take the payment") when
+  `requireCashierInitials` is on (profile `xpos_require_cashier_initials` and
+  the user's row is a Shared Login). Take Payment stays disabled until the
+  initials match the profile's cashier list (`cashierInitialsOk`); they are sent
+  as `pos_cashier`, and after the payment is taken the avatar shows them
+  (`rememberCashier`). The box is cleared for each customer/ticket. A named
+  login sees no box and sends no `pos_cashier`; the server records their name.
+  Shared by both dialogs through `composables/useTillCashier`. Both payments are
+  online only (no offline queue), as before.
+- **Server.** `payments.stamp_till_payment` no longer saves a shared-login
+  payment without initials: it applies `invoices.apply_pos_cashier` with
+  `payment=True`, so `receive_on_account` and `settle_outstanding_invoice` on a
+  shared login refuse missing initials ("Enter your cashier initials to take
+  this payment.") or unlisted ones ("Cashier initials ZZ are not on the cashier
+  list of POS Profile …") before the Payment Entry is inserted. The Mule app's
+  prepaid mix order (`counter_mix_orders._prepay`) goes through the same helper;
+  its Pay already refuses without listed initials (`_check_cashier_initials`),
+  so nothing changes there.
+- **Tests.** `tillPaymentInitials.spec.ts` (both dialogs: blocked without listed
+  initials, sends `pos_cashier`, avatar updated, named login not asked);
+  `xpos.api.tests.test_till_payment_cashier` (refusal and stamping as the shared
+  login, named login, flag off, nothing inserted on refusal).
+
 ## mule-v2.10.1-mc36 (unreleased)
 
 ### Prepaid mix orders show the order's own tax (MuleCity-3urg, MuleCity-af3t)
