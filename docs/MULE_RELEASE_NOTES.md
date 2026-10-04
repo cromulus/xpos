@@ -9,8 +9,8 @@ for listed cashier initials like Pay does, so the close sheet's By Cashier table
 files them under the cashier instead of "(none)" (the mc25 49ue walk's open
 question).
 
-- **Till.** The Receive on Account dialog and the Settle Invoice dialog (Orders
-  → an unpaid ticket → settle) show the same Cashier initials box as Pay
+- **Till.** The Receive on Account dialog (cart, customer balance) and the
+  Settle Invoice dialog (open tabs dialog, Unpaid tab, a past ticket) show the same Cashier initials box as Pay
   (`CashierInitialsField`, hint "Required to take the payment") when
   `requireCashierInitials` is on (profile `xpos_require_cashier_initials` and
   the user's row is a Shared Login). Take Payment stays disabled until the
