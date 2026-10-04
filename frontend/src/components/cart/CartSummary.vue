@@ -507,7 +507,8 @@ const payButtonLabel = computed(() => {
 	if (posStore.enableCashierSettlement && !cartStore.isReturnMode) return __("Send to Cashier");
 	// The mix orders are being priced by the site: Pay shows (and takes) its price, not the cart's.
 	if (cartStore.mixPriceChecking) return __("Checking the price…");
-	const amt = `${money(Math.abs(cartStore.grandTotal))}`;
+	// A prepaid pickup shows what is left to pay, as the Pay dialog does (MuleCity-m2s4).
+	const amt = `${money(cartStore.amountDue)}`;
 	return cartStore.isReturnMode ? __("Process Return {0}", [amt]) : __("Pay {0}", [amt]);
 });
 

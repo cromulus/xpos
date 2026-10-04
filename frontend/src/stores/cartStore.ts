@@ -501,6 +501,14 @@ export const useCartStore = defineStore("cart", () => {
 
 	const previewKey = computed(() => JSON.stringify(previewPayload()));
 
+	/**
+	 * Paid on the order before pickup (Mule City, MuleCity-m2s4): the order's
+	 * advances on the ticket ``pickup_invoice`` loads (its ``total_advance``).
+	 * The Pay dialog's Amount Due is the server preview, which already takes them
+	 * off; this lets the cart's Pay button say the same before Pay is pressed.
+	 */
+	const orderAdvance = ref(0);
+
 	const grandTotal = computed(() => {
 		const posStore = usePosStore();
 		// A cart with custom mix orders: today's ticket, plus the orders when paid now.
@@ -548,6 +556,19 @@ export const useCartStore = defineStore("cart", () => {
 			total = roundTo(total, 0) || 0;
 		}
 		return total;
+	});
+
+	/**
+	 * What is still to pay (Mule City, MuleCity-m2s4), the figure the Pay dialog
+	 * shows as Amount Due. Once the server has priced this cart the total is
+	 * already net of a pickup's advances; until then the loaded order's advance
+	 * comes off here, never below zero.
+	 */
+	const amountDue = computed(() => {
+		const total = Math.abs(grandTotal.value);
+		const priced = !!serverPreview.value && serverPreview.value.key === previewKey.value;
+		if (isReturnMode.value || priced || orderAdvance.value <= 0) return total;
+		return Math.max(0, Math.round((total - orderAdvance.value) * 100) / 100);
 	});
 
 	const isEmpty = computed(() => items.value.length === 0);
@@ -1528,6 +1549,7 @@ export const useCartStore = defineStore("cart", () => {
 	function clearCart(): void {
 		invoiceLocalId = "";
 		serverPreview.value = null;
+		orderAdvance.value = 0;
 		counterQuote.value = null;
 		pickupDate.value = "";
 		mixPayMode.value = "now";
@@ -2041,8 +2063,10 @@ export const useCartStore = defineStore("cart", () => {
 			batch_no?: string;
 		}>;
 		pos_notes?: string;
+		total_advance?: number;
 	}): void {
 		clearCart();
+		orderAdvance.value = Math.max(0, Number(invoiceData.total_advance) || 0);
 		customer.value = {
 			name: invoiceData.customer,
 			customer_name: invoiceData.customer_name,
@@ -2468,6 +2492,8 @@ export const useCartStore = defineStore("cart", () => {
 		includedTaxAmount,
 		totalTaxAmount,
 		grandTotal,
+		amountDue,
+		orderAdvance,
 		isEmpty,
 		customerName,
 		totalPayments,

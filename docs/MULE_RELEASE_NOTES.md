@@ -36,6 +36,18 @@ question).
   `xpos.api.tests.test_till_payment_cashier` (refusal and stamping as the shared
   login, named login, flag off, nothing inserted on refusal).
 
+### Pay button on a prepaid pickup shows what is left (MuleCity-m2s4)
+
+mc36 staging walk 2026-10-03: a fully prepaid mix order loaded for pickup
+(SAL-ORD-00014, advance $3.75) showed "Pay $3.75" on the cart while the Pay
+dialog said Amount Due $0.00. The cart keeps the loaded ticket's
+`total_advance` (from the app's `pickup_invoice`, `orderAdvance`), and the Pay
+button reads `cartStore.amountDue`: the server preview's amount due once Pay has
+priced the cart (the figure the dialog shows), before that the total less the
+order's advance, never below zero. A new cart forgets the advance. Tests:
+`prepaidPickupPayButton.spec.ts` (full, part and no advance; after the preview
+the button and dialog agree).
+
 ## mule-v2.10.1-mc36 (unreleased)
 
 ### Prepaid mix orders show the order's own tax (MuleCity-3urg, MuleCity-af3t)
