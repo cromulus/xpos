@@ -1,5 +1,28 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc36 (unreleased)
+
+### Prepaid mix orders show the order's own tax (MuleCity-3urg, MuleCity-af3t)
+
+Bill (2026-10-02): prepaid counter mix orders are taxed. The Mule app
+(`fix/af3t-mix-tax`) now gives a counter mix Sales Order the customer's native
+tax (Tax Category, Tax Rule, template rows; 0% for Exempt/Resale), so
+`counter_check`/`counter_quote` return tax-inclusive totals and each order's
+own tax, Pay now prepays the order's grand total, and the pickup bills the
+order's tax with nothing more owed.
+
+- **Pay dialog breakdown.** The Subtotal and tax lines under Amount Due now
+  read the cart summary's figures (`summarySubtotal`, `summaryTaxes`): once the
+  site has priced a cart with mix orders, the order lines at the order's own
+  amounts and "Tax on mix orders" from the order's own tax. The till's
+  estimate (the mc27 walk's "Sales Tax 6.75% +$0.17" under an untaxed order,
+  SAL-ORD-00013) is no longer shown for a mix order. Amount Due and the
+  prepayment were already the orders' total, now tax-inclusive.
+- **Amber answers.** Short ingredients / no price stay amber in the cart's
+  check line, under Pay and in the Pay dialog (mc35); verified, unchanged.
+- **Tests.** `mixOrderTax.spec.ts` mounts the Pay dialog for an untaxed and a
+  taxed mix order (both fail on mc35).
+
 ## mule-v2.10.1-mc35 (unreleased)
 
 ### Sale dates on their own day (MuleCity-jh8j)

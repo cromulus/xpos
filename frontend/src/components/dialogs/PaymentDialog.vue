@@ -96,7 +96,7 @@
 						</div>
 						<div
 							v-if="
-								cartStore.calculatedTaxes.length > 0 ||
+								cartStore.summaryTaxes.length > 0 ||
 								cartStore.offerItemDiscountTotal > 0 ||
 								cartStore.offerGrandTotalDiscountPct > 0 ||
 								cartStore.appliedCoupon
@@ -105,10 +105,12 @@
 						>
 							<div class="flex items-center justify-between text-xs text-muted-foreground mb-1">
 								<span>{{ __("Subtotal") }}</span>
-								<span>{{ money(cartStore.subtotal) }}</span>
+								<span>{{ money(cartStore.summarySubtotal) }}</span>
 							</div>
+							<!-- The cart summary's taxes: once the site priced a cart with mix orders,
+							     the orders' own tax, never the till's estimate (MuleCity-3urg). -->
 							<div
-								v-for="(tax, idx) in cartStore.calculatedTaxes"
+								v-for="(tax, idx) in cartStore.summaryTaxes"
 								:key="idx"
 								class="flex items-center justify-between text-xs text-muted-foreground"
 							>
