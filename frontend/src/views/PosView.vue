@@ -163,6 +163,9 @@
 				<Cart />
 			</div>
 
+			<!-- Once, not per Cart: both Carts above are mounted (MuleCity-6ev6). -->
+			<CartDialogs />
+
 			<CameraBarcodeDialog
 				:open="showCameraScanner"
 				@close="showCameraScanner = false"
@@ -194,6 +197,7 @@ import BarcodeScanner from "@/components/items/BarcodeScanner.vue";
 import ItemGrid from "@/components/items/ItemGrid.vue";
 import CommandSearch from "@/components/items/CommandSearch.vue";
 import Cart from "@/components/cart/Cart.vue";
+import CartDialogs from "@/components/cart/CartDialogs.vue";
 import { Button } from "@/components/ui/button";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { LayoutGrid, List, Search, ShoppingCart, Package, ScanLine } from "lucide-vue-next";

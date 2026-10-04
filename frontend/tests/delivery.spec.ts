@@ -318,7 +318,7 @@ describe("Bill's address rule (2026-10-01 22:52, MuleCity-qajl)", () => {
 		await flushPromises();
 		expect(state.call).toHaveBeenCalledWith("xpos.api.customers.add_delivery_address", {
 			customer: "MC-CUST-4112", address_line1: "88 New Ground Rd", address_line2: null, city: "Coats", state: "NC",
-			pincode: "27521", title: null, delivery_miles: null, miles_source: "manual",
+			pincode: "27521", title: null, delivery_miles: null,
 		});
 		// The cart's quote weighs this cart (the add's own quote has no cart).
 		expect(state.call).toHaveBeenCalledWith("xpos.api.delivery.quote_delivery", expect.objectContaining({ address: "Albert Adkins-Shipping" }));
@@ -354,7 +354,7 @@ describe("Bill's address rule (2026-10-01 22:52, MuleCity-qajl)", () => {
 		await fillNewAddress(wrapper, { miles: "42" });
 		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
 		await flushPromises();
-		expect(adds.map((a) => [a.delivery_miles, a.miles_source])).toEqual([[null, "manual"], [42, "manual"]]);
+		expect(adds.map((a) => [a.delivery_miles, a.miles_source])).toEqual([[null, undefined], [42, "manual"]]);
 		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb)"]]);
 	});
 

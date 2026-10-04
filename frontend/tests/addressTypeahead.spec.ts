@@ -187,8 +187,11 @@ describe("online: type, pick, the form fills in", () => {
 		expect(state.call).toHaveBeenCalledWith("xpos.api.customers.add_delivery_address", {
 			customer: "MC-CUST-4112", address_line1: "880 New Ground Rd", address_line2: null, city: "Dunn", state: "NC",
 			pincode: "28334", title: null, delivery_miles: null, county: "Harnett County", latitude: 35.3061,
-			longitude: -78.6089, miles_source: "manual",
+			longitude: -78.6089,
 		});
+		// No typed miles after a pick: no miles_source, the site decides ("routes"), MuleCity-6ev6.
+		const add = state.call.mock.calls.find(([method]) => String(method).endsWith("add_delivery_address"))!;
+		expect(add[1]).not.toHaveProperty("miles_source");
 		expect(cart.getInvoiceData("Till", "SHIFT-1").shipping_address_name).toBe("Albert Adkins-Shipping");
 	});
 
@@ -220,6 +223,19 @@ describe("online: type, pick, the form fills in", () => {
 		expect(add[1]).not.toHaveProperty("latitude");
 		expect(add[1]).not.toHaveProperty("county");
 		expect(add[1].pincode).toBe("27521");
+	});
+
+	it("a pick with miles typed too sends them as the clerk's (miles_source manual), MuleCity-6ev6", async () => {
+		serve();
+		const { wrapper } = await openNewAddressForm();
+		await typeStreet(wrapper, "88 New Gr");
+		await key(wrapper, "Enter");
+		await flushPromises();
+		await wrapper.get("[data-testid='delivery-new-miles']").setValue("13");
+		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
+		await flushPromises();
+		const add = state.call.mock.calls.find(([method]) => String(method).endsWith("add_delivery_address"))!;
+		expect([add[1].delivery_miles, add[1].miles_source, add[1].latitude]).toEqual([13, "manual", 35.3061]);
 	});
 
 	it("one session token per address: every lookup of it shares one; the pick ends it; the next form starts another", async () => {

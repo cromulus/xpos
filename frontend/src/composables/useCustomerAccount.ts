@@ -4,7 +4,7 @@
  * Shared by the cart's customer line, the Pay button (an empty cart with a
  * balance offers Receive on Account) and the Pay dialog (Receive on Account as
  * a payment option), Bill 2026-09-29, MuleCity-nfxn.3. The one
- * ReceiveOnAccountDialog is mounted by the cart and opened through
+ * ReceiveOnAccountDialog is mounted once (cart/CartDialogs.vue, in PosView) and opened through
  * customerStore.showReceiveOnAccount.
  */
 import { computed } from "vue";

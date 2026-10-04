@@ -119,7 +119,8 @@ export async function quoteDelivery(
 /**
  * Add a delivery address for the customer at the till (Bill 2026-10-01 22:52,
  * MuleCity-qajl). Online the site makes it (xpos.api.customers.add_delivery_address:
- * Google's miles, else the typed ones flagged "manual") and answers with its
+ * Google's miles, else the typed ones flagged "manual"; no miles_source is
+ * sent when none were typed) and answers with its
  * miles and a quote. Offline, or when the site cannot be reached, the add is
  * queued (services/addressQueue.ts) under a local id and the typed miles are
  * flagged as typed offline; the sync makes it before the sale that ships there.
@@ -132,7 +133,12 @@ export async function addDeliveryAddress(
 ): Promise<AddedAddress & { queued?: boolean }> {
 	if (isOnline()) {
 		try {
-			const added = await call<AddedAddress>(ADD_ADDRESS_METHOD, addAddressArgs(customer, form, { miles_source: "manual" }));
+			// "manual" only with typed miles; else (a Google pick, or no miles) the site decides (MuleCity-6ev6).
+			const typed = form.miles != null && form.miles > 0;
+			const added = await call<AddedAddress>(
+				ADD_ADDRESS_METHOD,
+				addAddressArgs(customer, form, typed ? { miles_source: "manual" } : {}),
+			);
 			await cacheCustomerAddress(customer, cachedAddress(added)).catch(() => undefined);
 			return added;
 		} catch (error) {

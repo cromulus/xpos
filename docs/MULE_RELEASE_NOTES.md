@@ -1,5 +1,41 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc38 (unreleased)
+
+### Receive on Account opens one dialog (MuleCity-6ev6)
+
+mc37 staging walk 2026-10-04: one click on Receive on Account opened two
+stacked copies of its dialog (one payment was created).
+
+- **Cause.** PosView mounts two Carts (the desktop panel and the mobile tab;
+  one is hidden only by CSS), and each Cart mounted `ReceiveOnAccountDialog`,
+  opened from the store (`customerStore.showReceiveOnAccount`), so both opened.
+  `CustomerEditDialog` (`customerStore.showCustomerEditDialog`) had the same
+  shape and also opened twice.
+- **Fix.** Both store-opened dialogs moved out of Cart into
+  `components/cart/CartDialogs.vue`, mounted once by PosView beside the Carts.
+  No behaviour change otherwise (same props, close and refresh on receive).
+- **Tests.** `receiveOnAccountOnce.spec.ts`: PosView's layout (two Carts plus
+  CartDialogs); one click on the empty cart's Receive on Account opens exactly
+  one dialog (the old layout gave two).
+
+### A Google pick no longer sends miles_source "manual" (MuleCity-6ev6, p644)
+
+- **Cause.** `useDelivery.addDeliveryAddress` always sent
+  `miles_source: "manual"` online, also after a Google pick with no typed
+  miles. The site ignores the source when no miles are typed and stores
+  "routes", so no data was harmed, but the request was wrong.
+- **Fix.** `miles_source: "manual"` is sent only with typed miles; otherwise
+  none is sent and the site decides (Google's Routes miles).
+- **Tests.** `addressTypeahead.spec.ts` (pick without miles: no
+  `miles_source`; pick with typed miles: `"manual"`), `delivery.spec.ts`
+  updated.
+
+### Prepaid mix order pickup keeps the order's tax rate (MuleCity-6ad5, app)
+
+No XPOS change: the Mule app's `pos_workspace._copy_order_taxes` pins the
+pickup invoice to its Sales Order's tax rows (see the app's commit).
+
 ## mule-v2.10.1-mc37 (unreleased)
 
 ### Cashier initials on Receive on Account and Settle (MuleCity-b9df)

@@ -153,13 +153,6 @@
 			>
 				{{ mixCheck.text }}
 			</p>
-			<ReceiveOnAccountDialog
-				:customer="customerStore.showReceiveOnAccount ? cartStore.customer?.name || null : null"
-				:customer-label="cartStore.customerName"
-				:balance="customerBalance ?? 0"
-				@close="customerStore.showReceiveOnAccount = false"
-				@received="onReceivedOnAccount"
-			/>
 		</div>
 
 		<div ref="cartScrollContainer" class="flex-1 overflow-y-auto px-4 xpos-scrollbar">
@@ -246,7 +239,7 @@
 		</div>
 
 		<CartSummary />
-		<CustomerEditDialog />
+		<!-- Receive on Account and Edit customer are mounted once by PosView (CartDialogs, MuleCity-6ev6). -->
 	</div>
 </template>
 
@@ -275,8 +268,6 @@ import {
 	FlaskConical,
 } from "lucide-vue-next";
 import __ from "@/lib/translate";
-import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
-import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
 import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import AddDelivery from "@/components/cart/AddDelivery.vue";
 import ClearCustomer from "@/components/cart/ClearCustomer.vue";
@@ -373,11 +364,6 @@ const showCreditInfo = computed(() =>
 		creditLimit: customerCreditLimit.value,
 	}),
 );
-
-function onReceivedOnAccount() {
-	customerStore.showReceiveOnAccount = false;
-	if (cartStore.customer?.name) customerStore.getCustomerInfo(cartStore.customer.name);
-}
 
 function handleCustomerClick() {
 	if (cartStore.isReturnMode) {
