@@ -1,5 +1,43 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc39 (unreleased)
+
+### Offline receipts print a scan code (MuleCity-gt9l, part of MuleCity-gytr)
+
+Bill (2026-10-06): every printed document that goes out and comes back (signed,
+returned) carries a QR code, so the page scanned at the store's Ricoh files
+itself onto its record.
+
+- **What prints.** Receipts XPOS renders itself (`buildReceiptHtml`: the
+  browser's offline sale via `printReceiptOffline`, and the desktop app's
+  `printInvoiceLocal`, which also prints its "Sent to cashier" backup slips)
+  carry a QR code top-right of the receipt, with the id in large text beside it
+  as a human fallback. The receipt is a single copy, so it carries one code.
+- **Payload** (agreed with the Mule app's Scan Inbox lane; same string as the
+  app's `mule_documents/scan_code.py` `encode_payload`): a sale queued offline
+  has no server name yet, so its code is `MCDOC1:XPOS:<local_id>`, the id the
+  queue syncs with (`local_id`, stored on the invoice as `xpos_local_id`), not
+  the `OFFLINE-<n>`/`LOCAL-<n>` number; the app resolves it after sync. A
+  snapshot that names its submitted invoice (`scan_doc`) prints
+  `MCDOC1:Sales Invoice:<name>`; no XPOS print path sets it yet. No URL, no
+  checksum.
+- **QR.** ECC level M, one byte-mode segment of the UTF-8 bytes (no ECI),
+  4-module quiet zone, drawn as inline SVG in a 0.8in square that includes the
+  quiet zone (the Ricoh scans at 200 dpi). Inline styles only: the Mule City
+  Ticket print format, whose CSS the offline receipt uses, has none.
+- **Not here.** Online prints (`printInvoice`: the network printer or the
+  browser's `/printview`) render ERPNext's Mule City Ticket; its code is the
+  Mule app's (MuleCity-gytr).
+- **Library.** `qrcode` 1.5.4 (encoder, runs offline; `@types/qrcode` dev).
+- **Code.** `services/scanCode.ts`; `ReceiptSnapshot.xpos_local_id` /
+  `scan_doc`; `offlineStore.saveOffline` also returns `xposLocalId`.
+- **Tests.** `scanCode.spec.ts`: both payload strings, the app's refusals, the
+  printed SVG decodes back (ZXing) to the payload with ECC M and byte segments
+  equal to its UTF-8 bytes (incl. a non-ASCII name), quiet zone, 0.8in box,
+  placement top-right of the receipt; `offlinePrint.spec.ts`: both print paths
+  print the queue's local id; `offlineSale.spec.ts`,
+  `offlineReceiptStorage.spec.ts` updated.
+
 ## mule-v2.10.1-mc38 (unreleased)
 
 ### Receive on Account opens one dialog (MuleCity-6ev6)

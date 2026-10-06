@@ -161,3 +161,39 @@ describe("printReceiptOffline", () => {
 		expect(showError).toHaveBeenCalledWith("Failed to print invoice");
 	});
 });
+
+/** The receipt's scan code names the sale by the local id it syncs with (MuleCity-gt9l). */
+describe("offline receipt scan code", () => {
+	it("prints the queued sale's local id as its scan code", async () => {
+		getCachedReceiptContext.mockResolvedValue(context);
+		const { printReceiptOffline } = usePrintInvoice();
+
+		await printReceiptOffline({ ...snapshot, xpos_local_id: "inv_7_abc" });
+
+		expect(lastFrame()!.srcdoc).toContain('data-scan-payload="MCDOC1:XPOS:inv_7_abc"');
+	});
+
+	it("the desktop app's local print reads the local id from the queue row", async () => {
+		getCachedReceiptContext.mockResolvedValue(context);
+		const printReport = vi.fn().mockResolvedValue({ success: true });
+		(window as any).electronAPI = {
+			db: {
+				getPendingInvoice: vi.fn().mockResolvedValue({
+					id: 9,
+					local_id: "inv_9_xyz",
+					data: { receipt: { ...snapshot, name: "" } },
+				}),
+			},
+			print: { printReport },
+		};
+		try {
+			const { printInvoiceLocal } = usePrintInvoice();
+			await printInvoiceLocal(9);
+			const html = printReport.mock.calls[0][0] as string;
+			expect(html).toContain("LOCAL-9");
+			expect(html).toContain('data-scan-payload="MCDOC1:XPOS:inv_9_xyz"');
+		} finally {
+			delete (window as any).electronAPI;
+		}
+	});
+});

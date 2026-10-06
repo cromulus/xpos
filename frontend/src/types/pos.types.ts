@@ -849,6 +849,14 @@ export interface ReceiptSnapshot {
 	notes?: string;
 	/** Where, when and how far a delivery goes, as rung up (MuleCity-qajl); absent for a pickup. */
 	delivery?: ReceiptSnapshotDelivery;
+	/**
+	 * The sale's offline-queue id (the `local_id` it syncs with, stored on the invoice as
+	 * `xpos_local_id`). Set when a queued sale prints; the receipt's scan code carries it
+	 * (MuleCity-gt9l).
+	 */
+	xpos_local_id?: string;
+	/** The submitted invoice this receipt prints, when known; its scan code names it (MuleCity-gt9l). */
+	scan_doc?: { doctype: string; name: string };
 }
 
 /** A delivery's facts at sale time, for the offline receipt (the server keeps the same on the invoice). */

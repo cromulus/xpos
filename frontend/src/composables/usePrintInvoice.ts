@@ -204,6 +204,8 @@ export function usePrintInvoice() {
 
 			if (snapshot && context) {
 				if (!snapshot.name) snapshot.name = `LOCAL-${localId}`;
+				// The id this sale syncs with, for the receipt's scan code (MuleCity-gt9l).
+				if (!snapshot.xpos_local_id && invoice.local_id) snapshot.xpos_local_id = invoice.local_id;
 				const html = buildReceiptHtml(snapshot, context);
 				const result = await window.electronAPI.print.printReport(html);
 				if (!result?.success) {

@@ -228,7 +228,7 @@ export const useOfflineStore = defineStore("offline", () => {
 		grandTotal?: number,
 		reservations?: { item_code: string; stock_qty: number }[],
 		receipt?: ReceiptSnapshot,
-	): Promise<{ success: boolean; localId?: number }> {
+	): Promise<{ success: boolean; localId?: number; xposLocalId?: string }> {
 		try {
 			await attachOfflineCoverage(invoiceData);
 			const record = {
@@ -245,7 +245,13 @@ export const useOfflineStore = defineStore("offline", () => {
 			await refreshPendingCount();
 			await loadPendingInvoices();
 
-			return { success: true, localId: (result as any).id ?? result };
+			// localId: the queue row's number (OFFLINE-<n>); xposLocalId: the id the sale syncs
+			// with (local_id), which the receipt's scan code carries (MuleCity-gt9l).
+			return {
+				success: true,
+				localId: (result as any).id ?? result,
+				xposLocalId: (result as any).local_id || undefined,
+			};
 		} catch (error) {
 			console.error("Failed to save offline invoice:", error);
 			showError(error instanceof Error ? error.message : String(error));

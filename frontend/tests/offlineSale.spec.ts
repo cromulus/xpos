@@ -60,7 +60,7 @@ beforeEach(() => {
 	calls.length = 0;
 	posStore.lastInvoiceName = "";
 	cartStore.getReceiptSnapshot.mockReturnValue(receipt);
-	offlineStore.saveOffline.mockResolvedValue({ success: true, localId: 7 });
+	offlineStore.saveOffline.mockResolvedValue({ success: true, localId: 7, xposLocalId: "inv_7_abc" });
 });
 
 describe("offlineReceiptName", () => {
@@ -85,7 +85,8 @@ describe("completeOfflineSale", () => {
 			[{ item_code: "SKU1", stock_qty: 2 }],
 			receipt,
 		);
-		expect(printReceiptOffline).toHaveBeenCalledWith({ ...receipt, name: "OFFLINE-7" });
+		// The scan code carries the id the sale syncs with (MuleCity-gt9l).
+		expect(printReceiptOffline).toHaveBeenCalledWith({ ...receipt, name: "OFFLINE-7", xpos_local_id: "inv_7_abc" });
 		expect(calls).toEqual(["clearAll", "print"]);
 	});
 

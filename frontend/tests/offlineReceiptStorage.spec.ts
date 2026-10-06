@@ -92,7 +92,8 @@ describe("offline invoice queue", () => {
 
 		const result = await store.saveOffline(invoiceData, "Walk-in Customer", 10, [], receipt);
 
-		expect(result).toEqual({ success: true, localId: 7 });
+		// xposLocalId: the id the sale syncs with, for the receipt scan code (MuleCity-gt9l).
+		expect(result).toEqual({ success: true, localId: 7, xposLocalId: "inv_7" });
 		expect(bridge.addPendingInvoice).toHaveBeenCalledWith({
 			data: invoiceData,
 			customer_name: "Walk-in Customer",

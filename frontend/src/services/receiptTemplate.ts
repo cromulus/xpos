@@ -2,6 +2,7 @@ import { formatFor, formatWithSymbol } from "@/composables/useCurrency";
 import type { ReceiptContext, ReceiptSnapshot } from "@/types/pos.types";
 import { formatFloat, formatQty } from "@/utils/numberFormat";
 import { formatLocalDate } from "@/utils/localDate";
+import { encodeScanPayload, offlineScanPayload, scanCodeBlockHtml } from "@/services/scanCode";
 
 function esc(value: unknown): string {
 	return String(value ?? "")
@@ -73,6 +74,21 @@ function deliverySectionHtml(delivery: ReceiptSnapshot["delivery"]): string {
 			deliveryDayLabel(delivery.date) || "not set",
 		)}</strong></div>
     </div>`;
+}
+
+/**
+ * What the receipt's scan code says (MuleCity-gt9l): the submitted invoice when the
+ * snapshot names it, else the offline queue's local id; null when it knows neither.
+ * `label` is the readable fallback printed beside the code.
+ */
+export function receiptScanCode(snapshot: ReceiptSnapshot): { payload: string; label: string } | null {
+	const doc = snapshot.scan_doc;
+	if (doc?.doctype && doc?.name) {
+		return { payload: encodeScanPayload(doc.doctype, doc.name), label: doc.name.trim() };
+	}
+	const localId = String(snapshot.xpos_local_id || "").trim();
+	if (localId) return { payload: offlineScanPayload(localId), label: localId };
+	return null;
 }
 
 export function buildReceiptHtml(snapshot: ReceiptSnapshot, ctx: ReceiptContext): string {
@@ -230,9 +246,13 @@ export function buildReceiptHtml(snapshot: ReceiptSnapshot, ctx: ReceiptContext)
 		: "";
 
 	const totalItems = snapshot.items.length;
+	const scan = receiptScanCode(snapshot);
+	// Top-right of the receipt, above the header, so it is the first thing on the copy.
+	const scanHtml = scan ? scanCodeBlockHtml(scan.payload, scan.label) : "";
 
 	return `<style>${ctx.css}</style>
 <div class="receipt-container">
+    ${scanHtml}
     <div class="receipt-header">
         <div class="header-top">
             ${logo}
@@ -246,6 +266,7 @@ export function buildReceiptHtml(snapshot: ReceiptSnapshot, ctx: ReceiptContext)
         </div>
         ${ctx.company_tax_id ? `<div class="store-tax-id">Tax ID: ${esc(ctx.company_tax_id)}</div>` : ""}
     </div>
+    ${scanHtml ? '<div style="clear:both;"></div>' : ""}
 
     ${isReturn ? '<div class="return-banner">&#x21A9; RETURN / REFUND</div>' : ""}
 

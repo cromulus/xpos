@@ -47,7 +47,7 @@ export function useOfflineSale() {
 		// The walk-in's full row (its tax category) for the next sale (MuleCity-yn4b).
 		void selectDefaultCustomer();
 		if (options.withPrint) {
-			await printReceiptOffline({ ...receipt, name });
+			await printReceiptOffline({ ...receipt, name, xpos_local_id: result.xposLocalId });
 		}
 
 		return true;
