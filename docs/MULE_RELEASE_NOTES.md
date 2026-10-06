@@ -52,7 +52,8 @@ US staff) and the QR's id wrapping onto two lines.
   The receipt prints dates in the site's format (Mule: `10-06-2026`) and the
   time in its time format; `formatLocalDate` without a locale uses the site's
   day/month order; Orders, the offline pending panel, drafts and the open
-  orders' "fetched at" use the site's order and time zone; `datetime/formats`
+  orders' "fetched at" and the sync status times use the site's order and
+  time zone; `datetime/formats`
   falls back to the saved locale. Money already followed the boot / cached
   settings.
 - **QR caption.** Short and on one line: "Offline sale · …" and the local

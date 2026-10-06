@@ -32,7 +32,7 @@
 								? __("loaded — all eligible")
 								: __("loaded — limited by settings")
 						}}<br />{{ __("Refreshed") }}
-						{{ new Date(state(kind)!.updatedAt).toLocaleTimeString() }}</span
+						{{ formatSiteInstant(state(kind)!.updatedAt, { hour: "numeric", minute: "2-digit" }, "time") }}</span
 					>
 				</div>
 			</template>
@@ -65,6 +65,7 @@
 import { computed, onUnmounted, ref } from "vue";
 import { CloudUpload, Loader2, Wifi, WifiOff } from "lucide-vue-next";
 import { useCacheStatus } from "@/stores/cacheStatus";
+import { formatSiteInstant } from "@/utils/siteLocale";
 import { usePosStore } from "@/stores/posStore";
 import { useOfflineStore } from "@/stores/offlineStore";
 import { useCustomerStore } from "@/stores/customerStore";
