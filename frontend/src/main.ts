@@ -121,6 +121,19 @@ async function initializeNumberFormat(): Promise<void> {
 	}
 }
 
+/**
+ * The site's date/number/currency settings: saved from the boot online, restored from the
+ * device offline (and in the desktop app, which has no boot), MuleCity-mon6.
+ */
+async function initializeSiteLocale(): Promise<void> {
+	try {
+		const { primeSiteLocale } = await import("@/utils/siteLocale");
+		await primeSiteLocale();
+	} catch (error) {
+		console.warn("[XPOS] Site locale initialization failed", error);
+	}
+}
+
 (async () => {
 	// First: from the offline app shell, put the last saved boot in place (no CSRF token); from
 	// the server's page, save this boot for the next offline start (MuleCity-q8aq).
@@ -134,6 +147,7 @@ async function initializeNumberFormat(): Promise<void> {
 	await initializeBrowserStorage();
 	await initializeCurrencyMeta();
 	await initializeNumberFormat();
+	await initializeSiteLocale();
 	app.config.globalProperties.$dayjs = dayjs;
 	app.config.errorHandler = (err: unknown, _instance: unknown, info: string) => {
 		console.error("X POS Error:", err, info);

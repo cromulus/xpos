@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
-import { buildReceiptHtml, deliveryDayLabel, deliveryMilesLabel } from "@/services/receiptTemplate";
+import { buildReceiptHtml, deliveryDayLabel, deliveryMilesLabel, RECEIPT_CSS } from "@/services/receiptTemplate";
+import { setSiteLocale } from "@/utils/siteLocale";
 import { resetCurrencyCache } from "@/composables/useCurrency";
 import type { ReceiptContext, ReceiptSnapshot } from "@/types/pos.types";
 
@@ -15,8 +16,11 @@ beforeEach(() => {
 				{ name: "LBP", symbol: "L£", number_format: "#,###" },
 				{ name: "USD", symbol: "$", number_format: "#,###.##" },
 			],
+			// Mule City's site format (MuleCity-mon6): month first.
+			sysdefaults: { date_format: "mm-dd-yyyy", time_format: "HH:mm:ss", currency: "USD" },
 		},
 	};
+	setSiteLocale(null);
 	resetCurrencyCache();
 });
 
@@ -67,24 +71,25 @@ const snapshot: ReceiptSnapshot = {
 };
 
 describe("buildReceiptHtml", () => {
-	it("renders the cached CSS and core receipt fields", () => {
+	it("renders its own inline CSS and the core receipt fields", () => {
 		const html = buildReceiptHtml(snapshot, context);
-		expect(html).toContain(context.css);
+		expect(html).toContain(`<style>${RECEIPT_CSS}</style>`);
+		// The print format's CSS field is no longer what styles it (MuleCity-mon6).
+		expect(html).not.toContain(context.css);
 		expect(html).toContain("LOCAL-42");
-		expect(html).toContain("07-07-2026");
-		expect(html).toContain("02:05 PM");
+		expect(html).toContain("07-07-2026 14:05:30");
 		expect(html).toContain("Coffee &amp; Cream"); // HTML-escaped
 		expect(html).toContain("Acme &lt;Store&gt;"); // company name escaped
-		expect(html).toContain("<b>Welcome</b>"); // header HTML kept raw
 		expect(html).toContain("Cash");
 		expect(html).toContain("Change");
-		expect(html).toContain("Tax ID: TAX-99");
+		expect(html).toContain("Thank you for your business!");
 	});
 
-	it("shows RETURN banner and REFUND label for returns", () => {
+	it("shows the return heading and the refund total for returns", () => {
 		const html = buildReceiptHtml({ ...snapshot, is_return: true, change: 0 }, context);
-		expect(html).toContain("RETURN / REFUND");
-		expect(html).toContain("REFUND");
+		expect(html).toContain("Return / refund");
+		expect(html).toContain("Transaction type: <b>Return</b>");
+		expect(html).toContain("<b>Refund: $7.25</b>");
 		expect(html).not.toContain("Change");
 	});
 
@@ -152,8 +157,8 @@ describe("buildReceiptHtml - mixed-currency tender", () => {
 
 		// The rate is quoted in LBP, which is a zero-decimal currency, so no phantom cents.
 		expect(html).toContain("@ 90,000");
-		expect(html).toContain("(17-08-2026)");
-		expect(html).toMatch(/@ 90,000 \(17-08-2026\) = [^<]*9,000,000/);
+		expect(html).toContain("(08-17-2026)");
+		expect(html).toMatch(/@ 90,000 \(08-17-2026\) = [^<]*9,000,000/);
 	});
 
 	it("lists one change line per currency plus a total", () => {
@@ -165,7 +170,7 @@ describe("buildReceiptHtml - mixed-currency tender", () => {
 		expect(html).toContain("L£407,700");
 		expect(html).toContain("Total Change");
 		// The legs must still reconcile to the single figure ERPNext computed.
-		expect(html).toMatch(/Total Change<\/span>\s*<span>[^<]*3,107,700/);
+		expect(html).toMatch(/Total Change: <b>[^<]*3,107,700/);
 	});
 
 	it("omits the rate line for a leg already in the invoice currency", () => {
@@ -183,11 +188,11 @@ describe("buildReceiptHtml - mixed-currency tender", () => {
 		expect(html).not.toContain("Total Change");
 	});
 
-	it("leaves a legacy single-currency receipt byte for byte unchanged", () => {
-		// No change legs and no tagged payment rows: the old one-line form must survive.
+	it("prints a single-currency receipt's change on one line", () => {
+		// No change legs and no tagged payment rows: the one-line form.
 		const html = buildReceiptHtml(snapshot, context);
 
-		expect(html).toContain("<span>Change</span>");
+		expect(html).toContain("Change: <b>$2.75</b>");
 		expect(html).not.toContain("Total Change");
 		expect(html).not.toContain("change-leg-row");
 		expect(html).not.toContain("payment-rate-line");
@@ -246,32 +251,34 @@ describe("the Delivery section", () => {
 		miles_source: "address" as const,
 		date: "2026-10-05",
 	};
-	const section = (html: string) => html.match(/<div class="customer-section delivery-section">[\s\S]*?<\/div>\s*<\/div>/)?.[0] || "";
+	const section = (html: string) =>
+		html.match(/<h4 class="mule-section">Delivery<\/h4>\s*<div class="mule-customer mule-delivery">[\s\S]*?<\/div>/)?.[0] || "";
 
 	it("prints the address, the miles and the day, and keeps the DEL line", () => {
 		const html = buildReceiptHtml({ ...snapshot, items: [...snapshot.items, delLine], delivery }, context);
 		const text = section(html);
 		expect(text).toContain("Delivery");
 		expect(text).toContain("1202 N Wall St, Benson, NC 27504");
-		expect(text).toContain("Miles: <strong>12 mi</strong>");
-		expect(text).toContain("Day: <strong>Monday, October 5, 2026</strong>");
+		expect(text).toContain("Miles: <b>12 mi</b>");
+		expect(text).toContain("Day: <b>Monday, October 5, 2026</b>");
 		// The DEL item line still prints with the items, after the section.
-		expect(html.indexOf("delivery-section")).toBeLessThan(html.indexOf("items-header"));
-		expect(html.slice(html.indexOf("items-header"))).toContain(">Delivery</div>");
+		const items = html.indexOf('<h4 class="mule-section">Items</h4>');
+		expect(html.indexOf('class="mule-customer mule-delivery"')).toBeLessThan(items);
+		expect(html.slice(items)).toContain("<td>Delivery</td>");
 	});
 
 	it("says 'miles not known' when the address has no miles, and marks typed miles", () => {
 		expect(section(buildReceiptHtml({ ...snapshot, delivery: { ...delivery, miles: null, miles_source: null } }, context))).toContain(
-			"Miles: <strong>miles not known</strong>",
+			"Miles: <b>miles not known</b>",
 		);
 		expect(section(buildReceiptHtml({ ...snapshot, delivery: { ...delivery, miles: 7.5, miles_source: "manual" } }, context))).toContain(
-			"Miles: <strong>7.5 mi, typed</strong>",
+			"Miles: <b>7.5 mi, typed</b>",
 		);
 	});
 
 	it("prints no section for a pickup sale", () => {
 		const html = buildReceiptHtml({ ...snapshot, delivery: undefined }, context);
-		expect(html).not.toContain("delivery-section");
+		expect(html).not.toContain('class="mule-customer mule-delivery"');
 		expect(html).not.toContain("Miles:");
 	});
 
@@ -300,16 +307,146 @@ describe("the Delivery section", () => {
  */
 describe("the note", () => {
 	it("prints on a sale and on a return, line breaks kept", () => {
-		expect(buildReceiptHtml({ ...snapshot, notes: "Call Steve first" }, context)).toContain(
-			"<strong>Notes:</strong> Call Steve first",
+		expect(buildReceiptHtml({ ...snapshot, notes: "Call Steve first" }, context)).toMatch(
+			/<h4 class="mule-section">Notes<\/h4>\s*<div class="mule-customer mule-notes">Call Steve first<\/div>/,
 		);
 		const html = buildReceiptHtml({ ...snapshot, is_return: true, change: 0, notes: "Torn bag\nrefund cash" }, context);
-		expect(html).toContain("RETURN / REFUND");
-		expect(html).toContain("<strong>Notes:</strong> Torn bag<br>refund cash");
+		expect(html).toContain("Return / refund");
+		expect(html).toContain('mule-notes">Torn bag<br>refund cash');
 	});
 
 	it("prints nothing for an empty note", () => {
-		expect(buildReceiptHtml({ ...snapshot, notes: undefined }, context)).not.toContain("Notes:");
-		expect(buildReceiptHtml({ ...snapshot, notes: "" }, context)).not.toContain("Notes:");
+		expect(buildReceiptHtml({ ...snapshot, notes: undefined }, context)).not.toContain(">Notes<");
+		expect(buildReceiptHtml({ ...snapshot, notes: "" }, context)).not.toContain(">Notes<");
+	});
+});
+
+/**
+ * MuleCity-mon6 (mc39 staging walk): the offline receipt printed unstyled (its CSS came from
+ * the print format's CSS field, which the Mule City Ticket leaves empty), with a broken
+ * logo and a day-month date. It now carries its own CSS, prints the logo only from a cached
+ * data URI, and dates in the site's format, and reads like the Ticket.
+ */
+describe("the offline receipt is self-contained and reads like the Mule City Ticket", () => {
+	const BRAND = {
+		company_name: "Mule City Specialty Feeds",
+		address_line: "1202 N Wall St, Benson, NC 27504",
+		phone: "919-894-3626",
+		website: "mulecity.com",
+		logo_url: "",
+		footer_text: "",
+		accent_color: "",
+	};
+	const mule: ReceiptContext = { ...context, company_logo: "/files/app-icon.png", css: "", brand: BRAND };
+	const parse = (html: string) => new DOMParser().parseFromString(html, "text/html");
+
+	it("inlines all its CSS and loads nothing from the network", () => {
+		const html = buildReceiptHtml(snapshot, mule);
+		const doc = parse(html);
+		expect(doc.querySelectorAll("style")).toHaveLength(1);
+		expect(doc.querySelector("style")!.textContent).toContain(".mule-ticket");
+		expect(html).not.toMatch(/<link\b/i);
+		expect(html).not.toMatch(/@import/i);
+		expect(html).not.toMatch(/url\(/i);
+		expect(html).not.toMatch(/src="(?!data:)/);
+		expect(html).not.toMatch(/<script\b/i);
+	});
+
+	it("prints US dates mm-dd-yyyy from the site's sysdefaults, never day-month", () => {
+		const html = buildReceiptHtml({ ...snapshot, posting_date: "2026-10-06", posting_time: "15:03:00.123" }, mule);
+		expect(html).toContain("10-06-2026 15:03:00");
+		expect(html).not.toContain("06-10-2026");
+	});
+
+	it("follows a day-first site and falls back to the ISO date when no format is known", () => {
+		(window as any).xpos.boot.sysdefaults = { date_format: "dd.mm.yyyy" };
+		expect(buildReceiptHtml({ ...snapshot, posting_date: "2026-10-06" }, mule)).toContain("06.10.2026");
+		delete (window as any).xpos.boot.sysdefaults;
+		expect(buildReceiptHtml({ ...snapshot, posting_date: "2026-10-06" }, mule)).toContain("2026-10-06");
+	});
+
+	it("uses the receipt context's site locale when there is no boot (the desktop app)", () => {
+		delete (window as any).xpos.boot.sysdefaults;
+		const locale = {
+			date_format: "mm-dd-yyyy",
+			time_format: "HH:mm:ss",
+			number_format: "#,###.##",
+			currency: "USD",
+			currency_precision: "",
+			float_precision: "",
+			time_zone: "America/New_York",
+		};
+		expect(buildReceiptHtml({ ...snapshot, posting_date: "2026-10-06" }, { ...mule, locale })).toContain("10-06-2026");
+	});
+
+	it("prints the Ticket's compact letterhead: name, then address · phone · website", () => {
+		const doc = parse(buildReceiptHtml(snapshot, mule));
+		expect(doc.querySelector(".mule-lh-name")!.textContent).toBe("Mule City Specialty Feeds");
+		expect(doc.querySelector(".mule-lh-contact")!.textContent).toBe(
+			"1202 N Wall St, Benson, NC 27504 · 919-894-3626 · mulecity.com",
+		);
+		expect((doc.querySelector(".mule-lh-name") as HTMLElement).style.color).toBe("rgb(0, 0, 0)");
+		expect(doc.querySelector(".mule-footer")).toBeNull();
+	});
+
+	it("prints no image when no logo is cached, and never the Company's app icon", () => {
+		expect(buildReceiptHtml(snapshot, mule)).not.toContain("<img");
+		// A logo URL whose image could not be cached: the name in type, no broken image.
+		expect(buildReceiptHtml(snapshot, { ...mule, brand: { ...BRAND, logo_url: "https://x.test/l.png" } })).not.toContain(
+			"<img",
+		);
+		// An older site with no print brand: the receipt context's company, in type.
+		const older = parse(buildReceiptHtml(snapshot, { ...context, company_logo: "/files/app-icon.png" }));
+		expect(older.querySelector("img")).toBeNull();
+		expect(older.querySelector(".mule-lh-name")!.textContent).toBe("Acme <Store>");
+		expect(older.querySelector(".mule-lh-contact")!.textContent).toBe("1 Main St, Town · 123-456 · acme.test");
+	});
+
+	it("prints a cached logo as a data URI, with the footer and accent colour when set", () => {
+		const logo = "data:image/png;base64,iVBORw0KGgo=";
+		const doc = parse(
+			buildReceiptHtml(snapshot, {
+				...mule,
+				brand: { ...BRAND, logo_url: "https://x.test/l.png", logo_data_uri: logo, footer_text: "Open Mon-Sat", accent_color: "#b5121b" },
+			}),
+		);
+		expect(doc.querySelector("img.mule-lh-logo")!.getAttribute("src")).toBe(logo);
+		expect(doc.querySelector(".mule-footer")!.textContent).toBe("Open Mon-Sat");
+		expect((doc.querySelector(".mule-lh-name") as HTMLElement).style.color).toBe("rgb(181, 18, 27)");
+		// A colour that is not a colour is not printed into a style attribute.
+		const bad = buildReceiptHtml(snapshot, { ...mule, brand: { ...BRAND, accent_color: "red;background:url(x)" } });
+		expect(bad).not.toContain("background:url");
+	});
+
+	it("has the Ticket's sections, columns and footer", () => {
+		const doc = parse(buildReceiptHtml(snapshot, mule));
+		const sections = [...doc.querySelectorAll("h4.mule-section")].map((h) => h.textContent);
+		expect(sections).toEqual(["Customer", "Notes", "Items", "Totals & payment"]);
+		expect([...doc.querySelectorAll(".mule-lines thead th")].map((th) => th.textContent)).toEqual([
+			"Quantity",
+			"Item or service",
+			"Description",
+			"Price",
+			"Total",
+		]);
+		expect(doc.querySelector(".mule-copy")!.textContent).toBe("Customer copy");
+		expect(doc.querySelector(".mule-head-doc")!.textContent).toContain("Ticket # LOCAL-42");
+		expect(doc.querySelector(".mule-head-doc")!.textContent).toContain("Cashier Jane Cashier");
+		expect(doc.querySelector(".mule-thanks")!.textContent).toBe("Thank you for your business!");
+		expect(doc.body.textContent).not.toContain("Powered by XPOS");
+	});
+
+	it("prints a discounted line like the Ticket: list price, the amount off each, the net total", () => {
+		const doc = parse(buildReceiptHtml(snapshot, mule));
+		const cells = [...doc.querySelectorAll(".mule-lines tbody tr")[0].querySelectorAll("td")].map((td) => td.textContent);
+		// 2 at $3.50 list, 10% off: $0.35 off each, $6.30 for the line.
+		expect(cells[0]).toBe("2");
+		expect(cells[3]).toBe("$3.500−$0.350 ea (10%)");
+		expect(cells[4]).toBe("$6.30");
+	});
+
+	it("calls a sale not paid in full a charge, and a paid one cash", () => {
+		expect(buildReceiptHtml(snapshot, mule)).toContain("Transaction type: <b>Cash</b>");
+		expect(buildReceiptHtml({ ...snapshot, payments: [], change: 0 }, mule)).toContain("Transaction type: <b>Charge</b>");
 	});
 });

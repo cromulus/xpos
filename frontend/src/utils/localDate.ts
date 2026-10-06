@@ -7,8 +7,14 @@
  * "Sep 30". A date-only string is read as local midnight instead. Anything
  * with a time (a real datetime) is parsed by `new Date` as before.
  *
- * Kept free of imports so the receipt template and its tests can use it.
+ * Kept free of static app imports so the receipt template and its tests can use it
+ * (siteLocale only reads window.xpos).
+ *
+ * With no locale given, dates print in the site's day/month order (its date_format),
+ * not the browser's (MuleCity-mon6).
  */
+import { siteDateLocale } from "@/utils/siteLocale";
+
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseLocalDate(value: string | null | undefined): Date | null {
@@ -26,5 +32,5 @@ export function formatLocalDate(
 	locale?: string | string[],
 ): string {
 	const date = parseLocalDate(value);
-	return date ? date.toLocaleDateString(locale, options) : "";
+	return date ? date.toLocaleDateString(locale ?? siteDateLocale(), options) : "";
 }

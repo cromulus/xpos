@@ -1,3 +1,5 @@
+import { siteLocale } from "@/utils/siteLocale";
+
 export const SYSTEM_DATE_FORMAT = "YYYY-MM-DD";
 export const SYSTEM_TIME_FORMAT = "HH:mm:ss";
 export const SYSTEM_DATETIME_FORMAT = `${SYSTEM_DATE_FORMAT} ${SYSTEM_TIME_FORMAT}`;
@@ -15,12 +17,19 @@ type BootTimeZones = {
 	system?: string;
 };
 
+/** The boot's sysdefaults, else the site's saved locale (the desktop app offline, MuleCity-mon6). */
 function getBootSysDefaults(): BootSysDefaults {
-	return (window.xpos?.boot as { sysdefaults?: BootSysDefaults } | undefined)?.sysdefaults || {};
+	const boot = (window.xpos?.boot as { sysdefaults?: BootSysDefaults } | undefined)?.sysdefaults;
+	if (boot?.date_format) return boot;
+	const saved = siteLocale();
+	return saved ? { date_format: saved.date_format, time_format: saved.time_format } : boot || {};
 }
 
 function getBootTimeZones(): BootTimeZones {
-	return (window.xpos?.boot as { time_zone?: BootTimeZones } | undefined)?.time_zone || {};
+	const zones = (window.xpos?.boot as { time_zone?: BootTimeZones } | undefined)?.time_zone;
+	if (zones?.system || zones?.user) return zones;
+	const zone = siteLocale()?.time_zone;
+	return zone ? { system: zone, user: zone } : {};
 }
 
 function normalizeDateFormat(format?: string): string {

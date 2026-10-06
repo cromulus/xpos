@@ -81,13 +81,13 @@ function esc(value: string): string {
 }
 
 /**
- * The receipt's scan block: the readable name (or local id) in large text, with the QR to
- * its right. Inline styles only: the receipt's CSS comes from the profile's print format,
- * and Mule City's (Mule City Ticket) has none.
+ * The receipt's scan block: a short caption beside the QR. Inline styles, so the block
+ * reads the same wherever it is placed. The caption never wraps (MuleCity-mon6): an
+ * offline sale's caption is short ("Offline sale · …k3j2abcd"); the QR carries the full id.
  */
 export function scanCodeBlockHtml(payload: string, label: string): string {
-	return `<div class="mule-scan-block" data-scan-payload="${esc(payload)}" style="float:right;display:flex;align-items:center;gap:6px;margin:0 0 4px 8px;">
-        <div class="mule-scan-label" style="font-size:14px;font-weight:700;font-family:monospace;text-align:right;max-width:2.6in;word-break:break-all;line-height:1.2;">${esc(label)}</div>
+	return `<div class="mule-scan-block" data-scan-payload="${esc(payload)}" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">
+        <div class="mule-scan-label" style="font-size:10px;font-weight:700;text-align:right;white-space:nowrap;line-height:1.2;">${esc(label)}</div>
         <div class="mule-scan-code" style="width:${SCAN_CODE_SIZE};height:${SCAN_CODE_SIZE};flex:0 0 ${SCAN_CODE_SIZE};">${scanCodeSvg(payload)}</div>
     </div>`;
 }

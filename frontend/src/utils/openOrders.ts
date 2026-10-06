@@ -1,3 +1,4 @@
+import { formatSiteInstant } from "@/utils/siteLocale";
 /**
  * Orders in flight at the till (Mule City, Bill 2026-09-30/10-01, MuleCity-zstm.23, mxwy.10).
  *
@@ -110,7 +111,7 @@ export function readinessLabel(readiness: string | undefined): string {
 /** "2:41 PM" today, else "Sep 30, 2:41 PM". */
 export function fetchedAtText(at: number, now: number = Date.now()): string {
 	const when = new Date(at);
-	const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+	const time = formatSiteInstant(when, { hour: "numeric", minute: "2-digit" }, "time");
 	const today = new Date(now).toDateString() === when.toDateString();
-	return today ? time : `${when.toLocaleDateString([], { month: "short", day: "numeric" })}, ${time}`;
+	return today ? time : `${formatSiteInstant(when, { month: "short", day: "numeric" }, "date")}, ${time}`;
 }

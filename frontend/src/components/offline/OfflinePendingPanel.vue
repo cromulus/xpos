@@ -169,6 +169,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatSiteInstant } from "@/utils/siteLocale";
 import { onMounted } from "vue";
 import { useOfflineStore } from "@/stores/offlineStore";
 import { usePosStore } from "@/stores/posStore";
@@ -263,8 +264,7 @@ function statusLabel(status: string): string {
 
 function formatTime(isoString: string) {
 	try {
-		const d = new Date(isoString);
-		return d.toLocaleString(undefined, {
+		return formatSiteInstant(isoString, {
 			month: "short",
 			day: "numeric",
 			hour: "2-digit",

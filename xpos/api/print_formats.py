@@ -75,6 +75,26 @@ def get_receipt_context(pos_profile: str, print_format: str | None = None) -> di
 		"print_discount_amount": cint(profile.get("print_discount_amount")),
 		"print_format": fmt,
 		"css": css,
+		"locale": site_locale(),
+	}
+
+
+def site_locale() -> dict:
+	"""The site's date, time, number and currency settings, for offline prints and screens
+	(Mule City MuleCity-mon6). The desktop app has no boot, so it caches these with the
+	receipt context; the web till also has them in its saved boot. No secrets: seven values.
+	"""
+	from frappe.utils import get_system_timezone
+
+	system = frappe.get_cached_doc("System Settings")
+	return {
+		"date_format": system.get("date_format") or "dd-mm-yyyy",
+		"time_format": system.get("time_format") or "HH:mm:ss",
+		"number_format": system.get("number_format") or "#,###.##",
+		"currency": frappe.db.get_default("currency") or "",
+		"currency_precision": str(system.get("currency_precision") or ""),
+		"float_precision": str(system.get("float_precision") or ""),
+		"time_zone": get_system_timezone() or "",
 	}
 
 

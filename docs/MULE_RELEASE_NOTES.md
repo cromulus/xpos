@@ -1,5 +1,74 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc40 (unreleased)
+
+### The offline receipt prints like the Mule City Ticket (MuleCity-mon6)
+
+mc39 staging walk (2026-10-06): an offline sale's receipt printed as plain
+stacked text, with a broken logo, the date as "06-10-2026" (read as June 10 by
+US staff) and the QR's id wrapping onto two lines.
+
+- **Why it was unstyled (longstanding, since a0d543b, 2026-07-07).**
+  `buildReceiptHtml` never had CSS of its own: it printed
+  `<style>${ctx.css}</style>`, where `ctx.css` is the CSS *field* of the POS
+  profile's print format (`get_receipt_context`), and its class names were
+  XPOS Thermal Receipt's. Mule City's format, the Mule City Ticket, keeps its
+  CSS inside its Jinja template and leaves the field empty, so the cached
+  layout had no CSS, online or offline. The date was a hard-coded day-month
+  swap (`fmtDate`), and the logo was the Company's `company_logo` (the app
+  icon) by a relative URL that does not load offline.
+- **Look and wording.** Mirrors the Ticket (kht3 CSS from mulecity_erpnext
+  `print_style.css` and `mule_city_ticket.json`): compact letterhead (name;
+  address · phone · website), "Customer copy", Ticket #, date and time, Cashier;
+  Customer, Delivery (qajl.5: address, miles, day), Notes, Items (Quantity /
+  Item or service / Description / Price / Total; a discounted line prints its
+  list price and the amount off each), Totals & payment (transaction type,
+  payments, change, subtotal, discount, each tax row, total) and "Thank you
+  for your business!". One copy, the customer's, as the top half of a Letter
+  sheet (the Ticket's store and bag copies are not printed offline). XPOS's
+  receipt header/footer HTML, Tax ID, barcode text and "Powered by XPOS" are gone.
+- **CSS inline.** `RECEIPT_CSS` in `services/receiptTemplate.ts`; the receipt
+  is a whole document with no stylesheet, font, script or URL, so the browser
+  iframe, the desktop app's `print:report` and the online/offline cases print
+  the same. The print format's CSS field is no longer used.
+- **Brand and logo.** Each online start (with the receipt layout,
+  `refreshReceiptContext`) asks `mulecity_erpnext.printouts.print_brand`
+  (MuleCity-kht3.2) and caches it in the receipt context; a set `logo_url` is
+  fetched once and stored as a data URI there (IndexedDB / the desktop app's
+  SQLite), so it survives an offline cold start. Not a service-worker
+  precache: the logo is a site setting, not a build asset (mc32's content-named
+  asset check), and the desktop app has no service worker. No logo cached: the
+  name prints in type, no `<img>`. Footer and accent colour print only when
+  set (black otherwise). A site without `print_brand` (older app): nothing is
+  logged, the last cached brand is kept, else the receipt context's company
+  prints in type. `company_logo` is never printed.
+- **Site locale.** `utils/siteLocale.ts`: the site's `date_format`,
+  `time_format`, `number_format`, `currency`, `currency_precision`,
+  `float_precision` and `time_zone` (only those seven). The web till reads them
+  from the boot (online, or the saved offline boot, q8aq, which keeps
+  sysdefaults and strips secrets). The desktop app has no boot: each online
+  start saves them under the `site_locale` meta key from
+  `get_receipt_context`'s new `locale` block, and startup restores them.
+  The receipt prints dates in the site's format (Mule: `10-06-2026`) and the
+  time in its time format; `formatLocalDate` without a locale uses the site's
+  day/month order; Orders, the offline pending panel, drafts and the open
+  orders' "fetched at" use the site's order and time zone; `datetime/formats`
+  falls back to the saved locale. Money already followed the boot / cached
+  settings.
+- **QR caption.** Short and on one line: "Offline sale · …" and the local
+  id's last 8 characters (the submitted invoice's name when known). The QR
+  still carries the whole `MCDOC1:XPOS:<local_id>`; it sits in the head's
+  right-hand slot, where the Ticket's own QR goes (gytr).
+- **Tests.** `receiptTemplate.spec.ts` (inline style, nothing external,
+  mm-dd-yyyy from sysdefaults, day-first and unknown formats, the desktop
+  app's context locale, letterhead line, data-URI logo, no `<img>` without
+  one, footer/accent, Ticket sections and columns, discounted line,
+  cash/charge), `scanCode.spec.ts` (caption, no wrap, the QR still decodes to
+  the full payload), `siteLocale.spec.ts` (seven-value whitelist, saved and
+  restored without a boot, screens' order and time zone, money with the
+  site's number format), `offlineReceiptStorage.spec.ts` (brand cached, logo
+  as data URI, previous brand kept, older site).
+
 ## mule-v2.10.1-mc39 (unreleased)
 
 ### Offline receipts print a scan code (MuleCity-gt9l, part of MuleCity-gytr)

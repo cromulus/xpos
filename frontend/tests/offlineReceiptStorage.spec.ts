@@ -18,7 +18,10 @@ const { bridge, call, online } = vi.hoisted(() => ({
 		cachePOSData: vi.fn(),
 		getCachedPOSData: vi.fn(),
 		cacheReceiptContext: vi.fn(),
+		getCachedReceiptContext: vi.fn(),
 		cacheTaxContexts: vi.fn(),
+		setSyncMeta: vi.fn(),
+		getSyncMeta: vi.fn(),
 	},
 	call: vi.fn(),
 	online: { value: true },
@@ -51,10 +54,14 @@ import { usePosStore } from "@/stores/posStore";
 
 const invoiceData = { customer: "Walk-in Customer", items: [] } as unknown as InvoiceData;
 const receipt = { name: "", grand_total: 10, items: [] } as unknown as ReceiptSnapshot;
-const receiptContext = { company_name: "Acme Store", css: "" };
+const receiptContext: Record<string, unknown> = { company_name: "Acme Store", css: "" };
+/** What mulecity_erpnext.printouts.print_brand answers (MuleCity-kht3.2); null: an older app without it. */
+let printBrand: Record<string, string> | null = null;
 
 /** Wait for the fire-and-forget work openShift/checkShift start. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+const settle = async () => {
+	for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+};
 
 function mockServer(profile: Record<string, unknown>) {
 	call.mockImplementation(async (method: string) => {
@@ -68,7 +75,10 @@ function mockServer(profile: Record<string, unknown>) {
 					print_settings: { print_format: "XPOS Thermal Receipt" },
 				};
 			case "xpos.api.print_formats.get_receipt_context":
-				return receiptContext;
+				return { ...receiptContext };
+			case "mulecity_erpnext.printouts.print_brand":
+				if (!printBrand) throw new Error("Failed to get method for command mulecity_erpnext.printouts.print_brand");
+				return printBrand;
 			default:
 				return [];
 		}
@@ -78,6 +88,8 @@ function mockServer(profile: Record<string, unknown>) {
 beforeEach(() => {
 	setActivePinia(createPinia());
 	vi.clearAllMocks();
+	printBrand = null;
+	bridge.getCachedReceiptContext.mockResolvedValue(null);
 	online.value = true;
 	globalThis.__ = ((text: string) => text) as any;
 	bridge.addPendingInvoice.mockResolvedValue({ id: 7, local_id: "inv_7" });
@@ -172,6 +184,74 @@ describe("receipt layout cache (browser)", () => {
 		await settle();
 
 		expect(bridge.cacheReceiptContext).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * MuleCity-mon6: each online start caches Mule City's print brand with the receipt layout,
+ * and its logo as a data URI, so a receipt printed after an offline cold start shows it.
+ */
+describe("print brand cache (Mule City, MuleCity-mon6)", () => {
+	const BRAND = {
+		company_name: "Mule City Specialty Feeds",
+		address_line: "1202 N Wall St, Benson, NC 27504",
+		phone: "919-894-3626",
+		website: "mulecity.com",
+		logo_url: "",
+		footer_text: "",
+		accent_color: "",
+	};
+	const cachedContext = () => bridge.cacheReceiptContext.mock.calls.at(-1)?.[1] as Record<string, any>;
+
+	it("caches the brand with the receipt layout", async () => {
+		printBrand = { ...BRAND };
+		mockServer({ use_offline_mode: 1 });
+		await usePosStore().openShift("Shop Floor", "Acme", []);
+		await settle();
+
+		expect(call).toHaveBeenCalledWith("mulecity_erpnext.printouts.print_brand", {}, undefined, expect.any(Object));
+		expect(cachedContext().brand).toEqual(BRAND);
+	});
+
+	it("fetches a set logo once and keeps it as a data URI", async () => {
+		printBrand = { ...BRAND, logo_url: "https://erp.example.test/files/print-logo.png" };
+		const png = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
+		// jsdom's Blob does not survive Node's Response, so answer with the blob directly.
+		const fetchSpy = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue({ ok: true, blob: async () => png } as unknown as Response);
+		try {
+			mockServer({ use_offline_mode: 1 });
+			await usePosStore().openShift("Shop Floor", "Acme", []);
+			await settle();
+			await settle();
+
+			expect(fetchSpy).toHaveBeenCalledWith("https://erp.example.test/files/print-logo.png", expect.any(Object));
+			expect(cachedContext().brand.logo_data_uri).toMatch(/^data:image\/png;base64,/);
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	it("keeps the brand cached last time when print_brand cannot answer", async () => {
+		const previous = { ...BRAND, logo_url: "https://x.test/l.png", logo_data_uri: "data:image/png;base64,AAAA" };
+		bridge.getCachedReceiptContext.mockResolvedValue({ company_name: "Acme Store", brand: previous });
+		printBrand = null;
+		mockServer({ use_offline_mode: 1 });
+		await usePosStore().openShift("Shop Floor", "Acme", []);
+		await settle();
+
+		expect(cachedContext().brand).toEqual(previous);
+	});
+
+	it("caches no brand on a site without print_brand (the receipt prints the name in type)", async () => {
+		printBrand = null;
+		mockServer({ use_offline_mode: 1 });
+		await usePosStore().openShift("Shop Floor", "Acme", []);
+		await settle();
+
+		expect(cachedContext()).toEqual(receiptContext);
+		expect(cachedContext().brand).toBeUndefined();
 	});
 });
 

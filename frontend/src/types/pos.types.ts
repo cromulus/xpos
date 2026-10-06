@@ -794,7 +794,28 @@ export interface ReceiptContext {
 	currency: string;
 	print_discount_amount: number;
 	print_format: string;
+	/** The print format's CSS field. The offline receipt no longer uses it (MuleCity-mon6). */
 	css: string;
+	/** The site's date/number/currency settings (get_receipt_context, MuleCity-mon6). */
+	locale?: import("@/utils/siteLocale").SiteLocale;
+	/** Mule City's print brand, cached at each online start (MuleCity-mon6); absent on older sites. */
+	brand?: PrintBrand;
+}
+
+/**
+ * Mule City's print look (mulecity_erpnext.printouts.print_brand, MuleCity-kht3.2). Unset
+ * values are empty strings. `logo_data_uri` is the logo fetched once online and kept as a
+ * data URI so it prints after an offline cold start.
+ */
+export interface PrintBrand {
+	company_name: string;
+	address_line: string;
+	phone: string;
+	website: string;
+	logo_url: string;
+	footer_text: string;
+	accent_color: string;
+	logo_data_uri?: string;
 }
 
 export interface ReceiptSnapshotItem {

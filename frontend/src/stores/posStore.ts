@@ -1,7 +1,9 @@
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { call } from "@/services/api";
-import { cachePOSData, getCachedPOSData, cacheReceiptContext } from "@/services/dbBridge";
+import { refreshPrintBrand } from "@/services/printBrand";
+import { normalizeSiteLocale, saveSiteLocale, siteLocaleFromBoot } from "@/utils/siteLocale";
+import { cachePOSData, getCachedPOSData, cacheReceiptContext, getCachedReceiptContext } from "@/services/dbBridge";
 import { isElectron } from "@/services/electronBridge";
 import { offlineDbUnavailable } from "@/services/offlineDbStatus";
 import { hasPermission, loadPermissions } from "@/services/userRights";
@@ -551,7 +553,21 @@ export const usePosStore = defineStore("pos", () => {
 				pos_profile: profileName,
 				print_format: defaultPrintFormat.value,
 			});
+			// Mule City's print brand and its logo as a data URI, for an offline cold start;
+			// a site without it keeps what was cached before (MuleCity-mon6).
+			let previous: ReceiptContext | null = null;
+			try {
+				previous = await getCachedReceiptContext(profileName);
+			} catch {
+				previous = null;
+			}
+			const brand = await refreshPrintBrand(previous?.brand);
+			if (brand) ctx.brand = brand;
 			await cacheReceiptContext(profileName, ctx);
+			// The desktop app has no boot: the site's date/number format comes from here.
+			if (ctx.locale && !siteLocaleFromBoot(xpos.boot as never)?.date_format) {
+				await saveSiteLocale(normalizeSiteLocale(ctx.locale));
+			}
 		} catch (error) {
 			console.warn("[XPOS] Failed to cache receipt context:", error);
 		}

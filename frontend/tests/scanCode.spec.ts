@@ -138,21 +138,28 @@ const snapshot: ReceiptSnapshot = {
 };
 
 describe("receipt scan block", () => {
-	it("prints the offline code and the local id top-right of the receipt", () => {
+	it("prints the offline code top-right of the receipt, with a short caption that does not wrap", () => {
 		const html = buildReceiptHtml({ ...snapshot, xpos_local_id: "inv_1759760000000_k3j2abcde" }, context);
 		const doc = new DOMParser().parseFromString(html, "text/html");
-		const container = doc.querySelector(".receipt-container")!;
-		const block = container.firstElementChild as HTMLElement;
+		// The head's right-hand slot, as on the Mule City Ticket (MuleCity-mon6).
+		const cell = doc.querySelector(".mule-head .mule-head-code")!;
+		const block = cell.firstElementChild as HTMLElement;
 		expect(block.className).toBe("mule-scan-block");
-		expect(block.style.float).toBe("right");
 		expect(block.dataset.scanPayload).toBe("MCDOC1:XPOS:inv_1759760000000_k3j2abcde");
-		expect(block.querySelector(".mule-scan-label")!.textContent).toBe("inv_1759760000000_k3j2abcde");
+		const label = block.querySelector(".mule-scan-label") as HTMLElement;
+		expect(label.textContent).toBe("Offline sale \u00b7 \u20263j2abcde");
+		expect(label.style.whiteSpace).toBe("nowrap");
 		expect(block.querySelector(".mule-scan-code svg")).not.toBeNull();
 		// It is the receipt's only scan code (one copy per receipt).
 		expect(doc.querySelectorAll(".mule-scan-block")).toHaveLength(1);
+		// The QR still carries the whole local id.
 		expect(decodeSvg(block.querySelector(".mule-scan-code")!.innerHTML).getText()).toBe(
 			"MCDOC1:XPOS:inv_1759760000000_k3j2abcde",
 		);
+	});
+
+	it("keeps a short local id whole", () => {
+		expect(receiptScanCode({ ...snapshot, xpos_local_id: "inv_1" })!.label).toBe("Offline sale \u00b7 inv_1");
 	});
 
 	it("names the invoice once the receipt knows it", () => {
