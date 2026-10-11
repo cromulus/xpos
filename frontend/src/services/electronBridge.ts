@@ -245,6 +245,8 @@ export interface ElectronDbAPI {
 		grand_total: number;
 		is_return: boolean;
 		is_draft: boolean;
+		/** The invoice's name on the server, once synced (MuleCity-dykb reads it). */
+		server_name?: string | null;
 	} | null>;
 	getPendingInvoices: (status?: string) => Promise<Record<string, unknown>[]>;
 	updatePendingInvoice: (id: number, updates: Record<string, unknown>) => Promise<boolean>;

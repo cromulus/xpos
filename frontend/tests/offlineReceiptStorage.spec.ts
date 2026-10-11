@@ -200,6 +200,8 @@ describe("print brand cache (Mule City, MuleCity-mon6)", () => {
 		logo_url: "",
 		footer_text: "",
 		accent_color: "",
+		// The site's own URL, for the receipt's scan code (MuleCity-dykb).
+		scan_base_url: "https://erp.mulecity.com",
 	};
 	const cachedContext = () => bridge.cacheReceiptContext.mock.calls.at(-1)?.[1] as Record<string, any>;
 
@@ -211,6 +213,16 @@ describe("print brand cache (Mule City, MuleCity-mon6)", () => {
 
 		expect(call).toHaveBeenCalledWith("mulecity_erpnext.printouts.print_brand", {}, undefined, expect.any(Object));
 		expect(cachedContext().brand).toEqual(BRAND);
+	});
+
+	it("caches an empty scan_base_url from an app that does not send it (MuleCity-dykb)", async () => {
+		const { scan_base_url: _omit, ...older } = BRAND;
+		printBrand = { ...older };
+		mockServer({ use_offline_mode: 1 });
+		await usePosStore().openShift("Shop Floor", "Acme", []);
+		await settle();
+
+		expect(cachedContext().brand).toEqual({ ...BRAND, scan_base_url: "" });
 	});
 
 	it("fetches a set logo once and keeps it as a data URI", async () => {

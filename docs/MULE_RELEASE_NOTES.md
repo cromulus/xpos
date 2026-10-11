@@ -1,5 +1,45 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc41 (unreleased; contains mc40)
+
+### The receipt's QR is a URL to the sale on the site (MuleCity-dykb)
+
+Bill (2026-10-11, greenfield: no Mule code has been printed): every printed
+code is a URL to its document on the site's own domain, so a phone opens it
+and the Scan Inbox decodes the same text. Design:
+`docs/erpnext/scan-redesign-design.md` (mulecity-full), sections A and E.
+
+- **What prints.** `<base>/s/SI/<invoice name>` once the sale has its ERPNext
+  name (the desktop app's local print of a synced queue row, whose
+  `server_name` is now read), else `<base>/s/XPOS/<xpos_local_id>` (a sale
+  printed before sync). The app's `/s/` router sends staff to the desk record,
+  a customer to the portal copy, anyone else to log in and back; an
+  `/s/XPOS/` id resolves after sync. A site whose POS Settings make POS
+  Invoices has no alias for them, so those receipts keep the local id. Names
+  are quoted like `frappe.utils.quoted`.
+- **The base.** `scan_base_url` from `mulecity_erpnext.printouts.print_brand`
+  (the site's `get_url()`), cached with the brand at each online start (mc40),
+  else the desktop app's server, else the page's origin: the first that is a
+  plain https origin. http, localhost, an IP (the ZeroTier address), a path or
+  credentials are refused: the receipt prints **without** a code and the
+  console says why, rather than print a wrong one. An app that does not send
+  `scan_base_url` yet means no code until it does.
+- **Size.** ECC M, byte mode, quiet zone 4 as before. The box is the smallest
+  of 0.8in, 0.9in, ... with modules of at least 0.49 mm: 0.8in for an
+  invoice URL (QR version 4), 0.9in for the 71-character offline URL
+  (version 5). The head's right-hand cell grows to fit.
+- **Removed.** `encodeScanPayload` / `offlineScanPayload` and the `MCDOC1:`
+  text; the block's `data-scan-payload` is now `data-scan-url`.
+- **Ship with the app.** The app's decoder reads only `/s/` URLs after the
+  same redesign, so this tag and the app's scan redesign deploy in one window.
+- **Tests.** `scanCode.spec.ts` pins the shared URL strings
+  (`tests/fixtures/scan_urls.json`, mirrored by the app's `test_scan_url`),
+  refused bases, quoting, QR versions and box sizes, and decodes the printed
+  QR back to the URL; `offlinePrint.spec.ts` (offline sale, desktop queue row
+  before and after sync, POS Invoice fallback, no code without an https base);
+  `offlineReceiptStorage.spec.ts` (`scan_base_url` cached, empty from an
+  older app).
+
 ## mule-v2.10.1-mc40 (unreleased)
 
 ### The offline receipt prints like the Mule City Ticket (MuleCity-mon6)

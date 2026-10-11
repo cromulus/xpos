@@ -18,7 +18,8 @@ import type { PrintBrand, ReceiptContext, ReceiptSnapshot } from "@/types/pos.ty
 import { formatQty } from "@/utils/numberFormat";
 import { formatLocalDate } from "@/utils/localDate";
 import { formatSiteDate, formatSiteTime, normalizeSiteLocale, siteLocale, type SiteLocale } from "@/utils/siteLocale";
-import { encodeScanPayload, offlineScanPayload, scanCodeBlockHtml } from "@/services/scanCode";
+import { getApiBaseUrlSync } from "@/services/electronBridge";
+import { OFFLINE_SCAN_ALIAS, scanAlias, scanBaseUrl, scanCodeBlockHtml, scanUrl } from "@/services/scanCode";
 
 function esc(value: unknown): string {
 	return String(value ?? "")
@@ -124,23 +125,56 @@ function deliverySectionHtml(delivery: ReceiptSnapshot["delivery"]): string {
 export const OFFLINE_CAPTION_TAIL = 8;
 
 /**
- * What the receipt's scan code says (MuleCity-gt9l): the submitted invoice when the
- * snapshot names it, else the offline queue's local id; null when it knows neither.
+ * What the receipt's scan code says (MuleCity-gt9l; URL form MuleCity-dykb): the URL of the
+ * submitted invoice when the snapshot names it (`<base>/s/SI/<name>`), else of the offline
+ * queue's local id (`<base>/s/XPOS/<local_id>`); null when it knows neither. An invoice
+ * whose doctype has no alias (a POS Invoice) falls back to the local id, which the app's
+ * router resolves. `base` must already be a plain https origin (receiptScanBase).
  * `label` is the short caption printed beside the code (MuleCity-mon6): the invoice's
- * name, or "Offline sale · …" and the local id's last 8 characters. The QR carries the
- * full payload.
+ * name, or "Offline sale · …" and the local id's last 8 characters.
  */
-export function receiptScanCode(snapshot: ReceiptSnapshot): { payload: string; label: string } | null {
+export function receiptScanCode(snapshot: ReceiptSnapshot, base: string): { url: string; label: string } | null {
 	const doc = snapshot.scan_doc;
-	if (doc?.doctype && doc?.name) {
-		return { payload: encodeScanPayload(doc.doctype, doc.name), label: doc.name.trim() };
+	const alias = doc?.doctype ? scanAlias(doc.doctype) : null;
+	const docName = String(doc?.name || "").trim();
+	if (alias && docName) {
+		return { url: scanUrl(base, alias, docName), label: docName };
 	}
 	const localId = String(snapshot.xpos_local_id || "").trim();
 	if (localId) {
 		const tail = localId.length > OFFLINE_CAPTION_TAIL ? `…${localId.slice(-OFFLINE_CAPTION_TAIL)}` : localId;
-		return { payload: offlineScanPayload(localId), label: `Offline sale · ${tail}` };
+		return { url: scanUrl(base, OFFLINE_SCAN_ALIAS, localId), label: `Offline sale · ${tail}` };
 	}
 	return null;
+}
+
+/**
+ * The site origin the receipt's scan URL starts with: the `scan_base_url` cached with
+ * Mule City's print brand, else the desktop app's server, else this page's origin; the
+ * first that is a plain https origin (never http, localhost or a ZeroTier IP). Null
+ * when none is: the receipt then prints without a code (MuleCity-dykb).
+ */
+export function receiptScanBase(ctx: ReceiptContext): string | null {
+	const candidates = [ctx.brand?.scan_base_url, getApiBaseUrlSync(), globalThis.location?.origin];
+	for (const candidate of candidates) {
+		const base = scanBaseUrl(candidate);
+		if (base) return base;
+	}
+	return null;
+}
+
+/** The scan code for this receipt, or null; says so on the console when the base is refused. */
+function receiptScan(snapshot: ReceiptSnapshot, ctx: ReceiptContext): { url: string; label: string } | null {
+	if (!snapshot.scan_doc?.name && !String(snapshot.xpos_local_id || "").trim()) return null;
+	const base = receiptScanBase(ctx);
+	if (!base) {
+		console.warn(
+			"Receipt printed without its scan code: no https site address is cached (print brand scan_base_url). " +
+				"Go online once to refresh it.",
+		);
+		return null;
+	}
+	return receiptScanCode(snapshot, base);
 }
 
 /** The letterhead's facts: Mule City's print brand, else the receipt context's company. */
@@ -275,9 +309,9 @@ export function buildReceiptHtml(snapshot: ReceiptSnapshot, ctx: ReceiptContext)
 		(_, i) => `<tr><td>${left[i] || ""}</td><td class="right">${rightPadded[i] || ""}</td></tr>`,
 	).join("");
 
-	const scan = receiptScanCode(snapshot);
+	const scan = receiptScan(snapshot, ctx);
 	// The QR in the head's right-hand slot, like the Ticket's (MuleCity-gt9l, gytr).
-	const scanCell = scan ? `<td class="mule-head-code">${scanCodeBlockHtml(scan.payload, scan.label)}</td>` : "";
+	const scanCell = scan ? `<td class="mule-head-code">${scanCodeBlockHtml(scan.url, scan.label)}</td>` : "";
 	const notes = String(snapshot.notes || "").trim();
 	const time = formatSiteTime(snapshot.posting_time, locale?.time_format || "");
 

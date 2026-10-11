@@ -3,7 +3,8 @@
  *
  * Each online start asks mulecity_erpnext.printouts.print_brand (MuleCity-kht3.2) for the
  * look the Mule City Ticket prints with: name, address line, phone, website, and the
- * optional logo, footer and accent colour (empty strings when unset). When a logo is set it
+ * optional logo, footer and accent colour (empty strings when unset), and the site URL the
+ * receipt's scan code starts with (scan_base_url, MuleCity-dykb). When a logo is set it
  * is fetched once and kept as a data URI with the cached receipt context, so a receipt
  * printed after an offline cold start still shows it; no service-worker precache, because
  * the logo is a site setting, not a build asset, and the desktop app has no service worker.
@@ -19,7 +20,17 @@ export const PRINT_BRAND_METHOD = "mulecity_erpnext.printouts.print_brand";
 /** A logo bigger than this is not cached (a print logo is a few KB). */
 export const MAX_LOGO_BYTES = 512 * 1024;
 
-const FIELDS = ["company_name", "address_line", "phone", "website", "logo_url", "footer_text", "accent_color"] as const;
+const FIELDS = [
+	"company_name",
+	"address_line",
+	"phone",
+	"website",
+	"logo_url",
+	"footer_text",
+	"accent_color",
+	// The site's own URL, the base of the receipt's scan code (MuleCity-dykb).
+	"scan_base_url",
+] as const;
 
 function normalize(raw: unknown): PrintBrand | null {
 	if (!raw || typeof raw !== "object") return null;

@@ -1,0 +1,61 @@
+{
+	"_comment": "The scan QR's URL strings, shared with the Mule app's test_scan_url (MuleCity-dykb, docs/erpnext/scan-redesign-design.md A1, E). The QR text is exactly `url`: https, the site's host, /s/<ALIAS>/<name quoted like frappe.utils.quoted>. `size` is the printed box, quiet zone included: the smallest of 0.8in, 0.9in, ... whose modules are at least 0.49 mm. Change only together with the app's copy.",
+	"urls": [
+		{
+			"base": "https://erp.mulecity.com",
+			"alias": "SI",
+			"name": "ACC-SINV-49041",
+			"url": "https://erp.mulecity.com/s/SI/ACC-SINV-49041",
+			"size": "0.8in"
+		},
+		{
+			"base": "https://erp.nmc-atelier.com",
+			"alias": "SI",
+			"name": "ACC-SINV-43575-1",
+			"url": "https://erp.nmc-atelier.com/s/SI/ACC-SINV-43575-1",
+			"size": "0.8in"
+		},
+		{
+			"base": "https://erp.nmc-atelier.com",
+			"alias": "WO",
+			"name": "MFG-WO-00134",
+			"url": "https://erp.nmc-atelier.com/s/WO/MFG-WO-00134",
+			"size": "0.8in"
+		},
+		{
+			"base": "https://erp.mulecity.com",
+			"alias": "XPOS",
+			"name": "inv_ae237dd89957a8ef76859669d512b6b1",
+			"url": "https://erp.mulecity.com/s/XPOS/inv_ae237dd89957a8ef76859669d512b6b1",
+			"size": "0.9in"
+		},
+		{
+			"base": "https://erp.nmc-atelier.com",
+			"alias": "XPOS",
+			"name": "inv_ae237dd89957a8ef76859669d512b6b1",
+			"url": "https://erp.nmc-atelier.com/s/XPOS/inv_ae237dd89957a8ef76859669d512b6b1",
+			"size": "0.9in"
+		},
+		{
+			"base": "https://erp.mulecity.com",
+			"alias": "SI",
+			"name": "Café 1/A",
+			"url": "https://erp.mulecity.com/s/SI/Caf%C3%A9%201/A",
+			"size": "0.8in"
+		}
+	],
+	"refused_bases": [
+		"",
+		"http://erp.mulecity.com",
+		"erp.mulecity.com",
+		"https://localhost",
+		"https://localhost:8000",
+		"https://10.147.17.5",
+		"https://[::1]",
+		"https://erp.mulecity.com/app",
+		"https://erp.mulecity.com/?x=1",
+		"https://user:pw@erp.mulecity.com",
+		"file:///index.html",
+		"not a url"
+	]
+}

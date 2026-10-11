@@ -162,19 +162,42 @@ describe("printReceiptOffline", () => {
 	});
 });
 
-/** The receipt's scan code names the sale by the local id it syncs with (MuleCity-gt9l). */
+/**
+ * The receipt's scan code (MuleCity-gt9l; URL form MuleCity-dykb): the site's URL for the
+ * sale, from the print brand cached online. Before sync it names the local id the sale
+ * syncs with; once the desktop app's queue row has the server's name, the invoice.
+ */
 describe("offline receipt scan code", () => {
-	it("prints the queued sale's local id as its scan code", async () => {
-		getCachedReceiptContext.mockResolvedValue(context);
+	const SITE = "https://erp.mulecity.com";
+	const branded: ReceiptContext = {
+		...context,
+		brand: {
+			company_name: "Acme Store",
+			address_line: "",
+			phone: "",
+			website: "",
+			logo_url: "",
+			footer_text: "",
+			accent_color: "",
+			scan_base_url: SITE,
+		},
+	};
+
+	afterEach(() => {
+		delete (window as any).electronAPI;
+		delete (window as any).xpos;
+	});
+
+	it("prints the queued sale's local id as its scan URL", async () => {
+		getCachedReceiptContext.mockResolvedValue(branded);
 		const { printReceiptOffline } = usePrintInvoice();
 
 		await printReceiptOffline({ ...snapshot, xpos_local_id: "inv_7_abc" });
 
-		expect(lastFrame()!.srcdoc).toContain('data-scan-payload="MCDOC1:XPOS:inv_7_abc"');
+		expect(lastFrame()!.srcdoc).toContain(`data-scan-url="${SITE}/s/XPOS/inv_7_abc"`);
 	});
 
-	it("the desktop app's local print reads the local id from the queue row", async () => {
-		getCachedReceiptContext.mockResolvedValue(context);
+	function desktopQueueRow(row: Record<string, unknown>) {
 		const printReport = vi.fn().mockResolvedValue({ success: true });
 		(window as any).electronAPI = {
 			db: {
@@ -182,18 +205,53 @@ describe("offline receipt scan code", () => {
 					id: 9,
 					local_id: "inv_9_xyz",
 					data: { receipt: { ...snapshot, name: "" } },
+					...row,
 				}),
 			},
 			print: { printReport },
 		};
+		return printReport;
+	}
+
+	it("the desktop app's local print reads the local id from the queue row", async () => {
+		getCachedReceiptContext.mockResolvedValue(branded);
+		const printReport = desktopQueueRow({ status: "pending", server_name: null });
+		const { printInvoiceLocal } = usePrintInvoice();
+		await printInvoiceLocal(9);
+		const html = printReport.mock.calls[0][0] as string;
+		expect(html).toContain("LOCAL-9");
+		expect(html).toContain(`data-scan-url="${SITE}/s/XPOS/inv_9_xyz"`);
+	});
+
+	it("the desktop app's local print of a synced sale names its Sales Invoice", async () => {
+		getCachedReceiptContext.mockResolvedValue(branded);
+		(window as any).xpos = { boot: { pos_settings: { invoice_type: "Sales Invoice" } } };
+		const printReport = desktopQueueRow({ status: "synced", server_name: "ACC-SINV-49041" });
+		const { printInvoiceLocal } = usePrintInvoice();
+		await printInvoiceLocal(9);
+		const html = printReport.mock.calls[0][0] as string;
+		expect(html).toContain(`data-scan-url="${SITE}/s/SI/ACC-SINV-49041"`);
+		expect(html).toContain("width:0.8in");
+	});
+
+	it("a site that makes POS Invoices keeps the local id (the router resolves it)", async () => {
+		getCachedReceiptContext.mockResolvedValue(branded);
+		(window as any).xpos = { boot: { pos_settings: { invoice_type: "POS Invoice" } } };
+		const printReport = desktopQueueRow({ status: "synced", server_name: "ACC-PSINV-1" });
+		const { printInvoiceLocal } = usePrintInvoice();
+		await printInvoiceLocal(9);
+		expect(printReport.mock.calls[0][0] as string).toContain(`data-scan-url="${SITE}/s/XPOS/inv_9_xyz"`);
+	});
+
+	it("prints the receipt without a code when the cached brand has no https site URL", async () => {
+		getCachedReceiptContext.mockResolvedValue(context);
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const { printReceiptOffline } = usePrintInvoice();
 		try {
-			const { printInvoiceLocal } = usePrintInvoice();
-			await printInvoiceLocal(9);
-			const html = printReport.mock.calls[0][0] as string;
-			expect(html).toContain("LOCAL-9");
-			expect(html).toContain('data-scan-payload="MCDOC1:XPOS:inv_9_xyz"');
+			await expect(printReceiptOffline({ ...snapshot, xpos_local_id: "inv_7_abc" })).resolves.toBe(true);
+			expect(lastFrame()!.srcdoc).not.toContain("mule-scan");
 		} finally {
-			delete (window as any).electronAPI;
+			warn.mockRestore();
 		}
 	});
 });

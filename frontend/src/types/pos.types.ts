@@ -815,6 +815,11 @@ export interface PrintBrand {
 	logo_url: string;
 	footer_text: string;
 	accent_color: string;
+	/**
+	 * The site's own URL (frappe.utils.get_url()), the base of the receipt's scan code
+	 * `<base>/s/<ALIAS>/<name>` (MuleCity-dykb). Empty from an app that does not send it.
+	 */
+	scan_base_url: string;
 	logo_data_uri?: string;
 }
 
