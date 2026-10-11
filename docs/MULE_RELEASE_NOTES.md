@@ -23,8 +23,9 @@ and the Scan Inbox decodes the same text. Design:
   else the desktop app's server, else the page's origin: the first that is a
   plain https origin. http, localhost, an IP (the ZeroTier address), a path or
   credentials are refused: the receipt prints **without** a code and the
-  console says why, rather than print a wrong one. An app that does not send
-  `scan_base_url` yet means no code until it does.
+  console says why, rather than print a wrong one. From an app that does not
+  send `scan_base_url` yet, the receipt uses the desktop server or the page's
+  origin when that is https, else prints no code.
 - **Size.** ECC M, byte mode, quiet zone 4 as before. The box is the smallest
   of 0.8in, 0.9in, ... with modules of at least 0.49 mm: 0.8in for an
   invoice URL (QR version 4), 0.9in for the 71-character offline URL
