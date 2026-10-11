@@ -1,0 +1,14 @@
+{
+  "about": "The QR text printed on every Mule City paper (MuleCity-dykb, docs/erpnext/scan-redesign-design.md A1). Shared by the app (scan_code.scan_url, tests/test_scan_url.py, mulecity_erpnext.tests.test_scan_router) and the XPOS fork (frontend/src/services/scanCode.ts scanUrl, scanCode.spec.ts): both sides must produce exactly these strings. url = base without its trailing slash + '/s/' + alias + '/' + quote(name). quote: percent-encode UTF-8 bytes except A-Z a-z 0-9 and the characters in 'safe' (Python urllib.parse.quote(name, safe=safe); in JS, encodeURIComponent(name) then decode %XX back for each character in safe that encodeURIComponent escapes, and escape ! ' ( ) * only if not in safe). This is frappe.utils.quoted's safe set without '/', '?' and '#', which would break a name inside a path.",
+  "safe": "~@$&()*!+=:;,.'_-",
+  "cases": [
+    {"base": "https://erp.mulecity.com", "alias": "SI", "doctype": "Sales Invoice", "name": "ACC-SINV-49041", "url": "https://erp.mulecity.com/s/SI/ACC-SINV-49041"},
+    {"base": "https://erp.nmc-atelier.com", "alias": "SI", "doctype": "Sales Invoice", "name": "ACC-SINV-43575-1", "url": "https://erp.nmc-atelier.com/s/SI/ACC-SINV-43575-1"},
+    {"base": "https://erp.nmc-atelier.com", "alias": "WO", "doctype": "Work Order", "name": "MFG-WO-00134", "url": "https://erp.nmc-atelier.com/s/WO/MFG-WO-00134"},
+    {"base": "https://erp.nmc-atelier.com/", "alias": "DN", "doctype": "Delivery Note", "name": "MAT-DN-00042", "url": "https://erp.nmc-atelier.com/s/DN/MAT-DN-00042"},
+    {"base": "https://erp.mulecity.com", "alias": "XPOS", "doctype": "XPOS", "name": "inv_ae237dd89957a8ef76859669d512b6b1", "url": "https://erp.mulecity.com/s/XPOS/inv_ae237dd89957a8ef76859669d512b6b1"},
+    {"base": "https://erp.mulecity.com", "alias": "GT", "doctype": "Grain Ticket", "name": "GT 00123:A", "url": "https://erp.mulecity.com/s/GT/GT%2000123:A"},
+    {"base": "https://erp.mulecity.com", "alias": "PE", "doctype": "Payment Entry", "name": "ACC/PAY#1?x", "url": "https://erp.mulecity.com/s/PE/ACC%2FPAY%231%3Fx"},
+    {"base": "https://erp.mulecity.com", "alias": "PINV", "doctype": "Purchase Invoice", "name": "Café 1", "url": "https://erp.mulecity.com/s/PINV/Caf%C3%A9%201"}
+  ]
+}

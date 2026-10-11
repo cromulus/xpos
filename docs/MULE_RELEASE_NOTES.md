@@ -16,7 +16,8 @@ and the Scan Inbox decodes the same text. Design:
   a customer to the portal copy, anyone else to log in and back; an
   `/s/XPOS/` id resolves after sync. A site whose POS Settings make POS
   Invoices has no alias for them, so those receipts keep the local id. Names
-  are quoted like `frappe.utils.quoted`.
+  are quoted as the app quotes them: `frappe.utils.quoted`'s safe set without
+  `/`, `?` and `#` (`SCAN_NAME_SAFE` = the app's `scan_code.NAME_SAFE`).
 - **The base.** `scan_base_url` from `mulecity_erpnext.printouts.print_brand`
   (the site's `get_url()`), cached with the brand at each online start (mc40),
   else the desktop app's server, else the page's origin: the first that is a
@@ -33,9 +34,10 @@ and the Scan Inbox decodes the same text. Design:
 - **Ship with the app.** The app's decoder reads only `/s/` URLs after the
   same redesign, so this tag and the app's scan redesign deploy in one window.
 - **Tests.** `scanCode.spec.ts` pins the shared URL strings
-  (`tests/fixtures/scan_urls.json`, mirrored by the app's `test_scan_url`),
+  (`tests/fixtures/scan_url_cases.json`, the app's `test_scan_url` reads the same),
   refused bases, quoting, QR versions and box sizes, and decodes the printed
-  QR back to the URL; `offlinePrint.spec.ts` (offline sale, desktop queue row
+  QR back to the URL; the shared cases file is a byte-for-byte copy of the
+  app's `mule_documents/scan_url_cases.json`; `offlinePrint.spec.ts` (offline sale, desktop queue row
   before and after sync, POS Invoice fallback, no code without an https base);
   `offlineReceiptStorage.spec.ts` (`scan_base_url` cached, empty from an
   older app).

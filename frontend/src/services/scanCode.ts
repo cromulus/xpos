@@ -11,7 +11,7 @@
  * What: the QR's text is exactly `<base>/s/<ALIAS>/<name>` (docs/erpnext/
  * scan-redesign-design.md A1 and E): https, the site's origin, no query, no
  * checksum, no version prefix (the `/s/` route is the version). `<name>` is quoted
- * like frappe.utils.quoted. A receipt whose sale has its ERPNext name prints
+ * as the app quotes it (SCAN_NAME_SAFE). A receipt whose sale has its ERPNext name prints
  * `/s/SI/<invoice name>`; one printed before the sale reached ERPNext prints
  * `/s/XPOS/<xpos_local_id>`, the id the offline queue sends as `local_id` and the
  * server stores as `xpos_local_id`; the router resolves it after sync.
@@ -66,14 +66,21 @@ export function scanBaseUrl(base: unknown): string | null {
 	return url.origin;
 }
 
-/** frappe.utils.quoted's safe set, plus what Python's quote never escapes. */
-const QUOTE_SAFE = /^[A-Za-z0-9_.\-~@#$&()*!+=:;,?/']$/;
+/**
+ * The characters a name keeps unquoted besides A-Z a-z 0-9: frappe.utils.quoted's safe set
+ * without "/", "?" and "#", which would break a name inside the path. The app's
+ * scan_code.NAME_SAFE; pinned on both sides by scan_url_cases.json.
+ */
+export const SCAN_NAME_SAFE = "~@$&()*!+=:;,.'_-";
 
-/** `name` URL-quoted exactly as the app's frappe.utils.quoted does it (UTF-8, upper-case hex). */
+/**
+ * `name` URL-quoted exactly as the app's scan_path does it (Python
+ * `urllib.parse.quote(name, safe=SCAN_NAME_SAFE)`: UTF-8, upper-case hex).
+ */
 export function quoteScanName(name: string): string {
 	let out = "";
 	for (const ch of String(name)) {
-		if (QUOTE_SAFE.test(ch)) {
+		if (/^[A-Za-z0-9]$/.test(ch) || SCAN_NAME_SAFE.includes(ch)) {
 			out += ch;
 			continue;
 		}

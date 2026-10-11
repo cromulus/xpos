@@ -9,6 +9,7 @@ import {
 import {
 	OFFLINE_SCAN_ALIAS,
 	quoteScanName,
+	SCAN_NAME_SAFE,
 	scanAlias,
 	scanBaseUrl,
 	scanCodeBlockHtml,
@@ -19,12 +20,13 @@ import {
 } from "@/services/scanCode";
 import { buildReceiptHtml, receiptScanCode } from "@/services/receiptTemplate";
 import type { ReceiptContext, ReceiptSnapshot } from "@/types/pos.types";
-import fixtures from "./fixtures/scan_urls.json";
+import shared from "./fixtures/scan_url_cases.json";
 
 /**
  * The receipt scan code (MuleCity-gt9l, URL form MuleCity-dykb). The QR holds an https URL
  * to the document on the site's own domain, `<base>/s/<ALIAS>/<name>`, exactly the strings
- * the Mule app's test_scan_url pins (tests/fixtures/scan_urls.json, shared).
+ * the Mule app's test_scan_url pins. tests/fixtures/scan_url_cases.json is a byte-for-byte
+ * copy of the app's mule_documents/scan_url_cases.json: change both together.
  */
 
 /** Read the printed SVG back into a bitmap (4 px per module) and decode it with ZXing. */
@@ -57,13 +59,42 @@ function utf8(text: string): number[] {
 const PROD = "https://erp.mulecity.com";
 const LONG_LOCAL_ID = "inv_ae237dd89957a8ef76859669d512b6b1";
 
+/** Bases the receipt refuses: no code rather than a wrong one (design E). */
+const REFUSED_BASES = [
+	"",
+	"http://erp.mulecity.com",
+	"erp.mulecity.com",
+	"https://localhost",
+	"https://localhost:8000",
+	"https://10.147.17.5",
+	"https://[::1]",
+	"https://erp.mulecity.com/app",
+	"https://erp.mulecity.com/?x=1",
+	"https://user:pw@erp.mulecity.com",
+	"file:///index.html",
+	"not a url",
+];
+
 describe("scan URLs (shared with the app's test_scan_url)", () => {
-	it.each(fixtures.urls)("$url", ({ base, alias, name, url, size }) => {
+	it.each(shared.cases)("$url", ({ base, alias, name, url }) => {
 		expect(scanUrl(base, alias, name)).toBe(url);
+	});
+
+	it("quotes with the app's safe set", () => {
+		expect(SCAN_NAME_SAFE).toBe(shared.safe);
+	});
+
+	it.each([
+		[`${PROD}/s/SI/ACC-SINV-49041`, "0.8in"],
+		["https://erp.nmc-atelier.com/s/SI/ACC-SINV-43575-1", "0.8in"],
+		["https://erp.nmc-atelier.com/s/WO/MFG-WO-2026-00001-1", "0.8in"],
+		[`${PROD}/s/XPOS/${LONG_LOCAL_ID}`, "0.9in"],
+		[`https://erp.nmc-atelier.com/s/XPOS/${LONG_LOCAL_ID}`, "0.9in"],
+	])("prints %s in a %s box (modules of at least 0.49 mm, design A5)", (url, size) => {
 		expect(scanCodeSize(url)).toBe(size);
 	});
 
-	it.each(fixtures.refused_bases)("refuses the base %j: no code rather than a wrong one", (base) => {
+	it.each(REFUSED_BASES)("refuses the base %j: no code rather than a wrong one", (base) => {
 		expect(scanBaseUrl(base)).toBeNull();
 		expect(() => scanUrl(base, "SI", "ACC-SINV-1")).toThrow();
 	});
@@ -74,10 +105,9 @@ describe("scan URLs (shared with the app's test_scan_url)", () => {
 		expect(scanBaseUrl("https://erp.mulecity.com:8443")).toBe("https://erp.mulecity.com:8443");
 	});
 
-	it("quotes a name like frappe.utils.quoted", () => {
-		// safe=b"~@#$&()*!+=:;,.?/'" plus Python's always-safe letters, digits and _.-~
-		expect(quoteScanName("A-Z_a.z~0@#$&()*!+=:;,?/'")).toBe("A-Z_a.z~0@#$&()*!+=:;,?/'");
-		expect(quoteScanName("a b%c\"d<é")).toBe("a%20b%25c%22d%3C%C3%A9");
+	it("quotes a name as the app does", () => {
+		expect(quoteScanName("A-Z_a.z~0@$&()*!+=:;,'")).toBe("A-Z_a.z~0@$&()*!+=:;,'");
+		expect(quoteScanName("a b%c\"d<é/?#")).toBe("a%20b%25c%22d%3C%C3%A9%2F%3F%23");
 		expect(scanUrl(PROD, "SI", "  ACC-SINV-1  ")).toBe(`${PROD}/s/SI/ACC-SINV-1`);
 	});
 
