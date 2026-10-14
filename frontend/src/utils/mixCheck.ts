@@ -15,6 +15,12 @@ export interface MixCheckInput {
 	/** The error is the site's answer (a 417 refusal: short ingredients, no price). */
 	errorAnswered?: boolean;
 	ordersTotal: number | null;
+	/**
+	 * The site's non-blocking notes on the orders, e.g. under the 500 lb
+	 * custom-mix minimum (Bill 2026-10-14, MuleCity-erqg.16: "warn, don't
+	 * block"). Shown in amber beside the price; the order still goes through.
+	 */
+	warnings?: string[];
 }
 
 export function mixCheckStatus(
@@ -32,7 +38,9 @@ export function mixCheckStatus(
 		return { text: __("Can't order yet: {0}", [input.error]), tone: input.errorAnswered ? "answer" : "bad" };
 	}
 	if (input.ordersTotal != null) {
-		return { text: __("Ingredients on hand. Mix order {0}.", [money(input.ordersTotal)]), tone: "info" };
+		const text = __("Ingredients on hand. Mix order {0}.", [money(input.ordersTotal)]);
+		const warnings = (input.warnings || []).filter(Boolean);
+		return warnings.length ? { text: [text, ...warnings].join(" "), tone: "answer" } : { text, tone: "info" };
 	}
 	return { text: "", tone: "info" };
 }

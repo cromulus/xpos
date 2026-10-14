@@ -271,6 +271,13 @@ describe("the cart says whether the mix can be made before Pay", () => {
 			tone: "answer",
 		});
 		expect(mixCheckStatus({ ...base, error: "Server error", errorAnswered: false }, money).tone).toBe("bad");
+		// Under the 500 lb minimum (Bill 2026-10-14, MuleCity-erqg.16): warn in amber, never block.
+		const warning = "Steve's goat mix: 100 lb is under the 500 lb custom-mix minimum. It can still be ordered.";
+		expect(mixCheckStatus({ ...base, ordersTotal: 16, warnings: [warning] }, money)).toEqual({
+			text: "Ingredients on hand. Mix order $16.00. " + warning,
+			tone: "answer",
+		});
+		expect(mixCheckStatus({ ...base, ordersTotal: 16, warnings: [] }, money).tone).toBe("info");
 		expect(mixCheckStatus({ ...base, online: false }, money).tone).toBe("bad");
 	});
 });

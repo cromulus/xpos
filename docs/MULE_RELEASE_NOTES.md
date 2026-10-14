@@ -1,5 +1,17 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc42 (unreleased; contains mc41)
+
+### The cart says when a custom mix is under the 500 lb minimum (MuleCity-erqg.16)
+
+Bill (2026-10-14): "Minimum custom-mix order is 500 lb", then: soft, warn,
+don't block. The site's `counter_check` and `counter_quote` now return a
+`warnings` list (mulecity-full `mix_order.minimum_warning`). The cart's mix
+line under the pickup date (`mixCheckStatus`) shows them after the price, in
+amber, e.g. "Ingredients on hand. Mix order $25.20. Steve's goat mix: 100 lb
+is under the 500 lb custom-mix minimum. It can still be ordered." Pay is not
+blocked. A site that sends no `warnings` shows the line as before.
+
 ## mule-v2.10.1-mc41 (unreleased; contains mc40)
 
 ### The receipt's QR is a URL to the sale on the site (MuleCity-dykb)

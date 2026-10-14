@@ -117,6 +117,8 @@ interface CounterQuote {
 	orders: CounterQuoteOrder[];
 	/** XPOS's preview of today's ticket (free made bags and everything else), or null. */
 	ticket?: Omit<ServerPreview, "key"> | null;
+	/** Non-blocking notes (the 500 lb custom-mix minimum, MuleCity-erqg.16); an older site sends none. */
+	warnings?: string[];
 }
 
 /**
