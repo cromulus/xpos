@@ -6,5 +6,5 @@ export function muleOrderFields(row: Record<string, any>): Record<string, any> {
     // stored grain, bulk to truck, and the pull-list fix picked when no plan passed.
     'mule_stored_grain_use', 'mule_stored_grain_use_lbs', 'mule_bulk_no_bags', 'mule_pull_remedy_json',
   ];
-  return Object.fromEntries(fields.filter(key => row[key] != null && row[key] !== '').map(key => [key, row[key]]));
+  return Object.fromEntries(fields.filter(key => row[key] != null).map(key => [key, row[key]]));
 }

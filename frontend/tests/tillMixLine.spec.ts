@@ -33,7 +33,7 @@ describe("the mix line's pull list", () => {
 			mule_pull_remedy_json: '{"kind":"loads"}', qty: 2 };
 		expect(muleOrderFields(row)).toEqual({ mule_stored_grain_use: "Up to", mule_stored_grain_use_lbs: 300,
 			mule_bulk_no_bags: 1, mule_pull_remedy_json: '{"kind":"loads"}' });
-		expect(muleOrderFields({ mule_stored_grain_use: "" })).toEqual({});
+		expect(muleOrderFields({ item_code: "MIX", mule_bulk_no_bags: null })).toEqual({});
 	});
 });
 
