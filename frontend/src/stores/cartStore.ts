@@ -1,6 +1,7 @@
 import { prepareVfdPickup } from "@/services/vfdOffline";
 import { newInvoiceId } from "@/services/invoiceSubmission";
 import { muleOrderFields } from "@/services/muleOrderFields";
+import type { MixPull, PullFix } from "@/utils/mixPull";
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { call } from "@/services/api";
@@ -137,6 +138,12 @@ export interface CounterQuoteOrder {
 	amount?: number;
 	net_total?: number;
 	taxes?: number;
+	/** The site's notes on the order (the 500 lb minimum, a pull-list warning). */
+	warnings?: string[];
+	/** Asked vs pulled pounds and loads (MuleCity-erqg.17). */
+	pull?: MixPull;
+	/** When no pull list passes: the ways to make it work (MuleCity-erqg.11). */
+	pull_remedies?: PullFix[];
 }
 
 /** A cart's custom mixes are paid now (an advance on the order) or at pickup. */
@@ -1550,6 +1557,7 @@ export const useCartStore = defineStore("cart", () => {
 
 	function clearCart(): void {
 		invoiceLocalId = "";
+		deskMessage.value = "";
 		serverPreview.value = null;
 		orderAdvance.value = 0;
 		counterQuote.value = null;
@@ -1762,6 +1770,61 @@ export const useCartStore = defineStore("cart", () => {
 		if (!uid) return null;
 		const amount = quotedLineAmounts.value.get(uid);
 		return amount === undefined ? null : amount;
+	}
+
+	/** The site's order for this mix line (its pull list and fixes), while it prices this cart. */
+	function quotedOrder(uid: string | undefined): CounterQuoteOrder | null {
+		const quote = counterQuote.value;
+		if (!uid || !quote || !quoteCurrent.value) return null;
+		const index = items.value.findIndex((item) => item.uid === uid);
+		if (index < 0) return null;
+		return (quote.orders || []).find((o) => o.line_index === index && o.item_code === items.value[index].item_code) || null;
+	}
+
+	/**
+	 * A mix line's own choices (MuleCity-erqg.17): stored grain, bulk to truck, the
+	 * pull-list fix. They travel with the line (muleOrderFields), so the cart key
+	 * changes and the site checks and prices the cart again.
+	 */
+	function setMixLineFields(uid: string, fields: Record<string, unknown>): void {
+		const index = items.value.findIndex((item) => item.uid === uid);
+		if (index < 0) return;
+		const next = { ...items.value[index] } as Record<string, unknown>;
+		for (const [key, value] of Object.entries(fields)) {
+			if (value == null || value === "") delete next[key];
+			else next[key] = value;
+		}
+		items.value.splice(index, 1, next as unknown as CartItem);
+	}
+
+	/** Staff who take mix orders at the desk, for "Send to desk" (cached per session). */
+	const deskUsers = ref<{ user: string; name: string }[]>([]);
+	async function loadDeskUsers(): Promise<{ user: string; name: string }[]> {
+		if (!deskUsers.value.length) {
+			deskUsers.value = await call<{ user: string; name: string }[]>("mulecity_erpnext.counter_mix_orders.counter_desk_users");
+		}
+		return deskUsers.value;
+	}
+
+	/** What the last "Send to desk" did, shown in the cart until the next one. */
+	const deskMessage = ref("");
+
+	/**
+	 * Bill 2026-10-14: "let's adjust your mix at my computer". The mix line becomes a
+	 * draft Sales Order on the site, assigned to someone at the desk, and leaves the
+	 * cart; the rest of the cart checks out as usual.
+	 */
+	async function sendMixToDesk(uid: string, assignTo: string, note: string): Promise<void> {
+		const index = items.value.findIndex((item) => item.uid === uid);
+		if (index < 0) return;
+		const result = await call<{ sales_order: string; assigned_to: string }>(
+			"mulecity_erpnext.counter_mix_orders.counter_send_to_desk",
+			{ data: JSON.stringify(previewPayload()), line_index: index, assign_to: assignTo, note },
+			undefined,
+			{ answers: isValidationRefusal },
+		);
+		removeItem(index);
+		deskMessage.value = __("Sent to {0} as a draft order {1}.", [result.assigned_to, result.sales_order]);
 	}
 
 	/** The site is pricing this mix line: show "Checking…" rather than the cart's own figure. */
@@ -2448,6 +2511,7 @@ export const useCartStore = defineStore("cart", () => {
 
 	return {
 		items,
+		quotedOrder, setMixLineFields, loadDeskUsers, deskUsers, sendMixToDesk, deskMessage,
 		customer,
 		discountPercentage,
 		discountAmount,

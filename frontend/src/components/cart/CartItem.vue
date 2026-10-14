@@ -221,6 +221,12 @@
 					{{ capMessage }}
 				</p>
 			</div>
+			<MixLineOptions
+				v-if="cartStore.isOrderLine(item.uid)"
+				:item="item"
+				:index="index"
+				@update-qty="(qty: number) => emit('update-qty', index, qty)"
+			/>
 		</div>
 
 		<div class="flex flex-col items-end gap-0.5 shrink-0">
@@ -261,6 +267,7 @@ import type { ItemUOM } from "@/types/pos.types";
 import __ from "@/lib/translate";
 import { useMoney } from "@/composables/useMoney";
 import { roundTo } from "@/utils/numberFormat";
+import MixLineOptions from "./MixLineOptions.vue";
 
 const props = defineProps({
 	item: { type: Object, required: true },

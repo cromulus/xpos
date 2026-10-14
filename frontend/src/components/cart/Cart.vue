@@ -153,6 +153,10 @@
 			>
 				{{ mixCheck.text }}
 			</p>
+			<!-- A mix sent to the desk as a draft order (MuleCity-erqg.17). -->
+			<p v-if="cartStore.deskMessage" class="mt-1 text-xs text-muted-foreground" data-testid="cart-desk-message" role="status">
+				{{ cartStore.deskMessage }}
+			</p>
 		</div>
 
 		<div ref="cartScrollContainer" class="flex-1 overflow-y-auto px-4 xpos-scrollbar">

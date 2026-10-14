@@ -1,5 +1,32 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc46 (unreleased; contains mc44)
+
+### The cart's custom mix line: pull list, fixes, grain, bulk, Send to desk (MuleCity-erqg.17)
+
+Bill (2026-10-14) OK'd the till UX for custom mixes. Under each mix line to
+order (`MixLineOptions.vue`), from the site's cart check (`counter_check`):
+
+- **Pull list:** "2,000 lb asked → 2,040 lb pulled, 4 loads" (the order bills
+  the pulled pounds; production options, MuleCity-erqg.11).
+- **No workable pull list:** the fixes the site's rounder found, each with its
+  consequence (a nearby size, one more load, an ingredient in 5 lb steps or
+  weighed, weigh exact). Tapping one re-checks and re-prices the cart; a size
+  changes the line's quantity. A wider nutrient band is an owner's choice at
+  the desk: shown, not tappable (the site refuses it from the till too).
+- **Stored grain** (All / None / Up to N lb) and **Bulk to truck (no bags)**
+  travel with the line (`muleOrderFields`: `mule_stored_grain_use`,
+  `mule_stored_grain_use_lbs`, `mule_bulk_no_bags`, `mule_pull_remedy_json`).
+- **Send to desk:** saves the mix as a draft Sales Order on the site and
+  assigns it (a native ToDo) to someone at the desk with a note
+  (`counter_send_to_desk`, `counter_desk_users`); the line leaves the cart and
+  the cart says "Sent to <name> as a draft order SO-…". The rest of the cart
+  checks out as usual. Works when no pull list passes.
+- Warnings (the 500 lb minimum, a pull-list warning) stay amber in the cart's
+  mix line (mc42).
+
+Needs mulecity-full with `counter_send_to_desk` (feat/erqg17-till-mix).
+
 ## mule-v2.10.1-mc44 (unreleased; contains mc43)
 
 ### The till's error log never keeps a manager's PIN (MuleCity-zstm.13)
