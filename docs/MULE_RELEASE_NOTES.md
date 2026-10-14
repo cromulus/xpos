@@ -1,5 +1,29 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc43 (unreleased; contains mc42)
+
+### A refused charge offers a manager override with a PIN (MuleCity-zstm.13)
+
+Bill (2026-09-30, 2026-10-14): a charge refused by the credit limit or the
+past-due stop shows the clerk a clear message, not a red error toast, and Ben
+or Matt can let it through with their PIN. The site (mulecity-full
+`credit_override`) refuses such a charge with `CreditHoldValidationError`, in
+staff language: who, how much over the limit or past due, and that a manager
+can override. The Pay dialog shows that message in an amber "Charge refused"
+box (`ManagerOverride.vue`) with a **Manager override** button: pick the
+manager (only those who have set a PIN are listed), type the PIN, **Approve
+and save**. The same cart is paid again through
+`mulecity_erpnext.credit_override.till_sale_with_override`, which checks the
+PIN (five wrong PINs lock that manager out on this register for five minutes)
+and posts the sale with the approver, the reason and the time recorded on the
+invoice. The PIN is sent once, as its own `override_pwd` argument (masked in
+the site's and the till's error logs), never inside the cart, which the till
+queues on disk; the box is emptied after every try. A cart with custom mixes
+is paid again through `counter_checkout` the same way. Both refusals are
+answers, kept out of the till's error badge. Cash and card sales are never
+refused. A site without the app API never sends `CreditHoldValidationError`,
+so nothing changes there.
+
 ## mule-v2.10.1-mc42 (unreleased; contains mc41)
 
 ### The cart says when a custom mix is under the 500 lb minimum (MuleCity-erqg.16)

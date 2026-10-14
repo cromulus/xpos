@@ -727,6 +727,16 @@
 				</div>
 			</div>
 
+			<!-- Mule City: a charge refused over the credit limit or past due, and the manager override (MuleCity-zstm.13). -->
+			<div v-if="chargeRefusal" class="shrink-0 border-t border-border px-5 py-3">
+				<ManagerOverride
+					:message="chargeRefusal.message"
+					:busy="isSubmitting"
+					:error="overrideError"
+					@approve="approveOverride"
+				/>
+			</div>
+
 			<DialogFooter
 				class="shrink-0 border-t border-border px-5 py-3 bg-muted/30 justify-between sm:justify-between"
 			>
@@ -855,6 +865,8 @@ import { isOnline, extractErrorMessage, isTabConflictError, isTicketChangedError
 import { ON_ACCOUNT, canChargeToAccount } from "@/utils/onAccount";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
+import ManagerOverride from "@/components/dialogs/ManagerOverride.vue";
+import { isChargeRefusal, isOverrideAnswer, payWithOverride } from "@/services/chargeOverride";
 import { applyCashier, cashierInitialsOk, normalizeInitials } from "@/utils/cashierInitials";
 import { nowDate } from "@/utils/datetime";
 import {
@@ -1469,6 +1481,8 @@ async function submitPayment(withPrint: boolean = true) {
 
 	isSubmitting.value = true;
 	printAfterSave.value = withPrint;
+	chargeRefusal.value = null;
+	overrideError.value = "";
 	// Who is at the till: on a shared login the avatar shows these until the next sale (MuleCity-qajl.1).
 	if (posStore.requireCashierInitials) posStore.rememberCashier(cashierInitials.value);
 
@@ -1527,32 +1541,29 @@ async function submitPayment(withPrint: boolean = true) {
 			invoiceData,
 			cartStore.getReceiptSnapshot("", receiptCashier.value),
 			async () => {
-				let response = await call<CreateInvoiceResult>("xpos.api.invoices.create_invoice", {
-					data: JSON.stringify(invoiceData),
-				});
+				let response = await call<CreateInvoiceResult>(
+					"xpos.api.invoices.create_invoice",
+					{ data: JSON.stringify(invoiceData) },
+					undefined,
+					{ answers: isOverrideAnswer },
+				);
 				if (response.status === "fbr_local_required") response = await finalizeWithLocalFbr(response);
 				return response;
 			},
 		);
-
-		posStore.lastInvoiceName = result.name;
-
-		if (cartStore.isReturnMode) {
-			showSuccess(__("Return {0} saved successfully!", [result.name]));
-		} else {
-			showSuccess(__("Invoice {0} saved successfully!", [result.name]));
-		}
-
-		cartStore.clearAll();
-		if (withPrint && result.name) {
-			try {
-				await printInvoice(result.name);
-			} catch {
-				showError(__("Sale saved. Receipt printing failed; use Reprint."));
-			}
-		}
+		await finishSale(result, withPrint);
 	} catch (error: unknown) {
-		if (isTicketChangedError(error)) {
+		if (isChargeRefusal(error)) {
+			// Not an error toast: the message, and a manager override (MuleCity-zstm.13).
+			const mix = cartStore.hasOrderLines;
+			chargeRefusal.value = {
+				message: extractErrorMessage(error),
+				// A mix cart is paid again exactly as submitMixOrder sent it.
+				invoiceData: mix ? ({ ...invoiceData, pay_mode: cartStore.mixPayMode } as InvoiceData) : invoiceData,
+				withPrint,
+				mix,
+			};
+		} else if (isTicketChangedError(error)) {
 			showError(extractErrorMessage(error));
 			cartStore.ticketChanged(extractErrorMessage(error));
 		} else if (isTabConflictError(error)) {
@@ -1572,7 +1583,63 @@ async function submitPayment(withPrint: boolean = true) {
 		} else {
 			showError(__("Payment failed: {0}", [extractErrorMessage(error)]));
 		}
-		console.error("Payment error:", error);
+		if (!chargeRefusal.value) console.error("Payment error:", error);
+	} finally {
+		isSubmitting.value = false;
+		printAfterSave.value = false;
+	}
+}
+
+async function finishSale(result: CreateInvoiceResult, withPrint: boolean) {
+	posStore.lastInvoiceName = result.name;
+
+	if (cartStore.isReturnMode) {
+		showSuccess(__("Return {0} saved successfully!", [result.name]));
+	} else {
+		showSuccess(__("Invoice {0} saved successfully!", [result.name]));
+	}
+
+	cartStore.clearAll();
+	if (withPrint && result.name) {
+		try {
+			await printInvoice(result.name);
+		} catch {
+			showError(__("Sale saved. Receipt printing failed; use Reprint."));
+		}
+	}
+}
+
+/** A charge the site refused (credit limit or past due) and the cart it refused (MuleCity-zstm.13). */
+const chargeRefusal = ref<{ message: string; invoiceData: InvoiceData; withPrint: boolean; mix: boolean } | null>(null);
+const overrideError = ref("");
+
+/**
+ * Ben or Matt typed their PIN: pay the same cart again under their approval.
+ * The site checks the PIN and posts the sale in one request; the PIN is not
+ * kept anywhere on the till.
+ */
+async function approveOverride({ approver, pin }: { approver: string; pin: string }) {
+	const refused = chargeRefusal.value;
+	if (!refused || isSubmitting.value) return;
+	isSubmitting.value = true;
+	printAfterSave.value = refused.withPrint;
+	overrideError.value = "";
+	try {
+		if (refused.mix) {
+			const result = await payWithOverride<CounterCheckoutResult>(refused.invoiceData, approver, pin, true);
+			chargeRefusal.value = null;
+			await finishMixOrder(result, refused.withPrint);
+			return;
+		}
+		const result = await submitDurableInvoice(
+			refused.invoiceData,
+			cartStore.getReceiptSnapshot("", receiptCashier.value),
+			() => payWithOverride<CreateInvoiceResult>(refused.invoiceData, approver, pin),
+		);
+		chargeRefusal.value = null;
+		await finishSale(result, refused.withPrint);
+	} catch (error: unknown) {
+		overrideError.value = extractErrorMessage(error);
 	} finally {
 		isSubmitting.value = false;
 		printAfterSave.value = false;
@@ -1601,9 +1668,16 @@ async function submitMixOrder(invoiceData: InvoiceData, withPrint: boolean) {
 		return;
 	}
 	mixRefusal.value = "";
-	const result = await call<CounterCheckoutResult>("mulecity_erpnext.counter_mix_orders.counter_checkout", {
-		data: JSON.stringify({ ...invoiceData, pay_mode: cartStore.mixPayMode }),
-	});
+	const result = await call<CounterCheckoutResult>(
+		"mulecity_erpnext.counter_mix_orders.counter_checkout",
+		{ data: JSON.stringify({ ...invoiceData, pay_mode: cartStore.mixPayMode }) },
+		undefined,
+		{ answers: isOverrideAnswer },
+	);
+	await finishMixOrder(result, withPrint);
+}
+
+async function finishMixOrder(result: CounterCheckoutResult, withPrint: boolean) {
 	const orders = result.orders.map((row) => row.sales_order).join(", ");
 	posStore.lastInvoiceName = result.invoice?.name || "";
 	showSuccess(
