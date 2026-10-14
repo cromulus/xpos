@@ -1,5 +1,13 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc44 (unreleased; contains mc43)
+
+### The till's error log never keeps a manager's PIN (MuleCity-zstm.13)
+
+`services/errorLog` redacts `override_pwd` like any password, so an override
+call that fails with a server error (not a refusal, which is never logged)
+keeps no PIN in the log on the register.
+
 ## mule-v2.10.1-mc43 (unreleased; contains mc42)
 
 ### A refused charge offers a manager override with a PIN (MuleCity-zstm.13)

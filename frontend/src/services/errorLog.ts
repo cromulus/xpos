@@ -32,7 +32,8 @@ export interface ErrorEntry {
 
 const MAX_ENTRIES = 200;
 const STORAGE_KEY = "xpos:error-log";
-const REDACT_KEYS = ["password", "api_secret", "apisecret", "pwd", "secret", "token"];
+// override_pwd: a manager's PIN for a charge override (Mule City, MuleCity-zstm.13).
+const REDACT_KEYS = ["password", "api_secret", "apisecret", "pwd", "secret", "token", "override_pwd"];
 
 export const entries = ref<ErrorEntry[]>([]);
 export const unseenCount = ref(0);

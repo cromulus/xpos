@@ -16,6 +16,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 vi.mock("@/services/api", () => ({ call: vi.fn() }));
 
 import { call } from "@/services/api";
+import { captureError, clearErrors, entries } from "@/services/errorLog";
 import ManagerOverride from "@/components/dialogs/ManagerOverride.vue";
 import { isChargeRefusal, isOverrideAnswer, payWithOverride } from "@/services/chargeOverride";
 import type { InvoiceData } from "@/types/pos.types";
@@ -89,5 +90,17 @@ describe("a refused charge at the till", () => {
 		expect(String((args as Record<string, unknown>).data)).not.toContain("482913");
 		expect(options?.answers).toBe(isOverrideAnswer);
 		expect(cart).not.toHaveProperty("override_pwd");
+	});
+
+	it("negative: a failed override call never keeps the PIN in the till's error log", () => {
+		clearErrors();
+		captureError({
+			source: "api",
+			title: "500 mulecity_erpnext.credit_override.till_sale_with_override",
+			message: "Server error",
+			args: { data: "{}", approver: "ben@mulecity.com", override_pwd: "482913", mix: 0 },
+		});
+		expect(JSON.stringify(entries.value)).not.toContain("482913");
+		expect((entries.value[0].args as Record<string, unknown>).override_pwd).toBe("[redacted]");
 	});
 });
