@@ -297,6 +297,7 @@ const mixCheck = computed(() =>
 			errorAnswered: cartStore.mixCheckAnswered,
 			ordersTotal: cartStore.counterQuote ? cartStore.counterQuote.orders_total : null,
 			warnings: cartStore.counterQuote?.warnings ?? [],
+			creditHold: cartStore.counterQuote?.credit_hold?.message || "",
 		},
 		money,
 	),

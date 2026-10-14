@@ -120,6 +120,8 @@ interface CounterQuote {
 	ticket?: Omit<ServerPreview, "key"> | null;
 	/** Non-blocking notes (the 500 lb custom-mix minimum, MuleCity-erqg.16); an older site sends none. */
 	warnings?: string[];
+	/** What Pay would refuse on credit, so the till can say a manager is needed (MuleCity-ibwx). */
+	credit_hold?: { message?: string; reason?: string; code?: string } | null;
 }
 
 /**

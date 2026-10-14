@@ -230,12 +230,19 @@ export function getReportDefinitions(): ReportDefinition[] {
 	return [...reportDefinitions];
 }
 
+/**
+ * Mule City has one branch: the branch-transfer summaries read Stock Entry,
+ * which the counter login may not (mulecity-full fix/xpos-report-roles), so
+ * the tab does not offer them.
+ */
+const MULE_HIDDEN_REPORTS = new Set(["branch-item-summary", "branch-set-summary"]);
+
 export function getAccessibleReports(): ReportDefinition[] {
-	return reportDefinitions.filter((report) => !report.permissionKey || hasPermission(report.permissionKey));
+	return reportDefinitions.filter(isReportAccessible);
 }
 
 export function isReportAccessible(report: ReportDefinition): boolean {
-	return !report.permissionKey || hasPermission(report.permissionKey);
+	return !MULE_HIDDEN_REPORTS.has(report.slug) && (!report.permissionKey || hasPermission(report.permissionKey));
 }
 
 export function buildInitialReportFilters(

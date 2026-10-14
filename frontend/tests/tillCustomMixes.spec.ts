@@ -278,6 +278,11 @@ describe("the cart says whether the mix can be made before Pay", () => {
 			tone: "answer",
 		});
 		expect(mixCheckStatus({ ...base, ordersTotal: 16, warnings: [] }, money).tone).toBe("info");
+		// A credit hold the quote found (MuleCity-ibwx): Pay will ask for a manager.
+		expect(mixCheckStatus({ ...base, ordersTotal: 16, creditHold: "Over the credit limit by $40.00" }, money)).toEqual({
+			text: "Ingredients on hand. Mix order $16.00. Needs a manager's PIN at Pay: Over the credit limit by $40.00",
+			tone: "answer",
+		});
 		expect(mixCheckStatus({ ...base, online: false }, money).tone).toBe("bad");
 	});
 });

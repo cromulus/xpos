@@ -21,6 +21,11 @@ export interface MixCheckInput {
 	 * block"). Shown in amber beside the price; the order still goes through.
 	 */
 	warnings?: string[];
+	/**
+	 * What Pay would refuse on credit (over the limit or past due), from the
+	 * site's quote: Pay will ask for a manager's PIN (MuleCity-ibwx).
+	 */
+	creditHold?: string;
 }
 
 export function mixCheckStatus(
@@ -40,6 +45,7 @@ export function mixCheckStatus(
 	if (input.ordersTotal != null) {
 		const text = __("Ingredients on hand. Mix order {0}.", [money(input.ordersTotal)]);
 		const warnings = (input.warnings || []).filter(Boolean);
+		if (input.creditHold) warnings.push(__("Needs a manager's PIN at Pay: {0}", [input.creditHold]));
 		return warnings.length ? { text: [text, ...warnings].join(" "), tone: "answer" } : { text, tone: "info" };
 	}
 	return { text: "", tone: "info" };

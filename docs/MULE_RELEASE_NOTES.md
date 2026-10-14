@@ -1,5 +1,19 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc47 (unreleased; contains mc46)
+
+### The cart says when Pay will need a manager; the Reports tab drops the branch summaries
+
+- **Credit hold before Pay (MuleCity-ibwx):** when the site's quote for a
+  cart with custom mixes finds a credit hold (over the limit or past due:
+  `counter_quote`'s `credit_hold`), the cart's mix line says "Needs a
+  manager's PIN at Pay: <reason>" in amber. Pay itself is unchanged: its
+  refusal opens the manager override (mc44's `ManagerOverride.vue`).
+- **Reports tab (2026-10-14):** Branch Item Summary and Branch Set Summary are
+  not offered, by list or by link (`MULE_HIDDEN_REPORTS`). Mule City has one
+  branch, and they read Stock Entry, which the counter login may not
+  (mulecity-full fix/xpos-report-roles gives the till the other 14 reports).
+
 ## mule-v2.10.1-mc46 (unreleased; contains mc44)
 
 ### The cart's custom mix line: pull list, fixes, grain, bulk, Send to desk (MuleCity-erqg.17)
