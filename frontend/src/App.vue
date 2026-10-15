@@ -9,6 +9,7 @@
 		]"
 	>
 		<SplashScreen :show="showSplash" />
+		<PullCalculationDialog :open="cartStore.mixCalculationPending" />
 
 		<template v-if="isAuthPage || isFullScreen">
 			<router-view v-slot="{ Component }">
@@ -166,6 +167,7 @@ import { useAuthStore } from "@/stores/authStore";
 import DefaultLayout from "@/layouts/DefaultLayout.vue";
 import OpeningDialog from "@/components/dialogs/OpeningDialog.vue";
 import ClosingDialog from "@/components/dialogs/ClosingDialog.vue";
+import PullCalculationDialog from "@/components/dialogs/PullCalculationDialog.vue";
 import PaymentDialog from "@/components/dialogs/PaymentDialog.vue";
 import CustomerSelect from "@/components/customer/CustomerSelect.vue";
 import LoyaltyDialog from "@/components/dialogs/LoyaltyDialog.vue";
@@ -204,6 +206,19 @@ const isElectronEnv = isElectron();
 const showErrorInspector = ref(false);
 const errorCount = errorUnseenCount;
 const isRtl = computed(() => document.documentElement.dir === "rtl");
+
+// A lightweight validation also catches formula/settings changes in another
+// screen. It never starts SCIP; Pay always obtains its own current quote.
+let pullValidationTimer: ReturnType<typeof setInterval>;
+const validatePulls = () => { void cartStore.validateMixPulls(); };
+onMounted(() => {
+	window.addEventListener("focus", validatePulls);
+	pullValidationTimer = setInterval(validatePulls, 20000);
+});
+onUnmounted(() => {
+	window.removeEventListener("focus", validatePulls);
+	clearInterval(pullValidationTimer);
+});
 
 const keyboardShortcuts = useKeyboardShortcuts();
 const {

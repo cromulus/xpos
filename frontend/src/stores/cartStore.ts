@@ -1,3 +1,4 @@
+import { withPullCalculation } from "@/services/pullCalculation";
 import { prepareVfdPickup } from "@/services/vfdOffline";
 import { newInvoiceId } from "@/services/invoiceSubmission";
 import { muleOrderFields } from "@/services/muleOrderFields";
@@ -112,6 +113,7 @@ interface ServerPreview {
  * MuleCity-3j1m): today's ticket and the orders, priced separately.
  */
 interface CounterQuote {
+	pull_job_keys?: string[];
 	key: string;
 	ticket_due: number;
 	orders_total: number;
@@ -1726,6 +1728,7 @@ export const useCartStore = defineStore("cart", () => {
 	 * by ``counter_checkout``; this only informs.
 	 */
 	const mixCheckPending = ref(false);
+	const mixCalculationPending = ref(false);
 	const mixCheckError = ref("");
 	/** The check's error is the site's answer ("Short ingredients", no price), not a failure (MuleCity-ra6h). */
 	const mixCheckAnswered = ref(false);
@@ -1877,6 +1880,7 @@ export const useCartStore = defineStore("cart", () => {
 		return rows;
 	});
 	async function checkMixOrders(): Promise<void> {
+		if (mixCalculationPending.value) return;
 		const request = ++mixCheckRequest;
 		mixCheckError.value = "";
 		mixCheckAnswered.value = false;
@@ -1892,24 +1896,45 @@ export const useCartStore = defineStore("cart", () => {
 		}
 		mixCheckPending.value = true;
 		try {
-			const result = await call<Omit<CounterQuote, "key">>(
-				"mulecity_erpnext.counter_mix_orders.counter_check",
-				{ data: JSON.stringify(previewPayload()) },
-				undefined,
-				// "Short ingredients" or "no price" is the check's answer, shown in the cart (MuleCity-ra6h).
-				{ answers: isValidationRefusal },
+			const result = await withPullCalculation<Omit<CounterQuote, "key">>(
+				"mulecity_erpnext.counter_mix_orders.counter_check", JSON.stringify(previewPayload()),
+				() => request === mixCheckRequest && key === previewKey.value,
+				value => { mixCalculationPending.value = value; },
 			);
 			if (request !== mixCheckRequest) return;
 			if (key === previewKey.value) counterQuote.value = { ...result, key };
 		} catch (error) {
-			if (request === mixCheckRequest) {
+			if (request === mixCheckRequest && key === previewKey.value) {
 				mixCheckError.value = extractErrorMessage(error);
 				mixCheckAnswered.value = !!(error as { answered?: boolean } | null)?.answered;
 			}
 		} finally {
 			if (request === mixCheckRequest) mixCheckPending.value = false;
+			if (key !== previewKey.value) scheduleMixCheck();
 		}
 	}
+	/** Recheck recipe/settings changes without running the optimizer or repricing.
+	 * The cart key handles local size/ingredient edits immediately. */
+	async function validateMixPulls(): Promise<void> {
+		const quote = counterQuote.value;
+		if (!quoteCurrent.value || !quote?.pull_job_keys?.length || mixCalculationPending.value || showPaymentDialog.value || !isOnline()) return;
+		try {
+			const states = await call<Record<string, {current: boolean; acceptable: boolean | null}>>(
+				"mulecity_erpnext.mule_feed_formula.pull_jobs.validate_jobs", {keys: quote.pull_job_keys},
+			);
+			if (counterQuote.value !== quote || !quoteCurrent.value) return;
+			if (quote.pull_job_keys.some(key => !states[key]?.current || states[key]?.acceptable === false)) {
+				counterQuote.value = null;
+				mixCheckError.value = __("Pull list is out of date. The formula or mixer rules changed. Recheck the order before paying.");
+				mixCheckAnswered.value = true;
+			}
+		} catch {
+			if (counterQuote.value !== quote || !quoteCurrent.value) return;
+			counterQuote.value = null;
+			mixCheckError.value = __("Could not verify the pull list. Recheck the order before paying.");
+		}
+	}
+
 	const scheduleMixCheck = debounce(() => {
 		checkMixOrders().catch(() => {});
 	}, 600);
@@ -1934,6 +1959,7 @@ export const useCartStore = defineStore("cart", () => {
 	 * need the server, so an offline till refuses them.
 	 */
 	async function openMixOrderPayment(): Promise<void> {
+		if (mixCalculationPending.value) return;
 		serverPreviewError.value = "";
 		if (!isOnline()) {
 			serverPreviewError.value = __("Custom mixes can't be ordered offline. Go online, or take the order at the desk.");
@@ -1946,16 +1972,15 @@ export const useCartStore = defineStore("cart", () => {
 		const key = previewKey.value;
 		serverPreviewPending.value = true;
 		try {
-			const result = await call<Omit<CounterQuote, "key">>(
-				"mulecity_erpnext.counter_mix_orders.counter_quote",
-				{ data: JSON.stringify(previewPayload()) },
-				undefined,
-				// Pay's refusal ("Short ingredients") is shown under Pay, not logged as an error.
-				{ answers: isValidationRefusal },
+			const result = await withPullCalculation<Omit<CounterQuote, "key">>(
+				"mulecity_erpnext.counter_mix_orders.counter_quote", JSON.stringify(previewPayload()),
+				() => key === previewKey.value,
+				value => { mixCalculationPending.value = value; },
 			);
-			counterQuote.value = { ...result, key };
 			if (key !== previewKey.value) return;
+			counterQuote.value = { ...result, key };
 		} catch (error) {
+			if (key !== previewKey.value) return;
 			counterQuote.value = null;
 			serverPreviewError.value = extractErrorMessage(error);
 			return;
@@ -2627,6 +2652,8 @@ export const useCartStore = defineStore("cart", () => {
 		mixPayMode,
 		counterQuote,
 		mixCheckPending,
+		mixCalculationPending,
+		validateMixPulls,
 		mixCheckError,
 		mixCheckAnswered,
 		quotedLineAmount,

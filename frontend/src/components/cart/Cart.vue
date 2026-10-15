@@ -293,6 +293,7 @@ const mixCheck = computed(() =>
 			online: offlineStore.isOnline,
 			pickupDate: cartStore.pickupDate,
 			pending: cartStore.mixCheckPending,
+			stale: !!cartStore.counterQuote,
 			error: cartStore.mixCheckError,
 			errorAnswered: cartStore.mixCheckAnswered,
 			ordersTotal: cartStore.counterQuote ? cartStore.counterQuote.orders_total : null,

@@ -11,6 +11,7 @@ export interface MixCheckInput {
 	online: boolean;
 	pickupDate: string;
 	pending: boolean;
+	stale?: boolean;
 	error: string;
 	/** The error is the site's answer (a 417 refusal: short ingredients, no price). */
 	errorAnswered?: boolean;
@@ -38,7 +39,9 @@ export function mixCheckStatus(
 	if (!input.pickupDate) {
 		return { text: __("Choose a pickup date to check the mix's ingredients and price the order."), tone: "info" };
 	}
-	if (input.pending) return { text: __("Checking the mix's ingredients…"), tone: "info" };
+	if (input.pending) return { text: __(input.stale
+		? "Pull list is out of date. Checking the current formula and order size…"
+		: "Checking the formula, order size and ingredients…"), tone: "info" };
 	if (input.error) {
 		return { text: __("Can't order yet: {0}", [input.error]), tone: input.errorAnswered ? "answer" : "bad" };
 	}

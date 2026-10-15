@@ -254,13 +254,42 @@ describe("the cart says whether the mix can be made before Pay", () => {
 		expect(cart.mixCheckAnswered).toBe(false);
 	});
 
+	it("marks a cached quote stale when the fast validator detects a recipe change", async () => {
+		vi.useFakeTimers();
+		mockedCall.mockImplementation(async (method: string) => {
+			if (method.endsWith("counter_check")) return {...QUOTE, pull_job_keys: ["job"]};
+			if (method.endsWith("validate_jobs")) return {job: {current: false, acceptable: true}};
+		});
+		const cart = useCartStore(); cart.addItem(mix()); cart.pickupDate = "2026-10-05";
+		await vi.advanceTimersByTimeAsync(700);
+		expect(cart.counterQuote?.orders_total).toBe(16);
+		await cart.validateMixPulls();
+		expect(cart.counterQuote).toBeNull();
+		expect(cart.mixCheckError).toContain("out of date");
+		expect(cart.mixCalculationPending).toBe(false);
+	});
+
+	it("locks while the worker runs and replaces the pending state with a current quote", async () => {
+		vi.useFakeTimers(); let checks = 0; let ready = false;
+		mockedCall.mockImplementation(async (method: string) => {
+			if (method.endsWith("counter_check")) return ++checks === 1 ? {pending_jobs: ["job"]} : QUOTE;
+			if (method.endsWith("pull_jobs.status")) return {job: ready ? "ready" : "pending"};
+		});
+		const cart = useCartStore(); cart.addItem(mix()); cart.pickupDate = "2026-10-05";
+		await vi.advanceTimersByTimeAsync(700);
+		expect(cart.mixCalculationPending).toBe(true); expect(cart.counterQuote).toBeNull();
+		ready = true; await vi.advanceTimersByTimeAsync(1000);
+		expect(cart.mixCalculationPending).toBe(false); expect(cart.counterQuote?.orders_total).toBe(16);
+	});
+
 	it("the cart's line reads the check", () => {
 		const money = (n: number) => `$${n.toFixed(2)}`;
 		const base = { online: true, pickupDate: "2026-10-05", pending: false, error: "", ordersTotal: null };
 		expect(mixCheckStatus({ ...base, pickupDate: "" }, money).text).toBe(
 			"Choose a pickup date to check the mix's ingredients and price the order.",
 		);
-		expect(mixCheckStatus({ ...base, pending: true }, money).text).toBe("Checking the mix's ingredients…");
+		expect(mixCheckStatus({ ...base, pending: true }, money).text).toBe("Checking the formula, order size and ingredients…");
+		expect(mixCheckStatus({ ...base, pending: true, stale: true }, money).text).toContain("out of date");
 		expect(mixCheckStatus({ ...base, ordersTotal: 16 }, money)).toEqual({
 			text: "Ingredients on hand. Mix order $16.00.",
 			tone: "info",
