@@ -12,7 +12,7 @@ from frappe.utils.background_jobs import enqueue
 from xpos.api.delivery import note_typed_miles, refuse_walk_in_delivery, resolve_new_shipping_address
 from xpos.api.exchange import get_currency_precision
 from xpos.api.items import selling_price
-from xpos.api.profiles import resolve_pos_profile
+from xpos.api.profiles import resolve_pos_profile, user_may_use_profile
 from xpos.api.tender import build_change_legs, build_tender_legs, invoice_currency_of
 from xpos.api.utilities import can_recall_other_shift_tabs, get_invoice_type, is_pos_cashier
 
@@ -82,6 +82,24 @@ def _detect_invoice_doctype(invoice_name: str):
 	if frappe.db.exists("POS Invoice", invoice_name):
 		return "POS Invoice"
 	frappe.throw(_("Invoice {0} not found").format(invoice_name))
+
+
+INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
+
+
+def ensure_invoice_doctype(doctype: str) -> None:
+	if doctype not in INVOICE_DOCTYPES:
+		frappe.throw(_("{0} is not an invoice type.").format(doctype), frappe.PermissionError)
+
+
+def get_pos_invoice(doctype: str, name: str, ptype: str = "read"):
+	"""Load an invoice the caller may act on: a user of its POS Profile, or one Frappe grants `ptype`."""
+	ensure_invoice_doctype(doctype)
+	doc = frappe.get_doc(doctype, name)
+	profile = doc.get("pos_profile")
+	if not (profile and user_may_use_profile(profile)) and not doc.has_permission(ptype):
+		frappe.throw(_("You are not permitted to access invoice {0}.").format(name), frappe.PermissionError)
+	return doc
 
 
 def _mark_xpos_delivery_charges_managed(invoice_doc):
@@ -1281,10 +1299,11 @@ def discard_draft_invoice(name: str, doctype: str | None = None) -> dict:
 	could not be finalized and the draft should not linger.
 	"""
 	doctype = doctype or get_invoice_type()
+	ensure_invoice_doctype(doctype)
 	if not frappe.db.exists(doctype, name):
 		return {"deleted": False}
 
-	invoice_doc = frappe.get_doc(doctype, name)
+	invoice_doc = get_pos_invoice(doctype, name, "delete")
 	if invoice_doc.docstatus != 0:
 		frappe.throw(_("Only a draft invoice can be discarded."))
 	if invoice_doc.get("pos_profile") and not is_pos_cashier(frappe.session.user, invoice_doc.pos_profile):
@@ -1795,7 +1814,7 @@ def get_invoice_details(invoice_name: str, doctype: str = ""):
 	"""Get full invoice details including items and payments."""
 	if not doctype:
 		doctype = _detect_invoice_doctype(invoice_name)
-	doc = frappe.get_doc(doctype, invoice_name)
+	doc = get_pos_invoice(doctype, invoice_name)
 
 	return {
 		"name": doc.name,
@@ -1890,7 +1909,7 @@ def delete_draft_invoice(name: str, doctype: str = "", pos_opening_shift: str = 
 	"""Delete a draft invoice."""
 	if not doctype:
 		doctype = _detect_invoice_doctype(name)
-	doc = frappe.get_doc(doctype, name)
+	doc = get_pos_invoice(doctype, name, "delete")
 	if doc.docstatus != 0:
 		frappe.throw(_("Only draft invoices can be deleted"))
 	# The delete below ignores permissions, so only a parked register sale may go,
@@ -2043,7 +2062,7 @@ def get_invoice_for_return(invoice_name: str, pos_profile: str = "", doctype: st
 
 	Accounts for past returns to show only what can still be returned.
 	"""
-	doc = frappe.get_doc(doctype, invoice_name)
+	doc = get_pos_invoice(doctype, invoice_name)
 
 	# What each sold row still has to give back, by the row the earlier returns
 	# named (link_field); a return made before rows were named counts against
@@ -2435,6 +2454,7 @@ def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: st
 	(Mule City: a past custom mix becomes its one mix Item) may replace the
 	lines through ``_mule_repeat_lines``.
 	"""
+	ensure_invoice_doctype(doctype)
 	if not frappe.db.exists(doctype, invoice_name):
 		alt = "POS Invoice" if doctype == "Sales Invoice" else "Sales Invoice"
 		if frappe.db.exists(alt, invoice_name):
@@ -2442,7 +2462,7 @@ def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: st
 		else:
 			frappe.throw(_("Invoice {0} not found").format(invoice_name))
 
-	doc = frappe.get_doc(doctype, invoice_name)
+	doc = get_pos_invoice(doctype, invoice_name)
 	doc.check_permission("read")
 
 	price_list = None

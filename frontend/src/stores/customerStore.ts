@@ -146,6 +146,7 @@ export const useCustomerStore = defineStore("customers", () => {
 			const result = await call<Customer>("xpos.api.customers.update_customer", {
 				customer: customerName,
 				data: JSON.stringify(data),
+				pos_profile: usePosStore().profileName || undefined,
 			});
 			return result;
 		} catch (error) {
@@ -169,6 +170,7 @@ export const useCustomerStore = defineStore("customers", () => {
 			if (isOnline()) {
 				const result = await call<Customer>("xpos.api.customers.get_customer_info", {
 					customer: customerName,
+					pos_profile: usePosStore().profileName || undefined,
 				});
 				selectedCustomerInfo.value = result;
 				return result;
@@ -187,6 +189,7 @@ export const useCustomerStore = defineStore("customers", () => {
 		try {
 			const result = await call<CustomerAddress[]>("xpos.api.customers.get_customer_addresses", {
 				customer: customerName,
+				pos_profile: usePosStore().profileName || undefined,
 			});
 			customerAddresses.value = result || [];
 			return customerAddresses.value;
@@ -198,9 +201,10 @@ export const useCustomerStore = defineStore("customers", () => {
 
 	async function createAddress(data: Record<string, unknown>): Promise<CustomerAddress> {
 		try {
-			// make_address takes one JSON argument, ``args`` (it holds the customer).
+			// make_address takes one JSON argument, ``args`` (it holds the customer
+			// and the till's POS Profile, which decides whose addresses it may add).
 			const result = await call<CustomerAddress>("xpos.api.customers.make_address", {
-				args: JSON.stringify(data),
+				args: JSON.stringify({ ...data, pos_profile: usePosStore().profileName || undefined }),
 			});
 			return result;
 		} catch (error) {
@@ -260,6 +264,7 @@ export const useCustomerStore = defineStore("customers", () => {
 		try {
 			const result = await call<CustomerLoyaltyInfo>("xpos.api.customers.get_customer_loyalty_info", {
 				customer: customerName,
+				pos_profile: usePosStore().profileName || undefined,
 			});
 			customerLoyaltyInfo.value = result;
 			return result;
@@ -279,6 +284,7 @@ export const useCustomerStore = defineStore("customers", () => {
 			const result = await call<{ message: string }>("xpos.api.customers.register_customer_loyalty", {
 				customer: customerName,
 				loyalty_program: loyaltyProgram,
+				pos_profile: usePosStore().profileName || undefined,
 			});
 
 			await fetchCustomerLoyaltyInfo(customerName);
@@ -316,6 +322,7 @@ export const useCustomerStore = defineStore("customers", () => {
 		try {
 			const result = await call<{ message: string }>("xpos.api.customers.unenroll_customer_loyalty", {
 				customer: customerName,
+				pos_profile: usePosStore().profileName || undefined,
 			});
 
 			customerLoyaltyInfo.value = null;

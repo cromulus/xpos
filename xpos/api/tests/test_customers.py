@@ -16,9 +16,11 @@ class TestGetCustomers(unittest.TestCase):
 
 	# Row enrichment has its own queries and tests (test_picker_context);
 	# these cases cover only the customer search query.
+	@patch("xpos.api.customers._profile_walk_ins", return_value=[])
 	@patch("xpos.api.customers._enrich_picker_customers")
+	@patch("xpos.api.customers.resolve_pos_profile")
 	@patch("xpos.api.customers.frappe")
-	def test_get_customers_returns_customer_list(self, mock_frappe, _mock_enrich):
+	def test_get_customers_returns_customer_list(self, mock_frappe, mock_resolve, _mock_enrich, _walk_ins):
 		"""Test that get_customers returns list of customers."""
 		mock_frappe.db.sql.return_value = [
 			{
@@ -37,14 +39,17 @@ class TestGetCustomers(unittest.TestCase):
 
 		result = customers.get_customers()
 
+		mock_resolve.assert_called_once_with(None)
 		self.assertEqual(len(result), 2)
 		self.assertEqual(result[0]["customer_name"], "John Doe")
 
 	# Row enrichment has its own queries and tests (test_picker_context);
 	# these cases cover only the customer search query.
+	@patch("xpos.api.customers._profile_walk_ins", return_value=[])
 	@patch("xpos.api.customers._enrich_picker_customers")
+	@patch("xpos.api.customers.resolve_pos_profile")
 	@patch("xpos.api.customers.frappe")
-	def test_get_customers_searches_by_term(self, mock_frappe, _mock_enrich):
+	def test_get_customers_searches_by_term(self, mock_frappe, _mock_resolve, _mock_enrich, _walk_ins):
 		"""Test that get_customers filters by search term."""
 		mock_frappe.db.sql.return_value = [
 			{
@@ -61,21 +66,27 @@ class TestGetCustomers(unittest.TestCase):
 		# Verify search term is in the query parameters
 		self.assertIn("John", str(call_args))
 
+	@patch("xpos.api.customers._enrich_picker_customers")
 	@patch("xpos.api.customers._profile_walk_ins", return_value=[])
+	@patch("xpos.api.customers.resolve_pos_profile")
 	@patch("xpos.api.customers._get_child_groups")
 	@patch("xpos.api.customers.frappe")
-	def test_get_customers_respects_pos_profile_groups(self, mock_frappe, mock_get_groups, _walk_ins):
+	def test_get_customers_respects_pos_profile_groups(
+		self, mock_frappe, mock_get_groups, mock_resolve, _walk_ins, _mock_enrich
+	):
 		"""Test that customer search respects POS profile customer groups."""
 		mock_pos = MagicMock()
 		mock_pos.get.return_value = [SimpleNamespace(customer_group="Retail")]
-		mock_frappe.get_cached_doc.return_value = mock_pos
+		mock_resolve.return_value = mock_pos
 		mock_get_groups.return_value = ["Retail", "Retail Sub"]
 		mock_frappe.db.sql.return_value = []
-		mock_frappe.db.escape.side_effect = lambda x: f"'{x}'"
 
 		customers.get_customers(pos_profile="POS-PROFILE-1")
 
-		mock_get_groups.assert_called()
+		mock_resolve.assert_called_once_with("POS-PROFILE-1")
+		query, values = mock_frappe.db.sql.call_args[0]
+		self.assertIn("c.customer_group IN", query)
+		self.assertEqual({values["grp_0"], values["grp_1"]}, {"Retail", "Retail Sub"})
 
 	@patch("xpos.api.customers.frappe")
 	def test_get_customers_respects_limit(self, mock_frappe):

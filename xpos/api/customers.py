@@ -83,6 +83,38 @@ def _search_description(customer: dict, fields: list[str]) -> str:
 	return ", ".join(values)
 
 
+def allowed_customer_groups(pos) -> list[str]:
+	"""Customer groups, with their children, a POS Profile is limited to. Empty means no limit."""
+	groups = set()
+	for row in pos.get("customer_groups") or []:
+		group_name = row_value(row, "customer_group")
+		if group_name:
+			groups.update(_get_child_groups("Customer Group", group_name))
+	return sorted(groups)
+
+
+def require_customer_access(customer: str, ptype: str = "read", pos_profile: str | None = None) -> None:
+	"""Allow a customer the caller holds `ptype` on, or one inside their POS Profile's customer groups.
+
+	The profile's walk-in accounts count as inside: they sit outside the sale
+	groups at Mule City, yet the till sells to them (MuleCity-yn4b).
+	"""
+	if not customer or not frappe.db.exists("Customer", customer):
+		frappe.throw(_("Customer {0} not found").format(customer), frappe.DoesNotExistError)
+	if frappe.has_permission("Customer", ptype, doc=customer):
+		return
+	pos = resolve_pos_profile(pos_profile)
+	allowed = allowed_customer_groups(pos)
+	if (
+		allowed
+		and customer not in _profile_walk_ins(pos)
+		and frappe.db.get_value("Customer", customer, "customer_group") not in allowed
+	):
+		frappe.throw(
+			_("You are not permitted to access customer {0}.").format(customer), frappe.PermissionError
+		)
+
+
 @frappe.whitelist()
 def get_customers(
 	search_term: str = "", limit: int = 20, pos_profile: str = None, preload: int = 0, with_metadata: int = 0
@@ -96,7 +128,8 @@ def get_customers(
 	ID or search-field value equals the term exactly is listed first, then those
 	matching on their own fields, then those found only through a Contact.
 
-	If a POS Profile is provided, respects customer group restrictions.
+	Limited to the customer groups of the caller's POS Profile (the one named,
+	which they must be allowed to use, or their default).
 	"""
 	extra_fields = _customer_search_fields()
 	meta = frappe.get_meta("Customer")
@@ -108,8 +141,10 @@ def get_customers(
 	order_by = "c.customer_name ASC, c.name ASC"
 	join = ""
 	limit_sql = "LIMIT %(limit)s"
+	# Only a POS Profile the caller may use, never one the request merely names;
+	# with none named, the caller's own (upstream 9cf8318).
+	profile = resolve_pos_profile(pos_profile)
 	if pos_profile:
-		profile = frappe.get_cached_doc("POS Profile", pos_profile)
 		if cint(preload):
 			configured = profile.get("xpos_customer_preload_limit")
 			values["limit"] = max(0, cint(configured if configured is not None else 5000))
@@ -139,33 +174,20 @@ def get_customers(
 			values["company"] = profile.company
 			order_by = f"history.{metrics[ranking]} DESC, {order_by}"
 
-	walk_ins = _profile_walk_ins(profile) if pos_profile else []
-	if pos_profile:
-		try:
-			pos = frappe.get_cached_doc("POS Profile", pos_profile)
-			customer_groups = pos.get("customer_groups")
-			if customer_groups:
-				allowed_groups = []
-				for cg in customer_groups:
-					group_name = row_value(cg, "customer_group")
-					if group_name:
-						allowed_groups.extend(_get_child_groups("Customer Group", group_name))
-				if allowed_groups:
-					allowed_groups = list(set(allowed_groups))
-					group_params = {}
-					for idx, g in enumerate(allowed_groups):
-						group_params[f"grp_{idx}"] = g
-					in_clause = ", ".join([f"%(grp_{i})s" for i in range(len(allowed_groups))])
-					# The walk-in account sits outside the sale groups (Mule City keeps it under
-					# its internal references), yet the till sells to it, offline too (MuleCity-yn4b).
-					if walk_ins:
-						conditions += f" AND (c.customer_group IN ({in_clause}) OR c.name IN %(walk_ins)s)"
-						values["walk_ins"] = walk_ins
-					else:
-						conditions += f" AND c.customer_group IN ({in_clause})"
-					values.update(group_params)
-		except Exception:
-			pass
+	walk_ins = _profile_walk_ins(profile)
+	# The profile's customer-group limit always applies, not only when the till
+	# names its profile (upstream 9cf8318).
+	allowed_groups = allowed_customer_groups(profile)
+	if allowed_groups:
+		values.update({f"grp_{i}": group for i, group in enumerate(allowed_groups)})
+		in_clause = ", ".join(f"%(grp_{i})s" for i in range(len(allowed_groups)))
+		# The walk-in account sits outside the sale groups (Mule City keeps it under
+		# its internal references), yet the till sells to it, offline too (MuleCity-yn4b).
+		if walk_ins:
+			conditions += f" AND (c.customer_group IN ({in_clause}) OR c.name IN %(walk_ins)s)"
+			values["walk_ins"] = walk_ins
+		else:
+			conditions += f" AND c.customer_group IN ({in_clause})"
 
 	if search_term:
 		search_term = search_term.strip()
@@ -252,7 +274,7 @@ def get_customers(
 				{"missing": missing},
 				as_dict=True,
 			))
-	_enrich_picker_customers(customers, profile.company if pos_profile else None)
+	_enrich_picker_customers(customers, profile.company)
 	for customer in customers:
 		customer["xpos_search_description"] = _search_description(customer, extra_fields)
 
@@ -417,12 +439,14 @@ def _linked_contact_details(customer: str) -> dict:
 
 
 @frappe.whitelist()
-def get_customer_info(customer: str):
+def get_customer_info(customer: str, pos_profile: str | None = None):
 	"""
 	Get detailed customer information including loyalty, addresses, balance, credit, and discount.
 	"""
 	if not customer:
 		return None
+
+	require_customer_access(customer, pos_profile=pos_profile)
 
 	cust = frappe.get_cached_doc("Customer", customer)
 	balance = get_customer_balance(customer)
@@ -714,13 +738,14 @@ def _save_primary_email(customer, email):
 
 
 @frappe.whitelist()
-def update_customer(customer: str, data: str | dict):
+def update_customer(customer: str, data: str | dict, pos_profile: str | None = None):
 	"""
 	Update an existing customer.
 	"""
 	if isinstance(data, str):
 		data = json.loads(data)
 
+	require_customer_access(customer, "write", pos_profile)
 	doc = frappe.get_doc("Customer", customer)
 	doc.check_permission("write")
 	if "email_id" in data:
@@ -760,12 +785,14 @@ def update_customer(customer: str, data: str | dict):
 
 
 @frappe.whitelist()
-def get_customer_addresses(customer: str):
+def get_customer_addresses(customer: str, pos_profile: str | None = None):
 	"""
 	List all addresses for a customer.
 	"""
 	if not customer:
 		return []
+
+	require_customer_access(customer, pos_profile=pos_profile)
 
 	links = frappe.get_all(
 		"Dynamic Link",
@@ -833,6 +860,7 @@ def make_address(args: str | dict):
 		frappe.throw(_("Customer is required to create an address"))
 	if not (args.get("address_line1") or "").strip() or not (args.get("city") or "").strip():
 		frappe.throw(_("Street address and city are required to save an address"))
+	require_customer_access(customer, "write", args.get("pos_profile"))
 
 	address = frappe.get_doc(
 		{
@@ -1178,7 +1206,7 @@ def get_loyalty_programs(company: str = None):
 
 
 @frappe.whitelist()
-def register_customer_loyalty(customer: str, loyalty_program: str):
+def register_customer_loyalty(customer: str, loyalty_program: str, pos_profile: str | None = None):
 	"""Register a customer for a loyalty program.
 
 	Args:
@@ -1199,6 +1227,7 @@ def register_customer_loyalty(customer: str, loyalty_program: str):
 	if not frappe.db.exists("Loyalty Program", loyalty_program):
 		frappe.throw(_("Loyalty Program {0} not found").format(loyalty_program))
 
+	require_customer_access(customer, "write", pos_profile)
 	cust_doc = frappe.get_doc("Customer", customer)
 
 	if cust_doc.loyalty_program:
@@ -1231,7 +1260,7 @@ def register_customer_loyalty(customer: str, loyalty_program: str):
 
 
 @frappe.whitelist()
-def unenroll_customer_loyalty(customer: str):
+def unenroll_customer_loyalty(customer: str, pos_profile: str | None = None):
 	"""Remove a customer from their loyalty program.
 
 	Args:
@@ -1246,6 +1275,7 @@ def unenroll_customer_loyalty(customer: str):
 	if not frappe.db.exists("Customer", customer):
 		frappe.throw(_("Customer {0} not found").format(customer))
 
+	require_customer_access(customer, "write", pos_profile)
 	cust_doc = frappe.get_doc("Customer", customer)
 
 	if not cust_doc.loyalty_program:
@@ -1265,7 +1295,7 @@ def unenroll_customer_loyalty(customer: str):
 
 
 @frappe.whitelist()
-def get_customer_loyalty_info(customer: str):
+def get_customer_loyalty_info(customer: str, pos_profile: str | None = None):
 	"""Get detailed loyalty information for a customer.
 
 	Args:
@@ -1280,6 +1310,7 @@ def get_customer_loyalty_info(customer: str):
 	if not frappe.db.exists("Customer", customer):
 		return None
 
+	require_customer_access(customer, pos_profile=pos_profile)
 	cust_doc = frappe.get_cached_doc("Customer", customer)
 
 	if not cust_doc.loyalty_program:
