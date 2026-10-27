@@ -6,6 +6,7 @@ import re
 
 import frappe
 from frappe import _
+from frappe.permissions import has_user_permission
 from frappe.utils import add_months, cint, flt, today
 
 from xpos.api.delivery import (
@@ -93,26 +94,37 @@ def allowed_customer_groups(pos) -> list[str]:
 	return sorted(groups)
 
 
-def require_customer_access(customer: str, ptype: str = "read", pos_profile: str | None = None) -> None:
-	"""Allow a customer the caller holds `ptype` on, or one inside their POS Profile's customer groups.
+def user_may_see(customer: str) -> bool:
+	"""Whether the caller's User Permissions allow this customer, whatever their role permissions say."""
+	return has_user_permission(frappe.get_cached_doc("Customer", customer))
 
-	The profile's walk-in accounts count as inside: they sit outside the sale
-	groups at Mule City, yet the till sells to them (MuleCity-yn4b).
+
+def user_may_see_address(address: str) -> bool:
+	return has_user_permission(frappe.get_doc("Address", address))
+
+
+def require_customer_access(customer: str, ptype: str = "read", pos_profile: str | None = None):
+	"""Return the caller's POS Profile once the customer passes its groups and User Permissions; non-read also needs Customer permission.
+
+	The profile's walk-in accounts count as inside its groups: they sit outside
+	the sale groups at Mule City, yet the till sells to them (MuleCity-yn4b).
 	"""
 	if not customer or not frappe.db.exists("Customer", customer):
 		frappe.throw(_("Customer {0} not found").format(customer), frappe.DoesNotExistError)
-	if frappe.has_permission("Customer", ptype, doc=customer):
-		return
 	pos = resolve_pos_profile(pos_profile)
 	allowed = allowed_customer_groups(pos)
+	denied = _("You are not permitted to access customer {0}.").format(customer)
 	if (
 		allowed
 		and customer not in _profile_walk_ins(pos)
 		and frappe.db.get_value("Customer", customer, "customer_group") not in allowed
 	):
-		frappe.throw(
-			_("You are not permitted to access customer {0}.").format(customer), frappe.PermissionError
-		)
+		frappe.throw(denied, frappe.PermissionError)
+	if not user_may_see(customer):
+		frappe.throw(denied, frappe.PermissionError)
+	if ptype != "read" and not frappe.has_permission("Customer", ptype, doc=customer):
+		frappe.throw(denied, frappe.PermissionError)
+	return pos
 
 
 @frappe.whitelist()
@@ -446,11 +458,10 @@ def get_customer_info(customer: str, pos_profile: str | None = None):
 	if not customer:
 		return None
 
-	require_customer_access(customer, pos_profile=pos_profile)
-
+	pos = require_customer_access(customer, pos_profile=pos_profile)
 	cust = frappe.get_cached_doc("Customer", customer)
-	balance = get_customer_balance(customer)
-	loyalty = get_loyalty_points(customer)
+	balance = get_customer_balance(customer, pos.company)
+	loyalty = get_loyalty_points(customer, pos.company)
 
 	addresses = frappe.get_all(
 		"Dynamic Link",
@@ -461,7 +472,11 @@ def get_customer_info(customer: str, pos_profile: str | None = None):
 		},
 		fields=["parent"],
 	)
-	address_names = [row_value(addr, "parent") for addr in addresses if row_value(addr, "parent")]
+	address_names = [
+		name
+		for name in (row_value(addr, "parent") for addr in addresses)
+		if name and user_may_see_address(name)
+	]
 	address_list = []
 	if address_names:
 		address_docs = frappe.get_all(
@@ -510,7 +525,9 @@ def get_customer_info(customer: str, pos_profile: str | None = None):
 				get_loyalty_program_details_with_points,
 			)
 
-			lp_details = get_loyalty_program_details_with_points(customer, loyalty_program_name)
+			lp_details = get_loyalty_program_details_with_points(
+				customer, loyalty_program_name, company=pos.company
+			)
 			loyalty_program = {
 				"name": loyalty_program_name,
 				"loyalty_points": (lp_details.get("loyalty_points", 0) if lp_details else 0),
@@ -529,7 +546,7 @@ def get_customer_info(customer: str, pos_profile: str | None = None):
 	credit_limit = 0
 	from erpnext.selling.doctype.customer.customer import get_credit_limit
 
-	credit_limit = flt(get_credit_limit(customer, frappe.defaults.get_user_default("Company")))
+	credit_limit = flt(get_credit_limit(customer, pos.company))
 	contact = (
 		_linked_contact_details(customer)
 		if not (cust.mobile_no and cust.email_id)
@@ -804,7 +821,7 @@ def get_customer_addresses(customer: str, pos_profile: str | None = None):
 		fields=["parent"],
 	)
 
-	address_names = [link.parent for link in links if link.parent]
+	address_names = [link.parent for link in links if link.parent and user_may_see_address(link.parent)]
 	if not address_names:
 		return []
 
@@ -1125,8 +1142,8 @@ def get_sales_person_names(pos_profile: str | None = None):
 	)
 
 
-def get_customer_balance(customer: str):
-	"""Get outstanding balance for a customer.
+def get_customer_balance(customer: str, company: str):
+	"""Outstanding balance of a customer in one company; callers pass their POS Profile's company.
 
 	A site may define the figure (hook ``xpos_customer_balance``: a function of the
 	customer returning the amount). Mule City nets the Payment Ledger as its
@@ -1134,14 +1151,16 @@ def get_customer_balance(customer: str):
 	"""
 	methods = frappe.get_hooks("xpos_customer_balance")
 	if methods:
+		# The hook takes the customer only (Mule City has one company).
 		return flt(frappe.get_attr(methods[-1])(customer))
 	balance = frappe.db.sql(
 		"""
 		SELECT SUM(debit - credit) AS balance
 		FROM `tabGL Entry`
-		WHERE party_type = 'Customer' AND party = %(customer)s AND docstatus = 1
+		WHERE party_type = 'Customer' AND party = %(customer)s AND company = %(company)s
+			AND docstatus = 1
 		""",
-		{"customer": customer},
+		{"customer": customer, "company": company},
 		as_dict=True,
 	)
 	if not balance:
@@ -1155,16 +1174,16 @@ def get_customer_balance(customer: str):
 	return flt(first_row or 0)
 
 
-def get_loyalty_points(customer: str):
-	"""Get loyalty points balance for a customer."""
+def get_loyalty_points(customer: str, company: str):
+	"""Loyalty points balance of a customer in one company."""
 	try:
 		points = frappe.db.sql(
 			"""
 			SELECT SUM(loyalty_points) AS points
 			FROM `tabLoyalty Point Entry`
-			WHERE customer = %(customer)s AND expiry_date >= CURDATE()
+			WHERE customer = %(customer)s AND company = %(company)s AND expiry_date >= CURDATE()
 			""",
-			{"customer": customer},
+			{"customer": customer, "company": company},
 			as_dict=True,
 		)
 		return flt(points[0].get("points", 0)) if points else 0
@@ -1310,7 +1329,7 @@ def get_customer_loyalty_info(customer: str, pos_profile: str | None = None):
 	if not frappe.db.exists("Customer", customer):
 		return None
 
-	require_customer_access(customer, pos_profile=pos_profile)
+	pos = require_customer_access(customer, pos_profile=pos_profile)
 	cust_doc = frappe.get_cached_doc("Customer", customer)
 
 	if not cust_doc.loyalty_program:
@@ -1323,7 +1342,7 @@ def get_customer_loyalty_info(customer: str, pos_profile: str | None = None):
 
 	lp = frappe.get_cached_doc("Loyalty Program", cust_doc.loyalty_program)
 
-	points = get_loyalty_points(customer)
+	points = get_loyalty_points(customer, pos.company)
 
 	conversion_factor = flt(lp.conversion_factor) or 1
 	points_value = flt(points) * conversion_factor if conversion_factor else 0
