@@ -126,6 +126,9 @@
 			</Button>
 		</TooltipWrapper>
 
+		<!-- The counter's procedures from the Mule City manual (MuleCity-vz28.17.20). -->
+		<CounterHelp />
+
 		<!-- One status control: connection, pending sales and the offline cache (MuleCity-qajl.1). -->
 		<CacheSyncStatus @open-pending="showOfflinePanel = true" />
 		<OfflinePendingPanel :open="showOfflinePanel" @close="showOfflinePanel = false" />
@@ -254,6 +257,7 @@ import {
 	LayoutDashboard,
 } from "lucide-vue-next";
 import OfflinePendingPanel from "@/components/offline/OfflinePendingPanel.vue";
+import CounterHelp from "@/components/mule/CounterHelp.vue";
 import AboutDialog from "@/components/dialogs/AboutDialog.vue";
 import KeyboardShortcutsDialog from "@/components/dialogs/KeyboardShortcutsDialog.vue";
 
