@@ -53,15 +53,19 @@
 				ref="itemsPanelRef"
 				:class="[
 					'flex flex-col min-w-0 border-e border-border bg-background',
-					'md:flex md:flex-1 md:max-w-[calc(100%-560px)] xl:max-w-[calc(100%-520px)]',
+					// The counter tablet (820 px, Mule City MuleCity-vz28.17.42): below lg the cart is
+					// 384 px, so the items keep ~430 px and their names; lg and up as before.
+					'md:flex md:flex-1 md:max-w-[calc(100%-384px)] lg:max-w-[calc(100%-560px)] xl:max-w-[calc(100%-520px)]',
 					activeTab === 'items' ? 'flex flex-1' : 'hidden',
 				]"
 				@focusin="activeZone = 'items'"
 				@click="activeZone = 'items'"
 			>
 				<div class="shrink-0 p-3 sm:p-4 pb-1.5 sm:pb-2 space-y-2">
-					<div class="flex items-center gap-2">
-						<div class="flex-1 min-w-0">
+					<!-- Below lg the search gets its own full-width row and the scanner the next, so
+					     neither squeezes the other out (MuleCity-vz28.17.42). -->
+					<div class="flex flex-wrap lg:flex-nowrap items-center gap-2">
+						<div class="basis-full lg:basis-auto lg:flex-1 min-w-0">
 							<SearchBar
 								ref="searchBarRef"
 								@search="onSearch"
@@ -69,7 +73,7 @@
 								@navigate="onNavigate"
 							/>
 						</div>
-						<div class="hidden sm:block w-52 shrink-0">
+						<div class="hidden sm:block flex-1 min-w-0 lg:flex-none lg:w-52 lg:shrink-0">
 							<BarcodeScanner ref="barcodeScannerRef" @scanned="onBarcodeScan" />
 						</div>
 						<button
@@ -78,7 +82,7 @@
 						>
 							<ScanLine class="w-5 h-5" />
 						</button>
-						<div class="hidden sm:flex items-center gap-1 border rounded-lg p-1">
+						<div v-if="!itemsNarrow" class="hidden sm:flex items-center gap-1 border rounded-lg p-1">
 							<Button
 								:variant="viewMode === 'grid' ? 'default' : 'ghost'"
 								size="icon"
@@ -134,7 +138,7 @@
 						:items="itemStore.items"
 						:is-loading="itemStore.isLoading"
 						:currency-symbol="posStore.currencySymbol"
-						:view-mode="viewMode"
+						:view-mode="effectiveViewMode"
 						:highlighted-index="highlightedIndex"
 						@select-item="handleAddItem"
 						@show-detail="handleShowDetail"
@@ -144,7 +148,7 @@
 			</div>
 			<div
 				ref="cartPanelRef"
-				class="hidden md:flex w-140 xl:w-130 flex-col bg-background dark:bg-card shrink-0"
+				class="hidden md:flex w-96 lg:w-140 xl:w-130 flex-col bg-background dark:bg-card shrink-0"
 				@focusin="activeZone = 'cart'"
 				@click="activeZone = 'cart'"
 			>
@@ -213,6 +217,12 @@ const cartStore = useCartStore();
 const offerStore = useOfferStore();
 
 const viewMode = ref<"grid" | "list">("grid");
+// A narrow item pane (the 820 px counter tablet, a phone) shows the list: a card there is
+// too small for the item's name (MuleCity-vz28.17.42). The chosen view returns when wide.
+const ITEMS_LIST_BELOW_PX = 640;
+const itemsNarrow = ref(false);
+const effectiveViewMode = computed<"grid" | "list">(() => (itemsNarrow.value ? "list" : viewMode.value));
+let itemsPanelObserver: ResizeObserver | null = null;
 const activeTab = ref<"items" | "cart">("items");
 const showCameraScanner = ref(false);
 const mobileCartTotal = computed(() => money(Math.abs(cartStore.grandTotal)));
@@ -259,9 +269,18 @@ onMounted(() => {
 	window.addEventListener("xpos:focus-search", handleFocusSearch as EventListener);
 	window.addEventListener("xpos:open-command-search", handleOpenCommandSearch as EventListener);
 	nextTick(() => barcodeScannerRef.value?.focus());
+	if (typeof ResizeObserver !== "undefined" && itemsPanelRef.value) {
+		itemsPanelObserver = new ResizeObserver(([entry]) => {
+			const width = entry?.contentRect.width ?? 0;
+			// A hidden pane (the phone's Cart tab) measures 0: keep the last answer.
+			if (width > 0) itemsNarrow.value = width < ITEMS_LIST_BELOW_PX;
+		});
+		itemsPanelObserver.observe(itemsPanelRef.value);
+	}
 });
 
 onUnmounted(() => {
+	itemsPanelObserver?.disconnect();
 	document.removeEventListener("keydown", handleGlobalKeydown);
 	window.removeEventListener("xpos:toggle-view", handleToggleView as EventListener);
 	window.removeEventListener("xpos:focus-barcode", handleFocusBarcode as EventListener);

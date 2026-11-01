@@ -1,11 +1,13 @@
 <template>
-	<header class="h-14 bg-background border-b border-border flex items-center px-4 gap-3 shrink-0 z-30">
+	<!-- Fits the 820 px counter tablet (MuleCity-vz28.17.42): tighter gaps and no "X POS" or
+	     status text below lg, so every button, Close Shift last, stays on screen. -->
+	<header class="h-14 bg-background border-b border-border flex items-center px-2 lg:px-4 gap-1.5 lg:gap-3 shrink-0 z-30 whitespace-nowrap">
 		<Button variant="ghost" size="icon-sm" @click="toggleSidebar">
 			<Menu class="w-5 h-5" />
 		</Button>
-		<div class="flex items-center gap-2.5">
+		<div class="flex items-center gap-2.5 shrink-0">
 			<img :src="isDark ? logoDark : logoLight" alt="X POS Logo" class="w-8 h-8" />
-			<span class="hidden md:inline">{{ __("X POS") }}</span>
+			<span class="hidden lg:inline">{{ __("X POS") }}</span>
 		</div>
 		<TooltipWrapper :content="__('Go to Desk')">
 			<Button
@@ -17,7 +19,7 @@
 				<LayoutDashboard class="w-4 h-4" />
 			</Button>
 		</TooltipWrapper>
-		<nav class="hidden md:flex items-center gap-1 ms-4">
+		<nav class="hidden md:flex items-center gap-1 ms-1 lg:ms-4 shrink-0">
 			<router-link
 				to="/pos"
 				:class="
@@ -195,7 +197,7 @@
 			<Button
 				variant="ghost"
 				size="sm"
-				class="text-muted-foreground hover:text-destructive gap-1.5"
+				class="text-muted-foreground hover:text-destructive gap-1.5 shrink-0"
 				@click="
 					posStore.showClosingDialog = true;
 					posStore.fetchClosingData();

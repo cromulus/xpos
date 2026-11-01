@@ -124,7 +124,8 @@
 					</span>
 				</template>
 				<template v-else>
-					<Button variant="secondary" size="icon-sm" class="w-5 h-5" @click="decrementQty">
+					<!-- Finger-sized on a touch screen (the counter tablet, MuleCity-vz28.17.42). -->
+					<Button variant="secondary" size="icon-sm" class="w-5 h-5 pointer-coarse:w-9 pointer-coarse:h-9" @click="decrementQty">
 						<Minus class="w-2.5 h-2.5" />
 					</Button>
 					<input
@@ -133,7 +134,7 @@
 						type="number"
 						min="0"
 						data-testid="cart-qty"
-						class="w-9 h-5 text-center text-[10px] font-semibold text-foreground bg-muted/50 rounded border border-border focus:outline-none focus:ring-1 focus:ring-ring dark:bg-accent/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none px-1"
+						class="w-9 h-5 pointer-coarse:w-12 pointer-coarse:h-9 pointer-coarse:text-sm text-center text-[10px] font-semibold text-foreground bg-muted/50 rounded border border-border focus:outline-none focus:ring-1 focus:ring-ring dark:bg-accent/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none px-1"
 						@change="onQtyChange"
 						@keydown.up.prevent="focusAdjacentItem(-1, 'qty')"
 						@keydown.down.prevent="focusAdjacentItem(1, 'qty')"
@@ -142,7 +143,7 @@
 					<Button
 						variant="secondary"
 						size="icon-sm"
-						class="w-5 h-5 bg-primary/10 text-primary hover:bg-primary/20"
+						class="w-5 h-5 pointer-coarse:w-9 pointer-coarse:h-9 bg-primary/10 text-primary hover:bg-primary/20"
 						@click="incrementQty"
 					>
 						<Plus class="w-2.5 h-2.5" />
@@ -160,7 +161,7 @@
 				<template v-if="hasPermission('show_edit_discount_field') && !item.pos_is_free_item">
 					<button
 						@click="showDiscountInput = !showDiscountInput"
-						class="ms-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-all"
+						class="ms-1 px-1.5 py-0.5 pointer-coarse:px-3 pointer-coarse:py-2.5 rounded text-[10px] font-medium transition-all"
 						:class="
 							hasItemDiscount
 								? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700'
@@ -246,7 +247,7 @@
 			<Button
 				variant="ghost"
 				size="icon-sm"
-				class="md:opacity-0 md:group-hover:opacity-100 w-5 h-5 md:w-4 md:h-4 text-muted-foreground hover:text-destructive transition-all"
+				class="md:pointer-fine:opacity-0 md:pointer-fine:group-hover:opacity-100 w-5 h-5 md:w-4 md:h-4 pointer-coarse:w-9 pointer-coarse:h-9 text-muted-foreground hover:text-destructive transition-all"
 				@click="$emit('remove', index)"
 			>
 				<Trash2 class="w-3.5 h-3.5" />

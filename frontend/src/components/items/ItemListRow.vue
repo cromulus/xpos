@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="flex items-center gap-3 p-2 rounded-lg transition-colors group border"
+		class="flex items-center gap-2 lg:gap-3 p-2 rounded-lg transition-colors group border"
 		:class="[
 			isOutOfStock && !allowNegativeStock
 				? 'cursor-not-allowed opacity-60 bg-muted/30 border-border'
@@ -10,7 +10,7 @@
 		]"
 		@click="handleClick"
 	>
-		<div class="w-14 h-14 shrink-0 rounded-lg bg-muted overflow-hidden relative">
+		<div class="w-12 h-12 lg:w-14 lg:h-14 shrink-0 rounded-lg bg-muted overflow-hidden relative">
 			<img
 				v-if="item.image && !hideImages"
 				:src="item.image"
@@ -31,7 +31,9 @@
 		</div>
 
 		<div class="flex-1 min-w-0">
-			<p class="text-sm font-medium text-foreground truncate">
+			<!-- Two lines, not one clipped one: on the counter tablet the name is the
+			     only way to tell feeds apart (MuleCity-vz28.17.42). -->
+			<p class="text-sm font-medium text-foreground leading-snug line-clamp-2 break-words" :title="item.item_name">
 				{{ item.item_name }}
 			</p>
 			<div class="flex items-center gap-2 text-xs text-muted-foreground">
@@ -71,7 +73,7 @@
 		</div>
 
 		<button
-			class="shrink-0 w-8 h-8 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-secondary/80"
+			class="shrink-0 w-10 h-10 lg:w-8 lg:h-8 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center lg:pointer-fine:opacity-0 lg:pointer-fine:group-hover:opacity-100 transition-opacity hover:bg-secondary/80"
 			:aria-label="__('Product details')"
 			@click.stop="$emit('showDetail', item)"
 		>
@@ -80,13 +82,13 @@
 
 		<div
 			v-if="!isOutOfStock || allowNegativeStock"
-			class="shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+			class="shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground hidden lg:flex items-center justify-center lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
 		>
 			<Plus class="w-4 h-4" />
 		</div>
 		<div
 			v-else
-			class="shrink-0 w-8 h-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center"
+			class="shrink-0 w-8 h-8 rounded-full bg-muted text-muted-foreground hidden lg:flex items-center justify-center"
 		>
 			<Ban class="w-4 h-4" />
 		</div>

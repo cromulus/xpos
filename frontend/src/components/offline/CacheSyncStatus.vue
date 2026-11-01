@@ -12,7 +12,9 @@
 			<WifiOff v-else-if="!offline.isOnline" class="w-4 h-4" />
 			<CloudUpload v-else-if="offline.hasPending" class="w-4 h-4" />
 			<Wifi v-else class="w-4 h-4" />
-			<span class="whitespace-nowrap">{{ summary.label }}</span>
+			<!-- On the counter tablet "in sync" is the icon alone; offline or pending sales keep
+			     their words at every width (MuleCity-vz28.17.42). -->
+			<span class="whitespace-nowrap" :class="summary.tone === 'ok' ? 'hidden lg:inline' : ''">{{ summary.label }}</span>
 		</summary>
 		<div
 			class="absolute right-0 top-full z-50 w-80 rounded border bg-background p-4 shadow-lg space-y-3 text-foreground"
