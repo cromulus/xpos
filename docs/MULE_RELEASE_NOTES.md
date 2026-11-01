@@ -1,5 +1,34 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc49 (unreleased; contains mc48)
+
+### The till on the 820 px counter tablet; Pay at pickup gives no change; Help (?)
+
+Bill (2026-11-01) approved the front desk ringing sales on the 820 px tablet
+as well as the 1366 px counter computer.
+
+- **Tablet layout (MuleCity-vz28.17.42):** below lg (1024 px) the cart is
+  384 px, not 560, so the items keep ~430 px. An item pane under 640 px shows
+  the list with names on two lines (the chosen grid/list returns when wide).
+  The search has its own row, the scanner the next. The header drops the
+  "X POS" text and the "in sync" words below lg (offline or pending keep their
+  words) and nothing in it shrinks, so Close Shift stays on screen. In the
+  cart the customer's name keeps 9rem and the buttons wrap under it. On a
+  touch screen the item info button and the cart line's -/+, quantity, Disc
+  and remove are finger-sized and not hidden until hover. lg and up (the
+  counter computer) look as in mc48.
+- **Pay at pickup gives no change (MuleCity-vz28.17.14.3):** the amount
+  tendered follows the amount due when it moves (Pay now / Pay at pickup, the
+  site's quote arriving) unless the cashier typed another amount; with nothing
+  due nothing is tendered. Before, Pay at pickup showed Amount Due 0.00 with
+  "Change $11.48", sent it as cash change, and with a non-cash first method the
+  site refused the sale ("Only cash can be given back as change").
+- **Help (?) in the header (MuleCity-vz28.17.20):** the counter's procedures
+  from the manual (`mulecity_erpnext.in_app_help.get_help`, screen `xpos`),
+  each opening its `/manual` page in a new tab. Needs mulecity-full with the
+  in-app help and the Wiki manual (the staff-learning release); on a site
+  without them the button says help isn't available, it opens nothing.
+
 ## mule-v2.10.1-mc47 (unreleased; contains mc46)
 
 ### The cart says when Pay will need a manager; the Reports tab drops the branch summaries
