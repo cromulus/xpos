@@ -1180,6 +1180,24 @@ onMounted(async () => {
 	document.addEventListener("keydown", handleGlobalKeydown);
 });
 
+// A custom-mix order's amount due moves with Pay now / Pay at pickup and when the
+// site's quote arrives (Mule City, MuleCity-vz28.17.14.3). The amount tendered was
+// set once, on opening, so Pay at pickup showed Amount Due 0.00 with Change 11.48
+// (and a mix-only cart sent the 11.48 as cash to give back). It follows the new
+// total unless the cashier typed another amount; with nothing due, nothing is
+// tendered, whatever was typed (it would all come back as change).
+watch(
+	() => roundCurrency(Math.abs(cartStore.grandTotal)),
+	(newTotal, oldTotal) => {
+		if (!cartStore.hasOrderLines || isSplitPayment.value) return;
+		if (newTotal > 0 && roundCurrency(tenderedAmount.value) !== oldTotal) return;
+		tenderedAmount.value = newTotal;
+		nextTick(() => {
+			amountInput.value?.setValue(newTotal);
+		});
+	},
+);
+
 watch(
 	() => cartStore.loyaltyAmount,
 	() => {
