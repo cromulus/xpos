@@ -2,7 +2,8 @@
 	<!-- "?" in the till header (Mule City, MuleCity-vz28.17.20): the counter's procedures from the
 	     manual, as the desk's "How do I…?" lists them (mulecity_erpnext.in_app_help.get_help, screen
 	     "xpos", docs/erpnext/runbook/help-map.yml). Each opens /manual/<page>#<heading> in a new tab;
-	     the till keeps its basket. Without the Mule app, or offline, the manual's counter page. -->
+	     the till keeps its basket. No entries: the manual's counter page. A site without the help
+	     (no Mule app or Wiki yet, or offline) says so, never a dead link. -->
 	<Popover v-model:open="open">
 		<PopoverTrigger as-child>
 			<Button
@@ -34,7 +35,10 @@
 					<span v-if="entry.use_when" class="text-xs text-muted-foreground">{{ entry.use_when }}</span>
 				</span>
 			</a>
-			<a :href="MANUAL" target="_blank" rel="noopener" class="block px-2 pt-2 text-xs">{{ __("The counter page of the manual") }}</a>
+			<p v-if="unavailable" class="px-2 py-1.5 text-sm text-muted-foreground" data-testid="counter-help-unavailable">
+				{{ __("Help isn't available on this till right now.") }}
+			</p>
+			<a v-else :href="MANUAL" target="_blank" rel="noopener" class="block px-2 pt-2 text-xs">{{ __("The counter page of the manual") }}</a>
 		</PopoverContentStyled>
 	</Popover>
 </template>
@@ -51,15 +55,20 @@ type Entry = { id: string; title: string; use_when: string; url: string };
 const MANUAL = "/manual/counter";
 const open = ref(false);
 const entries = ref<Entry[]>([]);
+const unavailable = ref(false);
 
 async function load() {
 	if (entries.value.length) return;
+	unavailable.value = false;
 	try {
 		const help = await call<{ entries: Entry[] }>("mulecity_erpnext.in_app_help.get_help", { screen: "xpos" });
 		const seen = new Set<string>();
 		entries.value = (help?.entries || []).filter((e) => !seen.has(e.id) && seen.add(e.id));
 	} catch {
+		// No help API here (or offline): keep the popover open with a note; /manual may not exist.
 		entries.value = [];
+		unavailable.value = true;
+		return;
 	}
 	if (!entries.value.length) {
 		open.value = false;
