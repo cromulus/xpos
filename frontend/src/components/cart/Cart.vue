@@ -30,12 +30,14 @@
 		     account take two short lines instead of a card, a button and two big boxes.
 		     Receive on Account is a Pay option now (PaymentDialog, or the empty cart's Pay button). -->
 		<div class="shrink-0 px-4 pt-3 pb-2 border-b">
-			<div class="flex items-center gap-2">
+			<!-- In the tablet's narrower cart the customer's name keeps 9rem; the badge and
+			     buttons wrap under it rather than squeeze it to "Pract..." (MuleCity-vz28.17.42). -->
+			<div class="flex flex-wrap lg:flex-nowrap items-center gap-2">
 				<!-- No "Cart" heading: it took room (Bill 2026-10-01, MuleCity-qajl.1). -->
 				<button
 					type="button"
 					data-testid="cart-customer"
-					class="flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-md border transition-colors duration-200"
+					class="flex-1 min-w-36 lg:min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-md border transition-colors duration-200"
 					:class="
 						cartStore.isReturnMode
 							? 'border-border bg-muted/50 cursor-not-allowed'
