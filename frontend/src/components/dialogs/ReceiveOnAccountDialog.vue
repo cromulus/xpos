@@ -33,7 +33,7 @@
 					<label class="text-sm font-semibold text-foreground mb-1.5 block">
 						{{ __("Amount") }}
 					</label>
-					<NumberInput v-model="amount" data-testid="on-account-amount" />
+					<NumberInput v-model="amount" :precision="moneyPrecision" data-testid="on-account-amount" />
 					<p v-if="overBalance" class="text-xs text-muted-foreground mt-1.5">
 						{{ __("{0} more than the balance stays on account as a credit.", [money(amount - balance)]) }}
 					</p>
@@ -79,6 +79,7 @@
 import { ref, computed, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
+import { roundTo } from "@/utils/numberFormat";
 import { call, showSuccess, showError } from "@/services/api";
 import { extractErrorMessage } from "@/utils";
 import {
@@ -101,7 +102,10 @@ const props = defineProps<{ customer: string | null; customerLabel?: string; bal
 const emit = defineEmits<{ (e: "close"): void; (e: "received"): void }>();
 
 const posStore = usePosStore();
-const { money } = useMoney();
+const { money, moneyPrecision } = useMoney();
+// Money is in cents (MuleCity-vz28.17.14.4): the box shows and sends the
+// currency's precision, never the 3-decimal float precision ("19.750", $14.755).
+const toCents = (value: number) => roundTo(Number(value) || 0, moneyPrecision.value);
 
 const amount = ref(0);
 const modeOfPayment = ref("");
@@ -126,7 +130,7 @@ watch(
 	(customer) => {
 		if (!customer) return;
 		till.reset();
-		amount.value = Math.max(Number(props.balance) || 0, 0);
+		amount.value = toCents(Math.max(Number(props.balance) || 0, 0));
 		modeOfPayment.value =
 			posStore.posProfile?.payments?.find((p) => p.default)?.mode_of_payment ||
 			modeOptions.value[0]?.value ||
@@ -148,7 +152,7 @@ async function submit() {
 	try {
 		await call("xpos.api.payments.receive_on_account", {
 			customer: props.customer,
-			amount: amount.value,
+			amount: toCents(amount.value),
 			mode_of_payment: modeOfPayment.value,
 			pos_opening_shift: shiftName,
 			pos_profile: posStore.profileName,

@@ -28,7 +28,10 @@ const { call, store } = vi.hoisted(() => ({
 
 vi.mock("@/services/api", () => ({ call, showSuccess: vi.fn(), showError: vi.fn() }));
 vi.mock("@/stores/posStore", () => ({ usePosStore: () => store }));
-vi.mock("@/composables/useMoney", () => ({ useMoney: () => ({ money: (v: number) => `$${Number(v).toFixed(2)}` }) }));
+vi.mock("@/composables/useMoney", async () => {
+	const { ref } = await import("vue");
+	return { useMoney: () => ({ money: (v: number) => `$${Number(v).toFixed(2)}`, moneyPrecision: ref(2) }) };
+});
 
 import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
 import SettleOutstandingDialog from "@/components/dialogs/SettleOutstandingDialog.vue";

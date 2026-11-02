@@ -304,7 +304,7 @@ def settle_outstanding_invoice(
 	if outstanding_amount <= 0:
 		frappe.throw(_("Invoice {0} has nothing outstanding.").format(invoice))
 
-	amount = flt(amount)
+	amount = to_cents(amount)
 	if amount <= 0:
 		frappe.throw(_("Payment amount must be greater than zero."))
 
@@ -338,6 +338,16 @@ def settle_outstanding_invoice(
 	}
 
 
+def to_cents(amount) -> float:
+	"""A payment amount in the currency's precision (cents), as the Payment Entry stores it.
+
+	MuleCity-vz28.17.14.4: the till once sent $14.755 and the site posted it.
+	The till rounds before it sends; this rounds anything else the same way
+	(Frappe's own ``flt`` with Payment Entry's paid_amount precision).
+	"""
+	return flt(amount, frappe.get_precision("Payment Entry", "paid_amount") or 2)
+
+
 @frappe.whitelist()
 def receive_on_account(
 	customer: str,
@@ -361,7 +371,7 @@ def receive_on_account(
 		frappe.throw(_("You are not permitted to take payments on account."), frappe.PermissionError)
 	if not pos_opening_shift:
 		frappe.throw(_("An open shift is required to take a payment on account."))
-	amount = flt(amount)
+	amount = to_cents(amount)
 	if amount <= 0:
 		frappe.throw(_("Payment amount must be greater than zero."))
 	if not frappe.db.exists("Customer", customer):
@@ -418,6 +428,7 @@ def receive_on_account(
 
 	return {
 		"payment_entry": pe.name,
+		"paid_amount": flt(pe.paid_amount),
 		"allocated": [
 			{"reference_doctype": r.reference_doctype, "reference_name": r.reference_name, "allocated_amount": flt(r.allocated_amount)}
 			for r in pe.references

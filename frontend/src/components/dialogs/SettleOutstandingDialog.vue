@@ -39,7 +39,7 @@
 					<label class="text-sm font-semibold text-foreground mb-1.5 block">
 						{{ __("Amount") }}
 					</label>
-					<NumberInput v-model="amount" data-testid="settle-amount" />
+					<NumberInput v-model="amount" :precision="moneyPrecision" data-testid="settle-amount" />
 					<p v-if="exceedsOutstanding" class="text-xs text-destructive mt-1.5">
 						{{ __("Amount cannot exceed the outstanding balance.") }}
 					</p>
@@ -80,6 +80,7 @@
 import { ref, computed, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
+import { roundTo } from "@/utils/numberFormat";
 import { call, showSuccess, showError } from "@/services/api";
 import { extractErrorMessage } from "@/utils";
 import {
@@ -103,7 +104,10 @@ const props = defineProps<{ invoice: OutstandingInvoice | null }>();
 const emit = defineEmits<{ (e: "close"): void; (e: "settled"): void }>();
 
 const posStore = usePosStore();
-const { money } = useMoney();
+const { money, moneyPrecision } = useMoney();
+// Money is in cents (MuleCity-vz28.17.14.4): the box shows and sends the
+// currency's precision, never the 3-decimal float precision ("19.750", $14.755).
+const toCents = (value: number) => roundTo(Number(value) || 0, moneyPrecision.value);
 
 const amount = ref(0);
 const modeOfPayment = ref("");
@@ -136,7 +140,7 @@ watch(
 	(invoice) => {
 		if (!invoice) return;
 		till.reset();
-		amount.value = Number(invoice.outstanding_amount) || 0;
+		amount.value = toCents(Number(invoice.outstanding_amount) || 0);
 		modeOfPayment.value =
 			posStore.posProfile?.payments?.find((p) => p.default)?.mode_of_payment ||
 			modeOptions.value[0]?.value ||
@@ -158,7 +162,7 @@ async function submit() {
 	try {
 		await call("xpos.api.payments.settle_outstanding_invoice", {
 			invoice: props.invoice.name,
-			amount: amount.value,
+			amount: toCents(amount.value),
 			mode_of_payment: modeOfPayment.value,
 			pos_opening_shift: shiftName,
 			pos_profile: posStore.profileName,

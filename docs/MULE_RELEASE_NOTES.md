@@ -1,5 +1,20 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc50 (unreleased; contains mc49)
+
+### Receive on Account and Settle are in cents
+
+- **Money in cents (MuleCity-vz28.17.14.4, Bill 2026-11-02):** the Receive on
+  Account and Settle amount boxes had no precision, so they used the site's
+  3-decimal float precision: the balance prefilled as "19.750" and a typed
+  $14.755 was sent and posted (ACC-PAY-00004 on a test slot, the customer left
+  at -$0.005). Both boxes now use the currency's precision (`moneyPrecision`),
+  the prefill is rounded to it, and the amount sent is rounded once more. On
+  the site, `receive_on_account` and `settle_outstanding_invoice` round the
+  amount with `to_cents` (Frappe's `flt` at Payment Entry's paid_amount
+  precision), and `receive_on_account` returns the `paid_amount` it posted.
+  mulecity-full also rounds every Payment Entry (`payment_cents`).
+
 ## mule-v2.10.1-mc49 (unreleased; contains mc48)
 
 ### The till on the 820 px counter tablet; Pay at pickup gives no change; Help (?)
