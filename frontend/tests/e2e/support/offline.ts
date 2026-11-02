@@ -269,3 +269,11 @@ declare global {
 		}
 	}
 }
+
+/** Read the permitted invoice timeline; Frappe 16.54 no longer exposes the
+ * private _comments cache through get_list. This also works on older v16. */
+export function invoiceComments(name: string) {
+	return cy.request({ method: "GET", url: "/api/method/frappe.desk.form.load.getdoc",
+		qs: { doctype: "Sales Invoice", name } })
+		.then(response => response.body.docinfo.comments as Array<{ content: string }>);
+}

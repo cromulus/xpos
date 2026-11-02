@@ -19,6 +19,7 @@ import {
 	customerInvoices,
 	ensureOpenShift,
 	item,
+	invoiceComments,
 	openTillOnline,
 	payWithEnter,
 	restoreNetworkAfterEach,
@@ -87,13 +88,11 @@ describe("delivery while the store's internet is down", () => {
 
 							cy.networkOn();
 							waitUntil(() => cy.pendingInvoices(), (rows) => rows.length === 0, "the offline sale to sync");
-							customerInvoices(created.name, ["name", "shipping_address_name", "_comments"]).then(
-								(posted: Array<{ name: string; shipping_address_name: string; _comments?: string }>) => {
+							customerInvoices(created.name, ["name", "shipping_address_name"]).then(
+								(posted: Array<{ name: string; shipping_address_name: string }>) => {
 									expect(posted, "one Sales Invoice").to.have.length(1);
-									// The review flag: Frappe keeps a sale's latest comments on it (_comments),
-									// which the cashier may read (Comment itself they may not list).
-									const comments = JSON.parse(posted[0]._comments || "[]") as Array<{ comment: string }>;
-									expect(comments.map((c) => c.comment).join(" ")).to.contain("12.5 mi typed there (manual_offline)");
+									invoiceComments(posted[0].name).then(comments =>
+										expect(comments.map(c => c.content).join(" ")).to.contain("12.5 mi typed there (manual_offline)"));
 									cy.benchCall("frappe.client.get", { doctype: "Sales Invoice", name: posted[0].name }).then(
 										(sale: { items: Array<{ item_code: string; rate: number; description: string }> }) => {
 											const lines = sale.items.filter((row) => row.item_code === policy!.item!.item_code);
@@ -177,15 +176,15 @@ describe("delivery while the store's internet is down", () => {
 							cy.networkOn();
 							waitUntil(() => cy.pendingInvoices(), (rows) => rows.length === 0, "the offline sale to sync");
 							customerInvoices(created.name, ["name", "shipping_address_name", "pos_delivery_date", "pos_delivery_miles",
-								"pos_delivery_miles_source", "_comments"]).then(
+								"pos_delivery_miles_source"]).then(
 								(posted: Array<{ name: string; shipping_address_name: string; pos_delivery_date: string;
-									pos_delivery_miles: number; pos_delivery_miles_source: string; _comments?: string }>) => {
+									pos_delivery_miles: number; pos_delivery_miles_source: string }>) => {
 									expect(posted, "one Sales Invoice").to.have.length(1);
 									const sale = posted[0];
 									expect([sale.pos_delivery_date, Number(sale.pos_delivery_miles), sale.pos_delivery_miles_source])
 										.to.deep.equal([day, 12.5, "manual"]);
-									const comments = JSON.parse(sale._comments || "[]") as Array<{ comment: string }>;
-									expect(comments.map((c) => c.comment).join(" ")).to.contain("12.5 mi typed there (manual)");
+									invoiceComments(sale.name).then(comments =>
+										expect(comments.map(c => c.content).join(" ")).to.contain("12.5 mi typed there (manual)"));
 									cy.benchCall("frappe.client.get_value", { doctype: "Address", filters: sale.shipping_address_name,
 										fieldname: "address_line1" }).then((address: { address_line1: string }) =>
 										expect(address.address_line1).to.equal("5 Back Rd"));
