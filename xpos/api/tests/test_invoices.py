@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from xpos.api import invoices
 
 
-def tender_legs_from_payments(payments, invoice_doc, rate_cache=None):
+def tender_legs_from_payments(payments, invoice_doc, rate_cache=None, keep_zero_modes=frozenset()):
 	"""Stand in for build_tender_legs, deriving rows from payments without a database."""
 	rows = [
 		{"mode_of_payment": payment["mode_of_payment"], "amount": float(payment["amount"])}
