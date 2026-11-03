@@ -283,6 +283,23 @@ describe("Pay by Card, end to end against a mocked site", () => {
 		store.reset();
 	});
 
+	it("Pay by Card with a payment still out on the reader shows it again instead of starting another", async () => {
+		const store = useCardPaymentStore();
+		store.bindTill(till());
+		answer(`${TILL}.save_card_draft`, DRAFT);
+		answer(`${SERVICE}.get_available_terminals`, FREE);
+		answer(`${SERVICE}.start_terminal_payment`, status({ collection_state: "PENDING" }));
+		await store.begin({ profile: "P", invoiceData: {}, cash: 0, withPrint: false });
+		store.open = false;
+		answer(`${SERVICE}.get_terminal_payment_status`, status({ collection_state: "PENDING" }));
+		await store.begin({ profile: "P", invoiceData: {}, cash: 0, withPrint: false });
+		await Promise.resolve();
+		expect(store.open).toBe(true);
+		expect(calls.filter((c) => c.method === `${SERVICE}.start_terminal_payment`)).toHaveLength(1);
+		expect(calls.filter((c) => c.method === `${TILL}.save_card_draft`)).toHaveLength(1);
+		store.reset();
+	});
+
 	it("a reload resumes the payment in progress instead of charging again", async () => {
 		window.localStorage.setItem(
 			"xpos:card-payment",
@@ -292,6 +309,7 @@ describe("Pay by Card, end to end against a mocked site", () => {
 		const t = till();
 		store.bindTill(t);
 		expect(await store.resume("Other profile")).toBe(false);
+		expect(store.pending).toBeNull();
 
 		answer(`${SERVICE}.get_terminal_payment_status`, status({ paid: true, received: true, accounting_state: "Posted", collection_state: "Captured" }));
 		expect(await store.resume("P")).toBe(true);

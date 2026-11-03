@@ -469,7 +469,11 @@ const queue = ref<CloseShiftQueue>({ pending: [], attention: [] });
 const checkingQueue = ref(false);
 // A card payment this till started and has not finished (MuleCity-bjjv.3): the
 // reader may still take money for a sale of this shift. The site refuses too.
-const pendingCard = ref<PendingCardPayment | null>(loadPendingCard());
+function pendingCardHere(): PendingCardPayment | null {
+	const record = loadPendingCard();
+	return record && (!posStore.profileName || record.profile === posStore.profileName) ? record : null;
+}
+const pendingCard = ref<PendingCardPayment | null>(pendingCardHere());
 const closeBlocked = computed(() => queueBlocksClose(queue.value) || !!pendingCard.value);
 const hasTillPayments = computed(() => Object.keys(summary.value?.till_payments || {}).length > 0);
 const SYNC_WAIT_MS = 500;
@@ -567,7 +571,7 @@ async function handleCloseShift() {
 	}
 	// A sale may have been queued or refused while this dialog sat open.
 	await settleQueue();
-	pendingCard.value = loadPendingCard();
+	pendingCard.value = pendingCardHere();
 	if (pendingCard.value) {
 		showError(
 			__("A card payment for {0} is not finished. Finish or cancel it before closing the shift.", [

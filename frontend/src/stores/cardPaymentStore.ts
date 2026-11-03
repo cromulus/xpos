@@ -79,7 +79,7 @@ export interface BeginCardPayment {
 export const useCardPaymentStore = defineStore("cardPayment", () => {
 	const config = ref<CardTerminalConfig>({ ...CARD_OFF });
 	const configProfile = ref("");
-	const pending = ref<PendingCardPayment | null>(loadPendingCard());
+	const pending = ref<PendingCardPayment | null>(null);
 	const step = ref<CardStep>("idle");
 	const open = ref(false);
 	const status = ref<CardPaymentStatus | null>(null);
@@ -159,7 +159,14 @@ export const useCardPaymentStore = defineStore("cardPayment", () => {
 
 	/** Pay by Card pressed in the Pay dialog. */
 	async function begin(request: BeginCardPayment): Promise<void> {
-		if (busy.value || pending.value?.attempt) return;
+		if (busy.value) return;
+		if (pending.value?.attempt) {
+			// A payment is still out on the reader: show it again, never start another.
+			open.value = true;
+			step.value = "collecting";
+			void poll();
+			return;
+		}
 		busy.value = true;
 		error.value = "";
 		open.value = true;
@@ -379,8 +386,8 @@ export const useCardPaymentStore = defineStore("cardPayment", () => {
 	/** After a reload: watch the payment this browser started, for this register only. */
 	async function resume(profile: string): Promise<boolean> {
 		const record = loadPendingCard();
-		pending.value = record;
 		if (!record || record.profile !== profile) return false;
+		pending.value = record;
 		open.value = true;
 		cash.value = Number(record.cash || 0);
 		terminal.value = record.terminal || "";
@@ -391,7 +398,8 @@ export const useCardPaymentStore = defineStore("cardPayment", () => {
 	}
 
 	function close(): void {
-		// Never hide a payment the reader may still be taking.
+		// Never hide a payment the reader may still be taking, nor a save or start in flight.
+		if (busy.value || ["saving", "starting"].includes(step.value)) return;
 		if (pending.value?.attempt && step.value !== "done") return;
 		if (step.value === "done" || !pending.value?.attempt) reset();
 		open.value = false;
