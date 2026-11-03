@@ -69,14 +69,30 @@ def profile_terminals(pos_profile: str, user: str | None = None) -> list[dict]:
 	rows = frappe.get_all(
 		"Payment Terminal",
 		filters={"disabled": 0, "pairing_status": "PAIRED", "pos_profile": pos_profile},
-		fields=["name", "terminal_name", "allowed_users"],
+		fields=["name", "terminal_name", "allowed_users", "payment_gateway"],
 		order_by="terminal_name asc",
 	)
 	return [
 		{"name": row.name, "label": row.terminal_name or row.name}
 		for row in rows
-		if not row.allowed_users or user in row.allowed_users.splitlines()
+		if (not row.allowed_users or user in row.allowed_users.splitlines())
+		and gateway_collects(row.payment_gateway)
 	]
+
+
+def gateway_collects(payment_gateway: str | None) -> bool:
+	"""Whether the reader's gateway settings are enabled for terminal collection."""
+	if not payment_gateway:
+		return False
+	try:
+		from payments.transactions.drivers import controller_for
+
+		controller = controller_for(payment_gateway)
+	except Exception:
+		return False
+	if not getattr(controller, "supports_payment_terminal", False) or controller.get("disabled"):
+		return False
+	return not controller.meta.has_field("terminal_enabled") or bool(controller.get("terminal_enabled"))
 
 
 @frappe.whitelist()
