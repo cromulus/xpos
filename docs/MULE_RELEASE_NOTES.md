@@ -1,5 +1,38 @@
 # Mule City XPOS release notes
 
+## mc/stripe-card (branch, not tagged; on mc50)
+
+### Pay by Card on a Stripe Terminal reader (MuleCity-bjjv.3)
+
+Needs Bill's payments fork (cromulus/payments `mule-v16-mc1` or later) with
+Stripe Settings, a dedicated card-reader Mode of Payment (e.g. "Stripe Card",
+not Heartland's "Credit Card") and a paired Payment Terminal on the register's
+POS Profile, plus mulecity-full's `payment_terminal_pos_session_validators`
+hook (the open XPOS shift is the reader's POS session). Without all of that
+the Pay box is exactly as in mc50.
+
+- **Server (`xpos.api.card_terminal`):** `save_card_draft` saves the cart as a
+  draft with `create_invoice`'s own builder and checks and a 0.00 row for the
+  reader's mode (`build_tender_legs(keep_zero_modes=...)`; other callers still
+  drop 0.00 rows). The payments app collects the card balance and submits that
+  draft; XPOS never submits it. Saving again (reload, lost response) returns
+  the same draft, untouched while a payment is unresolved, or the posted sale.
+  Refunds, On Account, orders, points, write-off, change and non-cash legs are
+  refused. `get_card_terminal_config` is off unless a paired reader of an
+  enabled gateway is assigned to the profile. A POS Closing Shift is refused
+  while a card payment of the shift is unresolved, and closing never deletes a
+  draft with card payment history.
+- **Pay box:** Pay by Card (the whole ticket on one tender; the rest after the
+  cash legs of a split, cash confirmed first), the reader's prompts while it
+  polls, Cancel, and after a decline or cancel the reason (a later fork's
+  readable message when sent), Try card again or Other tender (the draft stays
+  and Pay completes it). On approval the invoice the payments app submitted is
+  printed and the cart cleared. The reader's mode is never a tender button.
+- **Reload and shift:** the payment in progress is kept in the browser; a
+  reload resumes watching it instead of charging again; Close Shift waits for
+  it; polling continues through a dropped connection. Off offline and in the
+  desktop app; card sales are never queued.
+
 ## mule-v2.10.1-mc50 (unreleased; contains mc49)
 
 ### Receive on Account and Settle are in cents
