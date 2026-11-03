@@ -487,9 +487,13 @@ watch(
 		if (ready && !wasReady) {
 			// From the till's cache when offline (MuleCity-yn4b).
 			await selectDefaultCustomer();
-			// The card reader's settings, then any card payment this browser was collecting.
-			await cardStore.loadConfig(posStore.profileName);
-			await cardStore.resume(posStore.profileName);
+			// The card reader's settings, then any card payment this browser was collecting
+			// (MuleCity-bjjv.3). Not awaited: an offline boot never waits on it.
+			const profile = posStore.profileName;
+			void cardStore
+				.loadConfig(profile)
+				.then(() => cardStore.resume(profile))
+				.catch((error) => console.warn("[XPOS] Card reader resume failed:", error));
 		}
 	},
 );
