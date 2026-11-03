@@ -649,11 +649,13 @@ def discount_applies_on(data: dict, pos) -> str:
 	return data.get("apply_discount_on") or pos.get("apply_discount_on") or "Grand Total"
 
 
-def _build_invoice_doc(data: dict, local_id: str | None = None):
+def _build_invoice_doc(data: dict, local_id: str | None = None, keep_zero_modes=frozenset()):
 	"""Build the unsaved invoice a cart payload becomes: lines, price lock, taxes, payments.
 
-	Shared by ``create_invoice`` and ``preview_invoice`` so the preview shows exactly
-	what saving will post. Returns ``(invoice_doc, pos_profile_doc, doctype, is_existing_draft)``.
+	Shared by ``create_invoice``, ``preview_invoice`` and ``card_terminal.save_card_draft``
+	so the preview shows exactly what saving will post. ``keep_zero_modes``: payment
+	rows of these modes are kept at 0.00 (a card reader's row, filled in on capture).
+	Returns ``(invoice_doc, pos_profile_doc, doctype, is_existing_draft)``.
 	"""
 	pos_profile = data.get("pos_profile")
 	customer = data.get("customer")
@@ -946,7 +948,7 @@ def _build_invoice_doc(data: dict, local_id: str | None = None):
 		loyalty_paid = _resolve_loyalty_paid_amount(invoice_doc)
 
 	rate_cache: dict = {}
-	tender_rows, total_payment = build_tender_legs(payments, invoice_doc, rate_cache)
+	tender_rows, total_payment = build_tender_legs(payments, invoice_doc, rate_cache, keep_zero_modes)
 	for row in tender_rows:
 		invoice_doc.append("payments", row)
 

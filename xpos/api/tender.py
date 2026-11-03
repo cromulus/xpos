@@ -30,8 +30,18 @@ def invoice_currency_of(invoice_doc) -> str:
 	return frappe.get_cached_value("Company", company, "default_currency") if company else ""
 
 
-def build_tender_legs(payments: list[dict], invoice_doc, rate_cache: dict | None = None) -> tuple:
-	"""Turn client payment rows into ``Sales Invoice Payment`` rows."""
+def build_tender_legs(
+	payments: list[dict],
+	invoice_doc,
+	rate_cache: dict | None = None,
+	keep_zero_modes: set[str] | frozenset[str] = frozenset(),
+) -> tuple:
+	"""Turn client payment rows into ``Sales Invoice Payment`` rows.
+
+	A zero amount is dropped, except for a mode in ``keep_zero_modes``: a card
+	terminal's tender is saved at 0.00 on the draft and filled in only by the
+	payments app once the processor confirms the capture (``card_terminal``).
+	"""
 	rate_cache = rate_cache if rate_cache is not None else {}
 
 	invoice_currency = invoice_currency_of(invoice_doc)
@@ -64,7 +74,7 @@ def build_tender_legs(payments: list[dict], invoice_doc, rate_cache: dict | None
 
 		if not tender_currency or tender_currency == invoice_currency:
 			amount = flt(client_amount, invoice_precision)
-			if amount == 0:
+			if amount == 0 and mode not in keep_zero_modes:
 				continue
 			rows.append({"mode_of_payment": mode, "amount": amount})
 			total += amount

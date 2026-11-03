@@ -74,6 +74,10 @@ class POSClosingShift(Document):
 				_("Selected POS Opening Shift should be open."),
 				title=_("Invalid Opening Entry"),
 			)
+		# A card reader may still take money for one of this shift's sales.
+		from xpos.api.card_terminal import assert_no_pending_card_payment
+
+		assert_no_pending_card_payment(self.pos_opening_shift)
 		self.update_payment_reconciliation()
 
 	def update_payment_reconciliation(self):

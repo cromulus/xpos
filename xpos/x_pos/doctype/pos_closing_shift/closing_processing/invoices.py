@@ -93,7 +93,12 @@ def delete_draft_invoices(pos_opening_shift, pos_profile):
 		pluck="name",
 	)
 
+	from xpos.api.card_terminal import has_card_payment_history
+
 	for invoice_name in invoice_names:
+		# A draft a card reader collected for (or tried to) stays for reconciliation.
+		if has_card_payment_history(doctype, invoice_name):
+			continue
 		frappe.delete_doc(
 			doctype,
 			invoice_name,
