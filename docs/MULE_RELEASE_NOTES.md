@@ -1,10 +1,10 @@
 # Mule City XPOS release notes
 
-## mc/stripe-card (branch, not tagged; on mc50)
+## mule-v2.10.1-mc51 (unreleased; contains mc50)
 
 ### Pay by Card on a Stripe Terminal reader (MuleCity-bjjv.3)
 
-Needs Bill's payments fork (cromulus/payments `mule-v16-mc1` or later) with
+Needs Bill's payments fork (cromulus/payments `mule-v16-mc2` or later) with
 Stripe Settings, a dedicated card-reader Mode of Payment (e.g. "Stripe Card",
 not Heartland's "Credit Card") and a paired Payment Terminal on the register's
 POS Profile, plus mulecity-full's `payment_terminal_pos_session_validators`
@@ -24,7 +24,7 @@ the Pay box is exactly as in mc50.
   draft with card payment history.
 - **Pay box:** Pay by Card (the whole ticket on one tender; the rest after the
   cash legs of a split, cash confirmed first), the reader's prompts while it
-  polls, Cancel, and after a decline or cancel the reason (a later fork's
+  polls, Cancel, and after a decline or cancel the reason (the fork's
   readable message when sent), Try card again or Other tender (the draft stays
   and Pay completes it). On approval the invoice the payments app submitted is
   printed and the cart cleared. The reader's mode is never a tender button.
