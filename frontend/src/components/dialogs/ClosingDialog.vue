@@ -15,6 +15,17 @@
 
 			<div class="flex-1 overflow-y-auto p-5 space-y-4 xpos-scrollbar">
 				<div
+					v-if="!shiftClosed && pendingCard"
+					class="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+					data-testid="close-card-pending"
+				>
+					{{
+						__("A card payment for {0} is not finished. Finish or cancel it on the card screen before closing the shift.", [
+							pendingCard.invoice,
+						])
+					}}
+				</div>
+				<div
 					v-if="!shiftClosed && queue.attention.length"
 					class="rounded-lg border border-destructive/40 bg-destructive/5 p-3 space-y-2"
 					data-testid="close-queue-attention"
@@ -391,6 +402,7 @@ import { computed, ref, onMounted } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useOfflineStore } from "@/stores/offlineStore";
 import { classifyQueue, queueBlocksClose, type CloseShiftQueue } from "@/utils/closeShiftGuard";
+import { loadPendingCard, type PendingCardPayment } from "@/utils/cardPending";
 import { useMoney } from "@/composables/useMoney";
 import { showSuccess, showError } from "@/services/api";
 import { hasPermission } from "@/services/userRights";
@@ -455,7 +467,10 @@ const closingDetails = ref<ClosingDetail[]>([]);
 // online-only and the server cannot see them, so the close waits for them.
 const queue = ref<CloseShiftQueue>({ pending: [], attention: [] });
 const checkingQueue = ref(false);
-const closeBlocked = computed(() => queueBlocksClose(queue.value));
+// A card payment this till started and has not finished (MuleCity-bjjv.3): the
+// reader may still take money for a sale of this shift. The site refuses too.
+const pendingCard = ref<PendingCardPayment | null>(loadPendingCard());
+const closeBlocked = computed(() => queueBlocksClose(queue.value) || !!pendingCard.value);
 const hasTillPayments = computed(() => Object.keys(summary.value?.till_payments || {}).length > 0);
 const SYNC_WAIT_MS = 500;
 const SYNC_WAIT_TRIES = 120;
@@ -552,6 +567,15 @@ async function handleCloseShift() {
 	}
 	// A sale may have been queued or refused while this dialog sat open.
 	await settleQueue();
+	pendingCard.value = loadPendingCard();
+	if (pendingCard.value) {
+		showError(
+			__("A card payment for {0} is not finished. Finish or cancel it before closing the shift.", [
+				pendingCard.value.invoice,
+			]),
+		);
+		return;
+	}
 	if (closeBlocked.value) {
 		showError(__("Offline sales have not synced. Sync or resolve them before closing the shift."));
 		return;

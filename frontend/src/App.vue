@@ -47,6 +47,8 @@
 
 			<PaymentDialog v-if="cartStore.showPaymentDialog" />
 
+			<CardPaymentDialog v-if="cardStore.open" />
+
 			<CustomerSelect v-if="customerStore.showCustomerDialog" />
 
 			<LoyaltyDialog v-if="customerStore.showLoyaltyDialog" />
@@ -169,6 +171,9 @@ import OpeningDialog from "@/components/dialogs/OpeningDialog.vue";
 import ClosingDialog from "@/components/dialogs/ClosingDialog.vue";
 import PullCalculationDialog from "@/components/dialogs/PullCalculationDialog.vue";
 import PaymentDialog from "@/components/dialogs/PaymentDialog.vue";
+import CardPaymentDialog from "@/components/dialogs/CardPaymentDialog.vue";
+import { useCardPaymentStore } from "@/stores/cardPaymentStore";
+import { bindCardTill } from "@/composables/useCardTill";
 import CustomerSelect from "@/components/customer/CustomerSelect.vue";
 import LoyaltyDialog from "@/components/dialogs/LoyaltyDialog.vue";
 import ItemDetailDialog from "@/components/dialogs/ItemDetailDialog.vue";
@@ -202,6 +207,9 @@ const paymentStore = usePaymentStore();
 const authStore = useAuthStore();
 const offlineStore = useOfflineStore();
 const syncStatus = useSyncStatus();
+const cardStore = useCardPaymentStore();
+// Pay by Card on the register's card reader (MuleCity-bjjv.3).
+bindCardTill();
 const isElectronEnv = isElectron();
 const showErrorInspector = ref(false);
 const errorCount = errorUnseenCount;
@@ -479,6 +487,9 @@ watch(
 		if (ready && !wasReady) {
 			// From the till's cache when offline (MuleCity-yn4b).
 			await selectDefaultCustomer();
+			// The card reader's settings, then any card payment this browser was collecting.
+			await cardStore.loadConfig(posStore.profileName);
+			await cardStore.resume(posStore.profileName);
 		}
 	},
 );

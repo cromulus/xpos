@@ -737,6 +737,14 @@
 				/>
 			</div>
 
+			<p
+				v-if="showPayByCard && cardBlock"
+				class="shrink-0 border-t border-border px-5 py-1.5 text-[11px] text-muted-foreground"
+				data-testid="pay-by-card-hint"
+			>
+				{{ cardBlock }}
+			</p>
+
 			<DialogFooter
 				class="shrink-0 border-t border-border px-5 py-3 bg-muted/30 justify-between sm:justify-between"
 			>
@@ -754,6 +762,19 @@
 				</div>
 				<div class="flex items-center gap-2">
 					<Button variant="outline" @click="close" tabindex="-1">{{ __("Cancel") }}</Button>
+					<!-- Mule City: the card reader collects the card balance (MuleCity-bjjv.3). -->
+					<Button
+						v-if="showPayByCard"
+						variant="default"
+						class="font-medium"
+						data-testid="pay-by-card"
+						:disabled="isSubmitting || card.busy || !!cardBlock"
+						:title="cardBlock || ''"
+						@click="payByCard"
+					>
+						<CreditCard class="w-4 h-4" />
+						{{ cardButtonLabel }}
+					</Button>
 					<Button
 						variant="outline"
 						class="font-medium"
@@ -799,6 +820,8 @@ import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
 import { useAuthStore } from "@/stores/authStore";
 import { usePaymentStore } from "@/stores/paymentStore";
+import { useCardPaymentStore } from "@/stores/cardPaymentStore";
+import { cardPayBlockReason, roundCents } from "@/services/cardTerminal";
 import { call, showSuccess, showError, showInfo, isNetworkError } from "@/services/api";
 import { __ } from "@/lib/translate";
 import { usePrintInvoice } from "@/composables/usePrintInvoice";
@@ -882,6 +905,7 @@ const cartStore = useCartStore();
 const customerStore = useCustomerStore();
 const authStore = useAuthStore();
 const paymentStore = usePaymentStore();
+const card = useCardPaymentStore();
 
 const amountInput = ref<InstanceType<typeof NumberInput> | null>(null);
 // Who rang this sale on a shared login (MuleCity-fb00.2); empty on every sale
@@ -920,7 +944,8 @@ const redeemPointsInput = ref(0);
 const numpadKeys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "C", "0", "⌫"];
 
 const availableMethods = computed(() => {
-	const methods = posStore.paymentMethods;
+	// The card reader's mode is filled in only by the payments app on capture (MuleCity-bjjv.3).
+	const methods = posStore.paymentMethods.filter((method) => !card.isCardMode(method.mode_of_payment));
 	if (methods.length > 0) return methods;
 	return [{ mode_of_payment: "Cash" }, { mode_of_payment: "Card" }];
 });
@@ -1129,6 +1154,77 @@ const canSubmit = computed(() => {
 	if (!isSplitPayment.value && !selectedMethod.value) return false;
 	return roundCurrency(effectiveTendered.value) >= total;
 });
+
+// ---------------------------------------------------------------- Pay by Card (MuleCity-bjjv.3)
+// Split payment: the cash legs are taken first and the card collects the rest.
+// One tender: the card collects the whole ticket.
+const cardCashLegs = computed<TenderLeg[]>(() =>
+	isSplitPayment.value ? splitPayments.value.filter((leg) => Math.abs(leg.base_amount || 0) > 0) : [],
+);
+const cardCash = computed(() => roundCents(tenderBaseTotal(cardCashLegs.value, invoiceCurrency.value)));
+const showPayByCard = computed(() => card.config.enabled && !cartStore.isReturnMode);
+const cardBlock = computed(() =>
+	cardPayBlockReason({
+		config: card.config,
+		online: isOnline(),
+		electron: isElectron(),
+		isReturn: cartStore.isReturnMode,
+		onAccount: chargingToAccount.value,
+		hasOrderLines: cartStore.hasOrderLines,
+		billsAnOrder: cartStore.items.some((item) => !!(item as { so_detail?: string }).so_detail),
+		redeemsPoints: !!cartStore.redeemLoyaltyPoints,
+		writeOff: writeOffInput.value || 0,
+		total: roundCents(Math.abs(cartStore.grandTotal)),
+		cash: cardCash.value,
+		nonCashLegs: cardCashLegs.value
+			.filter((leg) => (posStore.tenderModeFor(leg.mode_of_payment)?.type || "") !== "Cash")
+			.map((leg) => leg.mode_of_payment),
+		foreignTender: cardCashLegs.value.some((leg) => leg.currency !== invoiceCurrency.value),
+	}),
+);
+const cardButtonLabel = computed(() => {
+	const due = roundCents(Math.abs(cartStore.grandTotal) - cardCash.value);
+	return due > 0 ? __("Pay {0} by Card", [money(due)]) : __("Pay by Card");
+});
+
+/** The cart for the card reader: the cash legs only; the server adds the card row at 0.00. */
+function buildCardPayload(): InvoiceData {
+	const invoiceData = buildInvoicePayload();
+	invoiceData.payments = toInvoicePayments(cardCashLegs.value, invoiceCurrency.value);
+	delete invoiceData.change_amount;
+	delete invoiceData.pos_change_legs;
+	delete invoiceData.is_credit_sale;
+	return invoiceData;
+}
+
+async function payByCard() {
+	if (isSubmitting.value || card.busy || cardBlock.value) return;
+	if (!cashierInitialsOk(posStore.requireCashierInitials, posStore.cashiers, cashierInitials.value)) {
+		showError(__("Enter your cashier initials to complete this sale."));
+		return;
+	}
+	// The card pays what the tender does not cover, so only the cart checks apply here.
+	if (cartStore.isEmpty || !cartStore.customer?.name) {
+		showError(cartStore.isEmpty ? __("Cart is empty") : __("Customer is required"));
+		return;
+	}
+	if (cartStore.items.some((item) => item.qty <= 0)) {
+		showError(__("All items must have positive quantities"));
+		return;
+	}
+	const stockCheck = await cartStore.revalidateStock();
+	if (!stockCheck.valid) {
+		showError(stockCheck.messages.join("\n"));
+		return;
+	}
+	if (posStore.requireCashierInitials) posStore.rememberCashier(cashierInitials.value);
+	await card.begin({
+		profile: posStore.profileName,
+		invoiceData: buildCardPayload() as unknown as Record<string, unknown>,
+		cash: cardCash.value,
+		withPrint: true,
+	});
+}
 
 onMounted(async () => {
 	if (!posStore.allowChangePostingDate || !cartStore.postingDate) {
