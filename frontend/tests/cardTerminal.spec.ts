@@ -165,6 +165,15 @@ describe("what the cashier sees", () => {
 		expect(view.reason).toBe("The card was declined.");
 	});
 
+	it("a reader decline or customer cancel (fork: Failed + Stripe code, retryable) offers a retry with a friendly reason", () => {
+		const cancelled = describeCardStatus(status({ collection_state: "Failed", reason: "customer_canceled", retryable: true }));
+		expect(cancelled).toMatchObject({ phase: "declined", canRetry: true, settled: true });
+		expect(cancelled.reason).toBe("The customer cancelled on the reader.");
+		expect(reasonText(status({ reason: "insufficient_funds" }))).toMatch(/insufficient funds/);
+		expect(reasonText(status({ reason: "do_not_honor" }))).toMatch(/another card/);
+		expect(describeCardStatus(status({ collection_state: "Failed", reason: "card_declined", retryable: false })).canRetry).toBe(false);
+	});
+
 	it("a richer reason from a later payments fork is shown as sent", () => {
 		expect(reasonText(status({ reason: "card_declined", reason_message: "Do not honor" }))).toBe("Do not honor");
 		expect(reasonText(status({ decline_reason: { code: "insufficient_funds" } } as never))).toMatch(/insufficient funds/);
