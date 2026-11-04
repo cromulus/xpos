@@ -14,6 +14,8 @@ export interface PendingCardPayment {
 	terminal?: string;
 	attempt?: string;
 	amount?: number;
+	/** The draft's card Mode of Payment: only readers of that gateway can collect it. */
+	mode?: string;
 	/** Cash taken beside the card: confirmed again before each start. */
 	cash?: number;
 	customer?: string;

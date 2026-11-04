@@ -1,5 +1,26 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc52 (unreleased; contains mc51)
+
+### Pay by Card uses the register's own reader's Mode of Payment (MuleCity-bjjv.5)
+
+Bill 2026-11-04: Heartland stays the default, a reader is turned on per
+register, and Square is the alternative to Stripe. With both a Stripe and a
+Square gateway mapped for the company, mc51 saved the card draft with the
+first card mode alphabetically ("Square Card" before "Stripe Card") even on a
+register whose reader is Stripe, leaving a stray 0.00 row of the other mode.
+
+- **Server:** `get_card_terminal_config` returns each offered reader's
+  `mode_of_payment` (its gateway's mapping) and takes the draft's card mode
+  from the register's readers; a reader whose gateway maps no mode for the
+  company is not offered. `card_modes` (hidden from the tender buttons) is
+  unchanged: every reader mode of the company.
+- **Pay box:** the reader list offers only readers whose gateway fills the
+  draft's card mode (the pending payment keeps it across a reload).
+- Unchanged: no reader configured means Pay by Card is off and the Pay box is
+  exactly as in mc50. The off switch is the Payment Terminal's Disabled box
+  (that register) or the gateway's Terminal Enabled (every register).
+
 ## mule-v2.10.1-mc51 (unreleased; contains mc50)
 
 ### Pay by Card on a Stripe Terminal reader (MuleCity-bjjv.3)

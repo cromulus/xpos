@@ -186,6 +186,7 @@ export const useCardPaymentStore = defineStore("cardPayment", () => {
 				modified: draft.modified,
 				localId: (request.invoiceData.local_id as string) || undefined,
 				amount: draft.card_amount,
+				mode: draft.mode_of_payment || undefined,
 				cash: request.cash,
 				customer: (request.invoiceData.customer as string) || undefined,
 				withPrint: request.withPrint,
@@ -222,7 +223,10 @@ export const useCardPaymentStore = defineStore("cardPayment", () => {
 			await poll();
 			return;
 		}
-		devices.value = available.devices.filter((device) => !device.busy);
+		// Only a reader whose gateway fills the draft's card row (Stripe and Square side by side).
+		devices.value = available.devices.filter(
+			(device) => !device.busy && (!record.mode || !device.mode_of_payment || device.mode_of_payment === record.mode),
+		);
 		if (!devices.value.length) {
 			step.value = "idle";
 			error.value = available.devices.length

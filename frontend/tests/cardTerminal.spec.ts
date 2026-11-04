@@ -229,6 +229,27 @@ describe("Pay by Card, end to end against a mocked site", () => {
 		store.reset();
 	});
 
+	it("with Stripe and Square readers side by side, only the draft's own gateway's reader is used", async () => {
+		const store = useCardPaymentStore();
+		store.bindTill(till());
+		answer(`${TILL}.save_card_draft`, { ...DRAFT, mode_of_payment: "Square Card" });
+		answer(`${SERVICE}.get_available_terminals`, {
+			devices: [
+				{ name: "PT-1", label: "Stripe reader", busy: false, mode_of_payment: "Stripe Card" },
+				{ name: "PT-2", label: "Square terminal", busy: false, mode_of_payment: "Square Card" },
+			],
+			active_attempt: null,
+			posted_attempt: null,
+		});
+		answer(`${SERVICE}.start_terminal_payment`, status({ collection_state: "PENDING" }));
+		await store.begin({ profile: "P", invoiceData: { local_id: "inv_sq" }, cash: 0, withPrint: false });
+		expect(store.devices.map((device) => device.name)).toEqual(["PT-2"]);
+		const start = calls.find((c) => c.method === `${SERVICE}.start_terminal_payment`);
+		expect(start?.args).toMatchObject({ terminal: "PT-2" });
+		expect(loadPendingCard()).toMatchObject({ mode: "Square Card", terminal: "PT-2" });
+		store.reset();
+	});
+
 	it("a cash + card split confirms the cash before the reader starts", async () => {
 		const store = useCardPaymentStore();
 		store.bindTill(till());

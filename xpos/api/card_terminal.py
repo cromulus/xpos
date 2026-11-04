@@ -72,27 +72,52 @@ def profile_terminals(pos_profile: str, user: str | None = None) -> list[dict]:
 		fields=["name", "terminal_name", "allowed_users", "payment_gateway"],
 		order_by="terminal_name asc",
 	)
-	return [
-		{"name": row.name, "label": row.terminal_name or row.name}
-		for row in rows
-		if (not row.allowed_users or user in row.allowed_users.splitlines())
-		and gateway_collects(row.payment_gateway)
-	]
+	terminals = []
+	for row in rows:
+		if row.allowed_users and user not in row.allowed_users.splitlines():
+			continue
+		controller = collecting_controller(row.payment_gateway)
+		if controller is None:
+			continue
+		terminals.append(
+			{
+				"name": row.name,
+				"label": row.terminal_name or row.name,
+				# The Mode of Payment this reader's gateway fills in (Stripe Card, Square Card, ...).
+				"mode_of_payment": terminal_mode(controller),
+			}
+		)
+	return terminals
 
 
-def gateway_collects(payment_gateway: str | None) -> bool:
-	"""Whether the reader's gateway settings are enabled for terminal collection."""
+def collecting_controller(payment_gateway: str | None):
+	"""The reader's gateway settings when enabled for terminal collection, else None."""
 	if not payment_gateway:
-		return False
+		return None
 	try:
 		from payments.transactions.drivers import controller_for
 
 		controller = controller_for(payment_gateway)
 	except Exception:
-		return False
+		return None
 	if not getattr(controller, "supports_payment_terminal", False) or controller.get("disabled"):
-		return False
-	return not controller.meta.has_field("terminal_enabled") or bool(controller.get("terminal_enabled"))
+		return None
+	if controller.meta.has_field("terminal_enabled") and not controller.get("terminal_enabled"):
+		return None
+	return controller
+
+
+def gateway_collects(payment_gateway: str | None) -> bool:
+	"""Whether the reader's gateway settings are enabled for terminal collection."""
+	return collecting_controller(payment_gateway) is not None
+
+
+def terminal_mode(controller) -> str | None:
+	"""The Mode of Payment a terminal gateway's settings fill in, if mapped."""
+	try:
+		return (controller.get_terminal_metadata(None) or {}).get("mode_of_payment")
+	except Exception:
+		return None
 
 
 @frappe.whitelist()
@@ -111,11 +136,14 @@ def get_card_terminal_config(pos_profile: str) -> dict:
 	modes = card_modes(company)
 	if not modes:
 		return off
-	terminals = profile_terminals(pos_profile)
+	terminals = [row for row in profile_terminals(pos_profile) if row.get("mode_of_payment") in modes]
+	# The register's own readers decide the draft's card row: with Stripe and Square both
+	# mapped for the company, the first mode alphabetically may be another gateway's.
+	reader_modes = [row["mode_of_payment"] for row in terminals]
 	return {
 		"enabled": bool(terminals),
 		"card_modes": modes,
-		"mode_of_payment": modes[0],
+		"mode_of_payment": reader_modes[0] if reader_modes else modes[0],
 		"terminals": terminals,
 	}
 

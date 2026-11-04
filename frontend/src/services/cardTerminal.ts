@@ -23,7 +23,7 @@ export interface CardTerminalConfig {
 	/** Modes of Payment only the reader fills in: never offered as ordinary tender buttons. */
 	card_modes: string[];
 	mode_of_payment: string | null;
-	terminals: { name: string; label: string }[];
+	terminals: { name: string; label: string; mode_of_payment?: string | null }[];
 }
 
 export const CARD_OFF: CardTerminalConfig = {
@@ -63,7 +63,7 @@ export interface CardPaymentStatus {
 }
 
 export interface AvailableTerminals {
-	devices: { name: string; label: string; busy: boolean }[];
+	devices: { name: string; label: string; busy: boolean; mode_of_payment?: string | null }[];
 	active_attempt: string | null;
 	posted_attempt: string | null;
 }

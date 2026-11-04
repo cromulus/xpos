@@ -176,3 +176,52 @@ class TestEndpoints(unittest.TestCase):
 		self.assertIn(card_terminal.get_card_terminal_config, frappe.whitelisted)
 		self.assertNotIn(card_terminal.assert_no_pending_card_payment, frappe.whitelisted)
 		self.assertNotIn(card_terminal.pending_card_sales, frappe.whitelisted)
+
+
+class TestTheRegistersReaderPicksTheCardMode(unittest.TestCase):
+	"""MuleCity-bjjv.5: with Stripe and Square both mapped for the company, the
+	draft's card row is the mode of the register's own reader, not whichever
+	gateway's mode sorts first."""
+
+	def config(self, modes, terminals):
+		with (
+			patch("xpos.api.card_terminal.payments_ready", return_value=True),
+			patch("xpos.api.card_terminal.check_may_sell"),
+			patch("xpos.api.card_terminal.frappe.get_cached_value", return_value="Mule City"),
+			patch("xpos.api.card_terminal.card_modes", return_value=modes),
+			patch("xpos.api.card_terminal.profile_terminals", return_value=terminals),
+		):
+			return card_terminal.get_card_terminal_config("Mule City Retail")
+
+	def test_a_stripe_reader_beside_a_square_gateway_uses_stripe_card(self):
+		reader = {"name": "T-1", "label": "Counter", "mode_of_payment": "Stripe Card"}
+		config = self.config(["Square Card", "Stripe Card"], [reader])
+		self.assertEqual(
+			config,
+			{
+				"enabled": True,
+				"card_modes": ["Square Card", "Stripe Card"],
+				"mode_of_payment": "Stripe Card",
+				"terminals": [reader],
+			},
+		)
+
+	def test_a_square_reader_uses_square_card(self):
+		reader = {"name": "T-2", "label": "Counter", "mode_of_payment": "Square Card"}
+		self.assertEqual(self.config(["Square Card", "Stripe Card"], [reader])["mode_of_payment"], "Square Card")
+
+	def test_no_reader_keeps_the_modes_hidden_and_pay_by_card_off(self):
+		config = self.config(["Stripe Card"], [])
+		self.assertEqual((config["enabled"], config["card_modes"]), (False, ["Stripe Card"]))
+
+	def test_a_reader_whose_gateway_maps_no_mode_for_the_company_is_not_offered(self):
+		config = self.config(["Stripe Card"], [{"name": "T-3", "label": "Other", "mode_of_payment": None}])
+		self.assertEqual((config["enabled"], config["terminals"]), (False, []))
+
+	def test_terminal_mode_reads_the_gateway_metadata(self):
+		class Settings:
+			def get_terminal_metadata(self, terminal):
+				return {"mode_of_payment": "Square Card", "company": "Mule City"}
+
+		self.assertEqual(card_terminal.terminal_mode(Settings()), "Square Card")
+		self.assertIsNone(card_terminal.terminal_mode(object()))
