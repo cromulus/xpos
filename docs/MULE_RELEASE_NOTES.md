@@ -1,5 +1,44 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc56 (contains mc55)
+
+### Pay balance: a payment on account as a cart line (MuleCity-biez)
+
+Bill 2026-11-05: "we should be able to add as an item in the cart 'pay
+balance'. it's an item to add to the cart."
+
+- **Cart:** the site's Pay balance item (hook `xpos_pay_balance`, Mule City's
+  `MC-ITEM-PAYBAL`) is found in item search, and the customer row offers
+  "Pay balance $X" when they owe something (Receive on Account's gate). Its
+  dialog starts at the balance; type less for a part payment, more for a
+  credit. The line is kept apart from the sale's lines: never taxed,
+  discounted, priced or previewed, added to the total last, shown in the cart
+  and Pay summaries. Another customer, or clearing the cart, drops it.
+- **Pay:** a cart holding it goes to the site's checkout
+  (`checkout_method`), which posts a Payment Entry per tender paying the
+  balance and XPOS's own ticket for the rest. Refused offline (never queued),
+  in a return, for the walk-in account, with On Account and on the card
+  reader. A payment-only cart prints the payment receipt (`receipt_format`);
+  F4 and the menu's Process Payment take it too.
+- **Server:** `xpos.api.payments.get_pay_balance_settings` (gated by
+  `can_settle_outstanding`); `get_customer_balance` uses the site's
+  `xpos_customer_balance` hook when there is one; `receive_on_account` lets
+  ERPNext's reference re-check read exactly the references it allocated (the
+  till's login cannot read Journal Entries, so a customer's opening-balance
+  journal refused the payment).
+
+### Delivery sold by the mile (MuleCity-bi3t)
+
+Bill 2026-11-05: "for delivery, we should have the unit be 'miles', and should
+automatically add the right number of miles to the cart. should round the
+number of miles down."
+
+- `deliveryLine` mirrors the site's `delivery_line`: qty = the address's miles
+  rounded down, UOM "Mile", at the weight band's rate a mile; under the local
+  miles the flat local charge (qty 1). The quote's qty/uom/rate fill the
+  delivery line; a standing, free or typed charge is qty 1 in the item's own
+  unit; another address re-sets the miles on the one line. Vectors re-copied.
+
 ## mule-v2.10.1-mc55 (contains mc54)
 
 ### No customer means the default sales tax; a busy server never strands the till (MuleCity-s9jt)
