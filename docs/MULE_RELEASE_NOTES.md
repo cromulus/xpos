@@ -1,5 +1,37 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc55 (contains mc54)
+
+### No customer means the default sales tax; a busy server never strands the till (MuleCity-s9jt)
+
+Bill 2026-11-05: "saving a draft pos cart, we get this error: 'Tax lookup
+failed. Reselect the customer to retry before taking payment.' should be
+default sales tax if we have no customer."
+
+Cause: saving a draft resets the cart to the walk-in, and that tax lookup
+landed in a staging deploy's maintenance window (HTTP 503, staging nginx log
+09:51:41). The 503 page is not JSON, so `call()` threw a bare SyntaxError; the
+till treated it as a failed lookup, never retried, and asked to reselect a
+customer on an empty walk-in cart.
+
+- `call()`: a non-JSON error page is an error carrying its HTTP status.
+- A 502/503/504 is treated like offline: the tax context this till kept for the
+  customer, else their category's. Any other failure is asked once more, and
+  the message has a Retry button.
+- A cart with no customer asks `tax_context` with none; the server answers with
+  the walk-in's default (NC Sales Tax 6.75%). Needs the matching Mule City
+  backend (`pos_workspace.tax_context` with no customer).
+- A named customer whose lookup really fails is never charged the default rate
+  (a farm or resale customer would be overcharged); payment stays blocked until
+  Retry answers. Offline behaviour is unchanged. Saving a draft was never
+  blocked by the lookup.
+
+Validation: 1,068 frontend tests (new `tillDefaultTax.spec.ts`, a non-JSON case
+in `csrfRetry.spec.ts`), typecheck and production build; browser check on an
+erp2 slot with the shared counter login (no customer 6.75%, draft save under a
+sustained 503 with no error, reopen, exempt 0%, clear back to 6.75%, a failing
+named lookup then Retry).
+
 ## mule-v2.10.1-mc54 (contains mc53)
 
 ### Find a farm by its contacts and phone numbers (MuleCity-1ptj)
