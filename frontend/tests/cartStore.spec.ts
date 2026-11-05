@@ -60,6 +60,18 @@ describe("Cart Store", () => {
 			expect(cartStore.isEmpty).toBe(true);
 		});
 
+		it("adds a repeat mix at its run size while product taps stay one unit", () => {
+			const cart = useCartStore();
+			const item = { item_code: "CF-1", item_name: "Corn mix", rate: 10, stock_uom: "Pound", uom: "Bag", conversion_factor: 50, is_stock_item: false, bom_no: "BOM-1" };
+			expect(cart.addItem(item, 40).success).toBe(true);
+			expect(cart.items[0]).toMatchObject({ qty: 40, conversion_factor: 50, bom_no: "BOM-1" });
+			expect(cart.addItem(item).success).toBe(true);
+			expect(cart.items[0].qty).toBe(41);
+			expect(cart.addItem({ ...item, bom_no: "BOM-2" }, 20).success).toBe(true);
+			expect(cart.items).toHaveLength(2);
+			expect(cart.addItem(item, NaN).success).toBe(false);
+		});
+
 		it("should add item to cart", () => {
 			const cartStore = useCartStore();
 			const item: CartItem = {

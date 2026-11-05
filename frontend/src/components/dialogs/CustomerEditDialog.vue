@@ -50,7 +50,7 @@
 						<label class="text-xs font-medium text-muted-foreground mb-1 block">{{
 							__("Email")
 						}}</label>
-						<Input v-model="form.email_id" type="email" :placeholder="__('Email')" />
+						<Input ref="emailInput" v-model="form.email_id" type="email" :placeholder="__('Email')" />
 					</div>
 				</div>
 
@@ -114,6 +114,7 @@ const cartStore = useCartStore();
 const customerStore = useCustomerStore();
 
 const customerNameInput = ref<InstanceType<typeof Input> | null>(null);
+const emailInput = ref<InstanceType<typeof Input> | null>(null);
 const isLoadingInfo = ref(false);
 const isSaving = ref(false);
 
@@ -153,7 +154,8 @@ async function loadCustomerData(customerName: string) {
 			loaded.value = { ...form.value };
 		}
 		nextTick(() => {
-			const el = customerNameInput.value?.$el as HTMLElement | undefined;
+			const field = customerStore.customerEditFocus === "email" ? emailInput : customerNameInput;
+			const el = field.value?.$el as HTMLElement | undefined;
 			const input = el?.querySelector?.("input") || el;
 			(input as HTMLInputElement)?.focus();
 		});
@@ -171,13 +173,14 @@ async function saveChanges() {
 
 		const result = await customerStore.updateCustomer(cartStore.customer.name, payload);
 
-		// Keep what the status icons read (the customer's flags) across the save.
+		// Reflect the saved contact immediately, including the email status icon.
 		cartStore.setCustomer({
 			...cartStore.customer,
 			name: cartStore.customer.name,
 			customer_name: result.customer_name || form.value.customer_name,
 			mobile_no: result.mobile_no || form.value.mobile_no,
-			email_id: result.email_id || form.value.email_id,
+			email_id: result.email_id ?? form.value.email_id,
+			xpos_has_email: !!(result.email_id ?? form.value.email_id)?.trim(),
 		});
 
 		showSuccess(__("Customer updated successfully!"));

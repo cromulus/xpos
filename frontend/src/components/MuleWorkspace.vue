@@ -13,7 +13,7 @@
       <form class="mule-search" @submit.prevent="search(0)">
         <input v-model="term" :placeholder="mode === 'mixes' ? 'Recipe, owner name or account code' : 'Customer name or order number'" aria-label="Search customer work" />
         <button type="submit" :disabled="busy">Search</button>
-        <label v-if="mode === 'mixes'"><input v-model="mine" type="checkbox" @change="search(0)" /> Buyer's own recipes</label>
+        <label v-if="mode === 'mixes'"><input v-model="mine" :disabled="!customer" type="checkbox" @change="search(0)" /> Buyer's own recipes</label>
       </form>
       <p v-if="error" role="alert" class="mule-error">{{ error }}</p>
       <p v-if="busy" role="status">Loading…</p>
@@ -24,9 +24,16 @@
             <!-- Readable name the server prepared; the product's own name stays on hover and in search. -->
             <div><strong :title="row.item_name">{{ row.display_name || row.item_name }}</strong>
               <p>{{ row.owner_name ? 'Recipe of ' + row.owner_name : 'Owner not recorded' }}</p>
+              <p v-if="row.mule_animal_search">For {{ row.mule_animal_search }}</p>
+              <p v-if="row.composition?.length" class="mule-composition">{{ compositionText(row) }}</p>
+              <p v-if="row.order_default"><strong>{{ sizeText(row.order_default) }}</strong> · {{ row.order_default.source }}<span v-if="row.order_default.bag_lbs"> · {{ number(row.order_default.bag_lbs) }} lb per bag</span></p>
               <p v-if="row.last_purchase">{{ boughtText(row.last_purchase) }}</p>
               <p v-if="orderedText(row)">{{ orderedText(row) }}</p></div>
-            <button type="button" :disabled="busy" @click="preview(row)">View recipe</button>
+            <div class="mule-actions">
+              <button v-if="addMix && row.order_default && row.bom" type="button" :disabled="busy || !customer" @click="add(row)">Add {{ sizeText(row.order_default) }}</button>
+              <p v-else-if="addMix">{{ row.bom ? 'Order size needs review' : 'Recipe needs review' }}</p>
+              <button type="button" :disabled="busy" @click="preview(row)">View recipe</button>
+            </div>
           </template>
           <template v-else>
             <div><strong>{{ row.customer_name }}</strong><p>{{ row.name }} · Pickup requested {{ row.delivery_date }} · {{ row.status }}</p></div>
@@ -56,9 +63,9 @@ import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { formatCurrency, showInfo } from '@/services/api';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
 // customer is the Customer ID (used in every call); customerName is what people read.
-const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean});
+const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean, addMix: Function});
 const emit = defineEmits(['pickup']);
-const dialog = ref(null), mode = ref(''), term = ref(''), mine = ref(false);
+const dialog = ref(null), mode = ref(''), term = ref(''), mine = ref(true);
 const rows = ref([]), busy = ref(false), error = ref(''), more = ref(false), start = ref(0);
 const recipe = ref(null), details = ref(null), chosen = ref(null);
 let generation = 0;
@@ -77,13 +84,13 @@ function boughtText(p) {
   return 'Last bought ' + p.date + buyer + (qty ? ' · ' + qty : '') + ' · ' + formatCurrency(p.amount, p.currency);
 }
 function fail(e) { error.value = e?.message || 'Could not complete this request. Please retry.'; }
-async function open(next) { mode.value = next; term.value = ''; details.value = null; dialog.value.showModal(); await search(0); }
+async function open(next) { mode.value = next; term.value = ''; mine.value = !!props.customer; details.value = null; dialog.value.showModal(); await search(0); }
 async function search(offset = 0) {
   const token = ++generation; busy.value = true; error.value = ''; details.value = null;
   try {
     const result = await api(mode.value === 'mixes' ? 'find_mixes' : 'find_orders', {
       search: term.value, customer: mode.value === 'orders' || mine.value ? props.customer : null,
-      ...(mode.value === 'mixes' ? {start: offset} : {})});
+      ...(mode.value === 'mixes' ? {start: offset, owned_only: mine.value ? 1 : 0} : {})});
     if (token !== generation) return;
     rows.value = mode.value === 'mixes' ? result.rows : result;
     more.value = !!result.has_more; start.value = offset;
@@ -91,10 +98,28 @@ async function search(offset = 0) {
   finally { if (token === generation) busy.value = false; }
 }
 async function preview(row) {
+  const token = ++generation;
   busy.value = true; error.value = '';
-  try { details.value = await api('mix_details', {item_code: row.name}); chosen.value = row;
+  try { const result = await api('mix_details', {item_code: row.name, customer: props.customer});
+    if (token !== generation) return;
+    details.value = result; chosen.value = row;
     await nextTick(); recipe.value?.scrollIntoView({behavior: 'smooth', block: 'start'}); }
-  catch(e) { fail(e); } finally { busy.value = false; }
+  catch(e) { if (token === generation) fail(e); } finally { if (token === generation) busy.value = false; }
+}
+const number = (value) => Number(value).toLocaleString(undefined, {maximumFractionDigits: 2});
+function sizeText(size) { return number(size.qty) + (size.uom === 'Bag' ? ' bags' : ' lb'); }
+function compositionText(row) {
+  return row.composition.map(i => i.name + (i.percent == null ? '' : ' ' + number(i.percent) + '%')).join(' · ');
+}
+async function add(row) {
+  if (busy.value || !props.customer || !props.addMix) return;
+  const token = ++generation;
+  busy.value = true; error.value = '';
+  try {
+    await props.addMix(row, props.customer);
+    if (token === generation) dialog.value.close();
+  } catch (e) { if (token === generation) fail(e); }
+  finally { if (token === generation) busy.value = false; }
 }
 async function pickup(row) {
   if (props.cartHasItems) return;
@@ -126,7 +151,8 @@ button:disabled { opacity:.5; cursor:not-allowed; } button:focus-visible, a:focu
 .mule-workspace h2 { font-size:24px; font-weight:700; margin:0; } .mule-workspace h3 { font-size:20px; font-weight:650; }
 .mule-workspace p { margin:6px 0 12px; } .mule-workspace input:not([type=checkbox]) { border:1px solid hsl(var(--input)); padding:8px; border-radius:4px; background:hsl(var(--card)); color:hsl(var(--foreground)); }
 .mule-search { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; align-items:center; } .mule-search>input { flex:1; min-width:220px; }
-.mule-results article { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid hsl(var(--border)); } .mule-results article>div { flex:1; } .mule-results p { font-size:14px; margin:4px 0; }
+.mule-results article { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid hsl(var(--border)); } .mule-results article>div { flex:1; } .mule-results article>.mule-actions { flex:0 0 auto; display:flex; flex-direction:column; gap:8px; }
+@media (max-width:600px) { .mule-results article { flex-direction:column; align-items:stretch; } } .mule-results p { font-size:14px; margin:4px 0; }
 .mule-recipe { border-top:3px solid hsl(var(--ring)); margin-top:20px; padding-top:16px; } .mule-recipe table { width:100%; border-collapse:collapse; margin:12px 0; } th,td { padding:7px; text-align:left; border-bottom:1px solid hsl(var(--border)); }
 .mule-error { color:hsl(var(--destructive)); } .mule-workspace footer { display:flex; gap:12px; margin-top:16px; align-items:center; }
 </style>

@@ -816,7 +816,8 @@ export const useCartStore = defineStore("cart", () => {
 		return undefined;
 	}
 
-	function addItem(item: POSItem): { success: boolean; message?: string } {
+	function addItem(item: POSItem, qty = 1): { success: boolean; message?: string } {
+		if (!Number.isFinite(qty) || qty <= 0) return { success: false, message: __("Enter a positive quantity") };
 		if (
 			isReturnMode.value &&
 			returnItemCodes.value.length > 0 &&
@@ -825,10 +826,10 @@ export const useCartStore = defineStore("cart", () => {
 			return { success: false, message: __("This item is not in the original invoice") };
 		}
 
-		const orderRefusal = madeToOrderRefusal(item, 1, item.rate || 0, (item as CartItem).conversion_factor || 1);
+		const orderRefusal = madeToOrderRefusal(item, qty, item.rate || 0, (item as CartItem).conversion_factor || 1);
 		if (orderRefusal) return { success: false, message: orderRefusal };
 
-		const stockCheck = canAddItem(item);
+		const stockCheck = checkAvailability(item, qty, (item as CartItem).conversion_factor || 1, item.batch_no);
 		if (!stockCheck.allowed && !isReturnMode.value) {
 			return { success: false, message: stockCheck.message };
 		}
@@ -847,7 +848,7 @@ export const useCartStore = defineStore("cart", () => {
 		);
 
 		if (existing) {
-			existing.qty += isReturnMode.value ? -1 : 1;
+			existing.qty += isReturnMode.value ? -qty : qty;
 		} else {
 			items.value.push({
                 ...muleOrderFields(item),
@@ -856,7 +857,7 @@ export const useCartStore = defineStore("cart", () => {
 				item_name: item.item_name,
 				local_item_name: item.local_item_name,
 				rate: normalizeItemRate(item.rate || 0),
-				qty: isReturnMode.value ? -1 : 1,
+				qty: isReturnMode.value ? -qty : qty,
 				uom: item.uom || item.stock_uom,
 				stock_uom: item.stock_uom,
 				image: item.image,

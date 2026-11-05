@@ -34,6 +34,16 @@ describe("customer status icons", () => {
 		expect(one.find("[data-testid='address-count']").exists()).toBe(false);
 	});
 
+	it.each([true, false])("opens the email editor whether an email exists (%s)", async (present) => {
+		const wrapper = mount(CustomerStatusIcons, { props: { customer: { xpos_has_email: present }, editableEmail: true } });
+		const button = wrapper.get('button[data-status="email"]');
+		expect(button.attributes("aria-label")).toBe(present ? "Edit email" : "Add email");
+		await button.trigger("click");
+		expect(wrapper.emitted("edit-email")).toHaveLength(1);
+		const picker = mount(CustomerStatusIcons, { props: { customer: { xpos_has_email: present } } });
+		expect(picker.find("button").exists()).toBe(false);
+	});
+
 	it("leaves out what the server did not say, and shows no tax icon for a taxable customer", () => {
 		expect(customerStatusDetails({ xpos_has_address: false }, "", t)).toEqual([
 			{ key: "address", present: false, label: "Address missing: no delivery" },

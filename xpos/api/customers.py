@@ -642,6 +642,58 @@ def create_customer(
 	}
 
 
+def _save_primary_email(customer, email):
+	"""Use native Contact Email rows; Customer.email_id is only a display field.
+
+	ERPNext creates a Contact for the first email on a new Customer, but does
+	not update an existing Contact when its read-only Customer field changes.
+	"""
+	from frappe.utils import validate_email_address
+
+	email = (email or "").strip()
+	if not email:
+		frappe.throw(_("Enter an email address."))
+	validate_email_address(email, throw=True)
+	name = customer.customer_primary_contact
+	if not name:
+		linked = frappe.get_all("Dynamic Link", filters={"parenttype": "Contact",
+			"link_doctype": "Customer", "link_name": customer.name}, pluck="parent")
+		primary = frappe.get_all("Contact", filters={"name": ["in", linked], "is_primary_contact": 1},
+			pluck="name") if linked else []
+		if len(primary) == 1:
+			name = primary[0]
+		elif len(linked) == 1:
+			name = linked[0]
+		elif linked:
+			frappe.throw(_("Choose this customer's primary contact before editing their email."))
+	if not name:
+		# Use ERPNext's standard Contact creator, including customers from Leads.
+		from erpnext.selling.doctype.customer.customer import make_contact
+		frappe.has_permission("Contact", "create", throw=True)
+		contact = make_contact(frappe._dict(doctype="Customer", name=customer.name, customer_type=customer.customer_type,
+			customer_name=customer.customer_name,
+			email_id=email, mobile_no=customer.mobile_no))
+		customer.reload()
+		customer.customer_primary_contact = contact.name
+		return
+	contact = frappe.get_doc("Contact", name)
+	contact.check_permission("write")
+	if not any(link.link_doctype == "Customer" and link.link_name == customer.name for link in contact.links):
+		frappe.throw(_("The primary contact must belong to this customer."))
+	primary = next((row for row in contact.email_ids if row.email_id == email), None)
+	if primary is None:
+		primary = next((row for row in contact.email_ids if row.is_primary), None)
+	if primary is None:
+		primary = contact.append("email_ids", {"email_id": email})
+	primary.email_id = email
+	for row in contact.email_ids:
+		row.is_primary = int(row is primary)
+	contact.save()
+	# Contact hooks refresh the Customer, including its modified timestamp.
+	customer.reload()
+	customer.customer_primary_contact = contact.name
+
+
 @frappe.whitelist()
 def update_customer(customer: str, data: str | dict):
 	"""
@@ -651,6 +703,9 @@ def update_customer(customer: str, data: str | dict):
 		data = json.loads(data)
 
 	doc = frappe.get_doc("Customer", customer)
+	doc.check_permission("write")
+	if "email_id" in data:
+		_save_primary_email(doc, data["email_id"])
 
 	updatable_fields = [
 		"customer_name",
@@ -675,7 +730,7 @@ def update_customer(customer: str, data: str | dict):
 			except Exception:
 				pass
 
-	doc.save(ignore_permissions=True)
+	doc.save()
 
 	return {
 		"name": doc.name,

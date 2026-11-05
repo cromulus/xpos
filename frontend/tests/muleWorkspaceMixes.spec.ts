@@ -7,6 +7,7 @@ import MuleWorkspace from "@/components/MuleWorkspace.vue";
 // (generated) title; display_name and owner_name are what the server prepared for people.
 const rows = [
 	{ name: "CF-4112-A846", item_name: "ALBERT ADKINS Formula A846D90316", display_name: "CORN, OATS, SOYBEAN MEAL", owner_name: "ALBERT ADKINS", mule_mix_owner_search: "ALBERT ADKINS / 4112", last_used: "2026-05-22", usage_count: 1,
+		bom: "BOM-1", composition: [{ name: "CORN", percent: 80 }, { name: "OATS", percent: 20 }], order_default: { qty: 40, uom: "Bag", bag_lbs: 50, source: "Last recorded order" },
 		last_purchase: { invoice: "ACC-SINV-1", date: "2026-05-20", customer_name: "ALBERT ADKINS", currency: "USD", pounds: 500, bags: 10, amount: 162.5 } },
 	{ name: "CF-4112-91AB", item_name: "ALBERT ADKINS Formula 91AB163D1E", display_name: "CORN, BARLEY", owner_name: "ALBERT ADKINS", mule_mix_owner_search: "ALBERT ADKINS / 4112", last_used: "2025-11-05", usage_count: 4, last_purchase: null },
 	{ name: "CF-4112-NONE", item_name: "ALBERT ADKINS Formula 0000000000", display_name: "Custom mix — recipe not recorded", owner_name: null, mule_mix_owner_search: "", last_used: null, usage_count: 0, last_purchase: null },
@@ -16,10 +17,11 @@ const recipe = { item: "CF-4112-A846", bom: "BOM-1", quantity: 500, uom: "Pound"
 let mounted: ReturnType<typeof mount> | null = null;
 afterEach(() => { mounted?.unmount(); mounted = null; });
 
-async function openMixes() {
+async function openMixes(addMix?: (...args: any[]) => Promise<void>) {
+	HTMLDialogElement.prototype.close = function () {};
 	HTMLDialogElement.prototype.showModal ??= function () {};
 	const request = vi.fn((method: string) => Promise.resolve(method.endsWith("find_mixes") ? { rows, has_more: false } : recipe));
-	const wrapper = mount(MuleWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request }, attachTo: document.body });
+	const wrapper = mount(MuleWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request, addMix }, attachTo: document.body });
 	mounted = wrapper;
 	// The customer card's "Mixes" sends this event (the Mule City row is gone, MuleCity-qajl.1).
 	window.dispatchEvent(new CustomEvent("xpos:open-mule-workspace", { detail: { mode: "mixes" } }));
@@ -28,10 +30,36 @@ async function openMixes() {
 }
 
 describe("Customer Mixes", () => {
+	it("opens the selected customer's owned recipes every time", async () => {
+		const { request, wrapper } = await openMixes();
+		expect(request).toHaveBeenLastCalledWith(expect.stringContaining("find_mixes"), expect.objectContaining({ customer: "MC-CUST-4112", owned_only: 1 }));
+		const checkbox = document.querySelector('input[type="checkbox"]') as HTMLInputElement;
+		checkbox.click(); await flushPromises();
+		expect(request).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ customer: null, owned_only: 0 }));
+		await (wrapper.vm as any).open("mixes");
+		expect(checkbox.checked).toBe(true);
+	});
+	it("shows proportions and adds the displayed 40-bag order", async () => {
+		const add = vi.fn().mockResolvedValue(undefined);
+		await openMixes(add);
+		expect(document.body.textContent).toContain("CORN 80% · OATS 20%");
+		expect(document.body.textContent).toContain("50 lb per bag");
+		const button = [...document.querySelectorAll("button")].find(b => b.textContent === "Add 40 bags")!;
+		button.click(); button.click(); await flushPromises();
+		expect(add).toHaveBeenCalledTimes(1);
+		expect(add).toHaveBeenCalledWith(rows[0], "MC-CUST-4112");
+	});
+	it("keeps a refused mix visible with its error", async () => {
+		await openMixes(vi.fn().mockRejectedValue(new Error("Recipe needs review")));
+		[...document.querySelectorAll("button")].find(b => b.textContent === "Add 40 bags")!.click();
+		await flushPromises();
+		expect(document.querySelector('[role="alert"]')?.textContent).toBe("Recipe needs review");
+	});
+
 	// Before: "ALBERT ADKINS Formula A846D90316" / "ALBERT ADKINS / 4112". After: the prepared name and owner.
 	it("names each mix by what is in it and whose recipe it is, not by its generated code", async () => {
 		await openMixes();
-		const titles = [...document.body.querySelectorAll(".mule-results strong")].map(t => t.textContent);
+		const titles = [...document.body.querySelectorAll(".mule-results article > div > strong")].map(t => t.textContent);
 		expect(titles).toEqual(["CORN, OATS, SOYBEAN MEAL", "CORN, BARLEY", "Custom mix — recipe not recorded"]);
 		const text = document.body.textContent || "";
 		expect(text).toContain("Recipe of ALBERT ADKINS");

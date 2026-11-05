@@ -107,7 +107,7 @@
 				data-testid="customer-account-row"
 			>
 				<!-- Can take a delivery, contact on file, tax exempt: at a glance (Bill 2026-09-29). -->
-				<CustomerStatusIcons :customer="cartStore.customer" :tax-exempt-reason="cartStore.muleTaxExemptReason" />
+				<CustomerStatusIcons :customer="cartStore.customer" :tax-exempt-reason="cartStore.muleTaxExemptReason" editable-email @edit-email="handleEditCustomer('email')" />
 				<span v-if="cartStore.customer.mobile_no" class="inline-flex items-center gap-1 truncate">
 					<Phone class="w-3 h-3 shrink-0" />{{ cartStore.customer.mobile_no }}
 				</span>
@@ -387,7 +387,8 @@ function openMixes() {
 	window.dispatchEvent(new CustomEvent("xpos:open-mule-workspace", { detail: { mode: "mixes" } }));
 }
 
-function handleEditCustomer() {
+function handleEditCustomer(focus: "name" | "email" = "name") {
+	customerStore.customerEditFocus = focus;
 	customerStore.showCustomerEditDialog = true;
 }
 

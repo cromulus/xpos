@@ -684,6 +684,8 @@ def get_item_detail(
 		"allow_negative_stock": item.allow_negative_stock,
 	}
 
+	result["is_made_to_order"] = int(item_code in made_to_order_items(pos_profile))
+
 	# The qty dialog opens in the item's sale unit, priced for this customer.
 	unit = sale_unit(item_code, price_list, customer=customer)
 	result.update(unit, price_list_rate=unit["rate"])

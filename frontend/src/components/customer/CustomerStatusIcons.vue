@@ -1,20 +1,23 @@
 <template>
 	<span v-if="details.length" class="flex flex-wrap items-center gap-3 text-xs" data-testid="customer-status-icons">
-		<span
+		<component
 			v-for="detail in details"
+			:is="editableEmail && detail.key === 'email' ? 'button' : 'span'"
+			:type="editableEmail && detail.key === 'email' ? 'button' : undefined"
 			:key="detail.key"
 			class="inline-flex items-center gap-0.5"
-			role="img"
-			:aria-label="detail.label"
-			:title="detail.label"
+			:role="editableEmail && detail.key === 'email' ? undefined : 'img'"
+			:aria-label="label(detail)"
+			:title="label(detail)"
 			:data-status="detail.key"
+			@click="editEmail($event, detail.key)"
 			:class="detail.present ? 'text-primary' : 'text-muted-foreground'"
 		>
 			<component :is="detail.icon" class="w-4 h-4" aria-hidden="true" />
 			<span v-if="detail.count" class="font-semibold" data-testid="address-count">{{ detail.count }}</span>
 			<Check v-if="detail.present" class="w-3 h-3" aria-hidden="true" />
 			<Minus v-else class="w-3 h-3" aria-hidden="true" />
-		</span>
+		</component>
 	</span>
 </template>
 
@@ -31,7 +34,16 @@ import { MapPin, Mail, Phone, ReceiptText, Check, Minus } from "lucide-vue-next"
 import __ from "@/lib/translate";
 import { customerStatusDetails, type CustomerStatus } from "@/utils/customerStatus";
 
-const props = defineProps<{ customer: CustomerStatus | null | undefined; taxExemptReason?: string }>();
+const props = defineProps<{ customer: CustomerStatus | null | undefined; taxExemptReason?: string; editableEmail?: boolean }>();
+
+const emit = defineEmits<{ 'edit-email': [] }>();
+function editEmail(event: MouseEvent, key: string) {
+	if (props.editableEmail && key === 'email') { event.stopPropagation(); emit('edit-email'); }
+}
+function label(detail: { key: string; present: boolean; label: string }) {
+	return props.editableEmail && detail.key === 'email'
+		? __(detail.present ? "Edit email" : "Add email") : detail.label;
+}
 
 const ICONS = { address: MapPin, email: Mail, phone: Phone, tax: ReceiptText } as const;
 

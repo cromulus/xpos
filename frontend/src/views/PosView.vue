@@ -1,7 +1,7 @@
 <template>
 	<div class="flex flex-col h-full overflow-hidden">
     <MuleWorkspace :customer="cartStore.customer?.name" :customer-name="cartStore.customerName" :profile="posStore.profileName" :request="call"
-      :cart-has-items="!cartStore.isEmpty" @pickup="cartStore.loadFromInvoice" />
+      :cart-has-items="!cartStore.isEmpty" :add-mix="addCustomerMix" @pickup="cartStore.loadFromInvoice" />
     <p v-if="cartStore.muleTaxError" role="alert" class="p-2 text-red-700">{{ cartStore.muleTaxError }}</p>
 		<div
 			class="md:hidden shrink-0 flex items-center bg-muted/60 border-b border-border mx-3 mt-2 mb-0 rounded-xl overflow-hidden"
@@ -187,6 +187,7 @@
 </template>
 
 <script setup lang="ts">
+import { customerMixItem, type CustomerMixChoice } from "@/services/customerMixCart";
 import MuleWorkspace from "@/components/MuleWorkspace.vue";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
@@ -507,6 +508,17 @@ function addScaleItem(item: POSItem, qty: number) {
 	}
 }
 
+async function addCustomerMix(row: CustomerMixChoice, customer: string) {
+	const profile = posStore.profileName;
+	const { item, qty } = await customerMixItem(row, profile, customer);
+	if (cartStore.customer?.name !== customer || posStore.profileName !== profile || cartStore.isReturnMode)
+		throw new Error("The customer or register changed. Open Mixes again for the current sale.");
+	const result = cartStore.addItem(item, qty);
+	if (!result.success) throw new Error(result.message || "Could not add this mix.");
+	afterItemAdded(item);
+	activeTab.value = "cart";
+}
+
 function handleAddItem(item: POSItem) {
 	if (!cartStore.customer) {
 		showError(__("Please select a customer before adding items to the cart"));
@@ -528,6 +540,10 @@ function handleAddItem(item: POSItem) {
 		showError(result.message || __("Cannot add item to cart"));
 		return;
 	}
+	afterItemAdded(item);
+}
+
+function afterItemAdded(item: POSItem) {
 	fetchAndApplyItemTax(item);
 
 	if (posStore.fetchCoupon) {
