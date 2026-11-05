@@ -189,7 +189,12 @@ async function postMethod(
 		throw new Error("__offline__");
 	}
 
-	return { response, data: await response.json() };
+	// A deploy's maintenance page (503) or the proxy's 502/504 is not JSON. Read it as
+	// an empty answer so the caller gets an error with its HTTP status, not a
+	// SyntaxError it can't tell from a real failure (MuleCity-s9jt).
+	const data = await response.json().catch(() => (response.ok ? null : {}));
+	if (data === null) throw new Error(`Unreadable answer from ${method}`);
+	return { response, data };
 }
 
 function handleResponse<T>(

@@ -141,3 +141,15 @@ describe("refreshCsrfToken", () => {
 		expect(window.xpos!.csrf_token).toBe("stale-token");
 	});
 });
+
+describe("an answer that is not JSON (MuleCity-s9jt)", () => {
+	it("a deploy's maintenance page or the proxy's 502 is an error with its HTTP status", async () => {
+		for (const [status, body] of [[503, "Service Unavailable"], [502, "<html><body>502 Bad Gateway</body></html>"]] as const) {
+			fetchMock.mockResolvedValueOnce(new Response(body, { status, headers: { "Content-Type": "text/html" } }));
+			const error = (await call("mulecity_erpnext.pos_workspace.tax_context", {}).catch((e) => e)) as Error & { status?: number };
+			expect(error).toBeInstanceOf(Error);
+			expect(error.status).toBe(status);
+			expect(error).not.toBeInstanceOf(SyntaxError);
+		}
+	});
+});
