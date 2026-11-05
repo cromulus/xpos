@@ -12,7 +12,7 @@ const rows = [
 	{ name: "CF-4112-91AB", item_name: "ALBERT ADKINS Formula 91AB163D1E", display_name: "CORN, BARLEY", owner_name: "ALBERT ADKINS", mule_mix_owner_search: "ALBERT ADKINS / 4112", last_used: "2025-11-05", usage_count: 4, last_purchase: null },
 	{ name: "CF-4112-NONE", item_name: "ALBERT ADKINS Formula 0000000000", display_name: "Custom mix — recipe not recorded", owner_name: null, mule_mix_owner_search: "", last_used: null, usage_count: 0, last_purchase: null },
 ];
-const recipe = { item: "CF-4112-A846", bom: "BOM-1", quantity: 500, uom: "Pound", ingredients: [{ item_name: "CORN", qty: 400, uom: "Pound" }], available: 0, stock_uom: "Pound", bag_weight: 50 };
+const recipe = { composition: [{ item_code: "CORN", item_name: "CORN", lbs: 400, share_pct: 100 }], item: "CF-4112-A846", bom: "BOM-1", quantity: 500, uom: "Pound", ingredients: [{ item_name: "CORN", qty: 400, uom: "Pound" }], available: 0, stock_uom: "Pound", bag_weight: 50 };
 
 let mounted: ReturnType<typeof mount> | null = null;
 afterEach(() => { mounted?.unmount(); mounted = null; });
@@ -95,11 +95,11 @@ describe("Customer Mixes", () => {
 		expect(document.body.textContent).toContain("No orders or sales recorded");
 	});
 
-	it("scrolls the recipe into view when View recipe is pressed", async () => {
+	it("scrolls the recipe into view when Detailed view is pressed", async () => {
 		const scroll = vi.fn();
 		Element.prototype.scrollIntoView = scroll;
 		await openMixes();
-		const view = [...document.body.querySelectorAll("button")].find(b => b.textContent === "View recipe")!;
+		const view = [...document.body.querySelectorAll("button")].find(b => b.textContent === "Detailed view")!;
 		view.click();
 		await flushPromises();
 		expect(document.body.querySelector(".mule-recipe")?.textContent).toContain("CORN");
@@ -111,7 +111,7 @@ describe("The register's shared login only sells (Bill, 2026-09-29, MuleCity-fb0
 	it("offers no desk shortcuts: no new order, account payment, prepare order, formula editor or library", async () => {
 		Element.prototype.scrollIntoView = vi.fn();
 		const { request } = await openMixes();
-		[...document.body.querySelectorAll("button")].find(b => b.textContent === "View recipe")!.click();
+		[...document.body.querySelectorAll("button")].find(b => b.textContent === "Detailed view")!.click();
 		await flushPromises();
 		const text = document.body.textContent || "";
 		expect(text).toContain("CORN");

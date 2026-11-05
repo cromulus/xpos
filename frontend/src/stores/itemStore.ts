@@ -51,6 +51,8 @@ export const useItemStore = defineStore("items", () => {
 	}
 
 	const showItemDetail = ref(false);
+	const detailCartRowUid = ref<string | null>(null);
+	let detailRequest = 0;
 	const selectedItemDetail = ref<ItemDetail | null>(null);
 	const selectedItemForDetail = ref<POSItem | null>(null);
 	const isLoadingDetail = ref(false);
@@ -357,14 +359,16 @@ export const useItemStore = defineStore("items", () => {
 		posProfile: string,
 		warehouse?: string,
 	): Promise<ItemDetail | null> {
+		const request = ++detailRequest;
 		isLoadingDetail.value = true;
+		selectedItemDetail.value = null;
 		try {
 			const result = await call<ItemDetail>("xpos.api.items.get_item_detail", {
 				item_code: itemCode,
 				pos_profile: posProfile,
 				warehouse: warehouse || "",
 			});
-			selectedItemDetail.value = result;
+			if (request === detailRequest) selectedItemDetail.value = result;
 			return result;
 		} catch (error) {
 			if (!isNetworkError(error)) {
@@ -384,7 +388,7 @@ export const useItemStore = defineStore("items", () => {
 						rate: cached.rate || 0,
 						actual_qty: cached.actual_qty || 0,
 					} as unknown as ItemDetail;
-					selectedItemDetail.value = basicDetail;
+					if (request === detailRequest) selectedItemDetail.value = basicDetail;
 					return basicDetail;
 				}
 			} catch {
@@ -392,17 +396,21 @@ export const useItemStore = defineStore("items", () => {
 			}
 			return null;
 		} finally {
-			isLoadingDetail.value = false;
+			if (request === detailRequest) isLoadingDetail.value = false;
 		}
 	}
 
-	async function openItemDetail(item: POSItem, posProfile: string, warehouse?: string): Promise<void> {
+	async function openItemDetail(item: POSItem, posProfile: string, warehouse?: string, cartRowUid?: string): Promise<void> {
+		detailCartRowUid.value = cartRowUid || null;
 		selectedItemForDetail.value = item;
 		showItemDetail.value = true;
 		await fetchItemDetail(item.item_code, posProfile, warehouse);
 	}
 
 	function closeItemDetail(): void {
+		detailRequest++;
+		detailCartRowUid.value = null;
+		isLoadingDetail.value = false;
 		showItemDetail.value = false;
 		selectedItemDetail.value = null;
 		selectedItemForDetail.value = null;
@@ -530,6 +538,7 @@ export const useItemStore = defineStore("items", () => {
 		itemGroups,
 		parentGroups,
 		showItemDetail,
+		detailCartRowUid,
 		selectedItemDetail,
 		selectedItemForDetail,
 		isLoadingDetail,

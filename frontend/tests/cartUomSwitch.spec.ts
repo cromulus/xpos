@@ -5,7 +5,7 @@
  * sold by the pound at bag price ÷ bag weight; the bag stays the default and
  * stock comes off by the pound. Switching a cart line between Bag and Pound
  * re-prices it with the server's price for the new unit (the rate the invoice
- * price lock posts), keeps its quantity and checks stock in the new unit.
+ * price lock posts), converts quantity to preserve feed weight and checks stock.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
@@ -110,10 +110,11 @@ describe("switching a cart line between Bag and Pound", () => {
 		cart.addItem(feed());
 
 		const result = await cart.changeItemUOM(0, { uom: "Pound", conversion_factor: POUND_FACTOR });
-		cart.updateItemQty(0, 35);
 
 		expect(result).toEqual({ success: true });
-		expect(cart.items[0]).toMatchObject({ uom: "Pound", conversion_factor: POUND_FACTOR, rate: POUND_RATE, qty: 35 });
+		expect(cart.items[0]).toMatchObject({ uom: "Pound", conversion_factor: POUND_FACTOR, rate: POUND_RATE });
+		expect(cart.items[0].qty).toBeCloseTo(35, 5);
+		expect(cart.items[0].qty * cart.items[0].conversion_factor).toBeCloseTo(1, 12);
 		expect(Math.round(cart.subtotal * 100) / 100).toBe(23.47);
 		expect(mockedCall).toHaveBeenCalledWith("xpos.api.items.get_sale_unit", {
 			item_code: "MC-FEED35",
@@ -128,7 +129,7 @@ describe("switching a cart line between Bag and Pound", () => {
 		cart.addItem(feed());
 		await cart.changeItemUOM(0, { uom: "Pound", conversion_factor: POUND_FACTOR });
 		await cart.changeItemUOM(0, { uom: "Bag", conversion_factor: 1 });
-		expect(cart.items[0]).toMatchObject({ uom: "Bag", conversion_factor: 1, rate: 23.47 });
+		expect(cart.items[0]).toMatchObject({ uom: "Bag", conversion_factor: 1, rate: 23.47, qty: 1 });
 	});
 
 	it("uses the server's price for the unit, the one the invoice will post", async () => {
@@ -163,6 +164,7 @@ describe("switching a cart line between Bag and Pound", () => {
 		const result = await cart.changeItemUOM(0, { uom: "Pound", conversion_factor: POUND_FACTOR });
 		expect(result.success).toBe(true);
 		expect(cart.items[0].rate).toBe(POUND_RATE);
+		expect(cart.items[0].qty * POUND_FACTOR).toBeCloseTo(1, 12);
 	});
 
 	it("a rate the clerk changed by hand is converted, not replaced", async () => {
@@ -172,6 +174,7 @@ describe("switching a cart line between Bag and Pound", () => {
 		await cart.changeItemUOM(0, { uom: "Pound", conversion_factor: POUND_FACTOR });
 		expect(mockedCall).not.toHaveBeenCalledWith("xpos.api.items.get_sale_unit", expect.anything());
 		expect(cart.items[0].rate).toBeCloseTo(21 * POUND_FACTOR, 9);
+		expect(cart.items[0].qty * POUND_FACTOR).toBeCloseTo(1, 12);
 	});
 
 	it("a money discount per bag is not carried onto each pound; a percentage is kept", async () => {
@@ -197,18 +200,19 @@ describe("switching a cart line between Bag and Pound", () => {
 	});
 
 	// ------------------------------------------------------------ negative stories
-	it("refuses a switch that needs more stock than is on hand, and leaves the line", async () => {
+	it("converts 30 pounds to a fractional bag without increasing stock demand", async () => {
 		serverPrices({
 			Bag: { conversion_factor: 50, rate: 11.5 },
 			Pound: { conversion_factor: 1, rate: 0.23 },
 		});
 		const cart = useCartStore();
-		// 30 lb of salt with 100 lb on hand; 30 Bags would be 1,500 lb.
+		// 30 lb with 100 lb on hand becomes 0.6 bags, never 30 bags.
 		cart.addItem(feed({ item_code: "MC-SALT", stock_uom: "Pound", uom: "Pound", conversion_factor: 1, rate: 0.23, actual_qty: 100 }));
 		cart.updateItemQty(0, 30);
 		const result = await cart.changeItemUOM(0, { uom: "Bag", conversion_factor: 50 });
-		expect(result.success).toBe(false);
-		expect(cart.items[0]).toMatchObject({ uom: "Pound", conversion_factor: 1, rate: 0.23, qty: 30 });
+		expect(result.success).toBe(true);
+		expect(cart.items[0]).toMatchObject({ uom: "Bag", conversion_factor: 50, rate: 11.5, qty: 0.6 });
+		expect(cart.items[0].qty * cart.items[0].conversion_factor).toBe(30);
 	});
 
 	it("refuses a unit the server says is not a unit of the Item", async () => {
@@ -217,6 +221,40 @@ describe("switching a cart line between Bag and Pound", () => {
 		const result = await cart.changeItemUOM(0, { uom: "Ton", conversion_factor: 2000 });
 		expect(result).toEqual({ success: false, message: expect.stringContaining("not a unit") });
 		expect(cart.items[0]).toMatchObject({ uom: "Bag", rate: 23.47 });
+	});
+
+	it.each(["Bag", "Pound"])("keeps a 40-bag custom order at 2,000 lb when stocked in %s", async (stockUom) => {
+		const bagFactor = stockUom === "Bag" ? 1 : 50;
+		const poundFactor = stockUom === "Bag" ? 0.02 : 1;
+		serverPrices({ Bag: { conversion_factor: bagFactor, rate: 20 }, Pound: { conversion_factor: poundFactor, rate: 0.4 } });
+		const cart = useCartStore();
+		cart.addItem(feed({ item_code: "CF-40", stock_uom: stockUom, conversion_factor: bagFactor,
+			rate: 20, is_made_to_order: 1, actual_qty: 0, bom_no: "BOM-40" } as any), 40);
+		const uid = cart.items[0].uid;
+		expect(cart.isOrderLine(uid)).toBe(true);
+		for (let repeat = 0; repeat < 3; repeat++) {
+			await cart.changeItemUOM(0, { uom: "Pound", conversion_factor: poundFactor });
+			expect(cart.items[0]).toMatchObject({ qty: 2000, rate: 0.4, bom_no: "BOM-40" });
+			expect(cart.isOrderLine(uid)).toBe(true);
+			expect(cart.getInvoiceData("Till", "Shift").items[0]).toMatchObject({ qty: 2000, uom: "Pound", conversion_factor: poundFactor, bom_no: "BOM-40" });
+			await cart.changeItemUOM(0, { uom: "Bag", conversion_factor: bagFactor });
+			expect(cart.items[0]).toMatchObject({ qty: 40, rate: 20, bom_no: "BOM-40" });
+		}
+	});
+	it("uses the server's conversion, even if the cached factor is stale", async () => {
+		const cart = useCartStore();
+		cart.addItem(feed());
+		await cart.changeItemUOM(0, { uom: "Pound", conversion_factor: 0.02 });
+		expect(cart.items[0].qty * POUND_FACTOR).toBeCloseTo(1, 12);
+	});
+	it("keeps negative return quantities negative at the same stock quantity", async () => {
+		const cart = useCartStore();
+		cart.addItem(feed());
+		cart.isReturnMode = true;
+		cart.items[0].qty = -2;
+		await cart.changeItemUOM(0, { uom: "Pound", conversion_factor: POUND_FACTOR });
+		expect(cart.items[0].qty).toBeCloseTo(-70, 5);
+		expect(cart.items[0].qty * POUND_FACTOR).toBeCloseTo(-2, 12);
 	});
 
 	it("never prices a Pound line at the bag price", async () => {

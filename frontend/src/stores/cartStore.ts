@@ -1076,8 +1076,9 @@ export const useCartStore = defineStore("cart", () => {
 	 * Switch a cart line to another unit of its Item, e.g. a Bag line to Pound
 	 * (MuleCity-mxwy.8: any bag sells by the pound at bag price ÷ bag weight).
 	 *
-	 * The quantity stays as typed; its stock quantity follows the new factor and
-	 * is checked against stock like any other change. The rate is the server's
+	 * Preserve the amount of feed using the native Item conversion factors:
+	 * new quantity = old stock quantity / new factor (40 50-lb bags -> 2,000 lb).
+	 * Check the converted quantity against stock. The rate is the server's
 	 * price for the new unit (``get_sale_unit``), the rate the invoice price lock
 	 * will post. A manually changed rate, or no connection, keeps the same price
 	 * per stock unit instead (rate ÷ old factor × new factor). A line discount in
@@ -1092,7 +1093,8 @@ export const useCartStore = defineStore("cart", () => {
 		if (!item) return { success: false, message: __("Item not found") };
 		if ((item.uom || item.stock_uom) === unit.uom) return { success: true };
 
-		let factor = unit.conversion_factor || 1;
+		const originalUOM = item.uom || item.stock_uom;
+		let factor = unit.conversion_factor;
 		let rate = (item.rate / (item.conversion_factor || 1)) * factor;
 		if (!item.pos_rate_overridden) {
 			try {
@@ -1113,13 +1115,18 @@ export const useCartStore = defineStore("cart", () => {
 				if (!isNetworkError(error)) return { success: false, message: extractErrorMessage(error) };
 			}
 		}
-		// The line may have been removed while the price was fetched.
+		// The line may have been removed or switched again while pricing loaded.
 		if (!items.value.includes(item)) return { success: false, message: __("Item not found") };
+		if ((item.uom || item.stock_uom) !== originalUOM)
+			return { success: false, message: __("The item's unit changed. Please try again.") };
+		if (!Number.isFinite(factor) || factor <= 0)
+			return { success: false, message: __("This item's unit conversion needs review.") };
+		const qty = stockQtyOf(item) / factor;
 
 		if (!isReturnMode.value) {
 			const stockCheck = checkAvailability(
 				item,
-				item.qty,
+				qty,
 				factor,
 				item.batch_no || undefined,
 				stockQtyOf(item),
@@ -1127,6 +1134,7 @@ export const useCartStore = defineStore("cart", () => {
 			if (!stockCheck.allowed) return { success: false, message: stockCheck.message };
 		}
 
+		item.qty = qty;
 		item.uom = unit.uom;
 		item.conversion_factor = factor;
 		item.rate = normalizeItemRate(rate);

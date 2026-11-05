@@ -7,7 +7,7 @@
 			}
 		"
 	>
-		<DialogContent class="max-w-lg max-h-[80vh] flex flex-col p-0 gap-0">
+		<DialogContent class="max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0">
 			<DialogHeader class="shrink-0 px-5 pt-5 pb-3 border-b border-border">
 				<DialogTitle class="text-base">{{ itemForDetail?.item_name }}</DialogTitle>
 				<DialogDescription class="text-xs font-mono">{{
@@ -16,6 +16,12 @@
 			</DialogHeader>
 
 			<div class="flex-1 overflow-y-auto p-5 space-y-4 xpos-scrollbar">
+				<p v-if="feedLoading" role="status" class="text-sm text-muted-foreground">{{ __("Loading feed details…") }}</p>
+				<p v-else-if="feedError" role="alert" class="text-sm text-muted-foreground">{{ feedError }}</p>
+				<FeedDetails v-else-if="feedDetails" :details="feedDetails" :order="isOrder" :order-size="orderSize"
+					:pull="currentPull" :pending="isOrder && (cartStore.mixCheckPending || cartStore.mixCalculationPending)" :message="comparisonMessage" />
+				<p v-if="cartView && !cartRow" role="status">{{ __("This line is no longer in the cart.") }}</p>
+				<template v-if="!cartView">
 				<div v-if="itemStore.isLoadingDetail" class="flex items-center justify-center py-8">
 					<Loader2 class="w-8 h-8 text-primary animate-spin" />
 				</div>
@@ -196,11 +202,12 @@
 						{{ __("Could not load details for this item. Check your connection and try again.") }}
 					</p>
 				</div>
+				</template>
 			</div>
 
 			<DialogFooter class="shrink-0 border-t border-border px-5 py-4">
-				<Button variant="outline" class="flex-1" @click="close">Cancel</Button>
-				<Button class="flex-1 font-bold" :disabled="!canAdd" @click="addToCart">
+				<Button variant="outline" class="flex-1" @click="close">{{ cartView ? __("Close") : __("Cancel") }}</Button>
+				<Button v-if="!cartView" class="flex-1 font-bold" :disabled="!canAdd" @click="addToCart">
 					<Plus class="w-4 h-4" />
 					{{ __("Add to Cart") }}
 				</Button>
@@ -216,7 +223,7 @@ import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
 import { hasPermission } from "@/services/userRights";
-import { showError } from "@/services/api";
+import { call, showError } from "@/services/api";
 import {
 	Dialog,
 	DialogContent,
@@ -230,6 +237,8 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, Check, Plus, AlertCircle } from "lucide-vue-next";
+import FeedDetails from "@/components/FeedDetails.vue";
+import type { FeedDetails as FeedDetailsData } from "@/types/feedDetails";
 import __ from "@/lib/translate";
 
 const itemStore = useItemStore();
@@ -250,6 +259,35 @@ const qtyInputRef = ref<InstanceType<typeof NumberInput> | null>(null);
 
 const itemForDetail = computed(() => itemStore.selectedItemForDetail);
 const detail = computed(() => itemStore.selectedItemDetail);
+const cartView = computed(() => !!itemStore.detailCartRowUid);
+const cartRow = computed(() => cartView.value ? cartStore.items.find(row => row.uid === itemStore.detailCartRowUid) : null);
+const isOrder = computed(() => !!cartRow.value && cartStore.isOrderLine(cartRow.value.uid));
+const currentPull = computed(() => isOrder.value ? cartStore.quotedOrder(cartRow.value?.uid)?.pull : null);
+const orderSize = computed(() => cartRow.value ? `${qty(cartRow.value.qty)} ${cartRow.value.uom || cartRow.value.stock_uom}` : "");
+const comparisonMessage = computed(() => !isOrder.value ? "" : !cartStore.pickupDate
+	? __("Choose a pickup or delivery date in the cart to calculate this order.") : cartStore.mixCheckError || "");
+const feedDetails = ref<FeedDetailsData | null>(null);
+const feedLoading = ref(false);
+const feedError = ref("");
+watch([() => itemForDetail.value?.item_code, () => posStore.profileName, () => cartStore.customer?.name],
+	async ([code, profile, customer], _previous, onCleanup) => {
+		let current = true;
+		onCleanup(() => { current = false; });
+		feedDetails.value = null;
+		feedError.value = "";
+		feedLoading.value = false;
+		if (!code || !profile) return;
+		feedLoading.value = true;
+		try {
+			const result = await call<FeedDetailsData>("mulecity_erpnext.pos_product_context.product_details", {
+				item_code: code, pos_profile: profile, customer: customer || undefined,
+			});
+			if (current) feedDetails.value = result;
+		} catch {
+			if (current) feedError.value = __("Feed details could not be loaded. Check your connection and reopen the detailed view.");
+		} finally { if (current) feedLoading.value = false; }
+	}, { immediate: true });
+
 
 const itemForCart = computed(() => {
 	if (!itemForDetail.value) return null;
@@ -289,7 +327,7 @@ const filteredSerials = computed(() => {
 });
 
 const canAdd = computed(() => {
-	if (!detail.value) return false;
+	if (cartView.value || !detail.value) return false;
 	if (detail.value.has_batch_no && !selectedBatch.value) return false;
 	if (detail.value.has_serial_no && selectedSerials.value.length === 0) return false;
 	return selectedQty.value > 0;

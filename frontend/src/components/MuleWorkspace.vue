@@ -32,7 +32,7 @@
             <div class="mule-actions">
               <button v-if="addMix && row.order_default && row.bom" type="button" :disabled="busy || !customer" @click="add(row)">Add {{ sizeText(row.order_default) }}</button>
               <p v-else-if="addMix">{{ row.bom ? 'Order size needs review' : 'Recipe needs review' }}</p>
-              <button type="button" :disabled="busy" @click="preview(row)">View recipe</button>
+              <button type="button" :disabled="busy" @click="preview(row)">Detailed view</button>
             </div>
           </template>
           <template v-else>
@@ -48,9 +48,7 @@
         <h3 :title="chosen.item_name">{{ chosen.display_name || chosen.item_name }}</h3>
         <p v-if="details.bom">Recipe batch: {{ details.quantity }} {{ details.uom }}. Finished stock: {{ details.available }} {{ details.stock_uom }}.</p>
         <p v-if="details.message">{{ details.message }}</p>
-        <table v-if="details.ingredients.length"><thead><tr><th>Ingredient</th><th>Quantity</th></tr></thead><tbody>
-          <tr v-for="(ingredient, index) in details.ingredients" :key="index"><td>{{ ingredient.item_name }}</td><td>{{ ingredient.qty }} {{ ingredient.uom }}</td></tr>
-        </tbody></table>
+        <FeedDetails :details="details" />
       </section>
       <footer><button v-if="start" type="button" :disabled="busy" @click="search(start - 20)">Previous</button>
         <button v-if="more" type="button" :disabled="busy" @click="search(start + 20)">More mixes</button></footer>
@@ -60,6 +58,7 @@
 
 <script setup>
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import FeedDetails from '@/components/FeedDetails.vue';
 import { formatCurrency, showInfo } from '@/services/api';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
 // customer is the Customer ID (used in every call); customerName is what people read.
@@ -99,7 +98,7 @@ async function search(offset = 0) {
 }
 async function preview(row) {
   const token = ++generation;
-  busy.value = true; error.value = '';
+  busy.value = true; error.value = ''; details.value = null;
   try { const result = await api('mix_details', {item_code: row.name, customer: props.customer});
     if (token !== generation) return;
     details.value = result; chosen.value = row;

@@ -42,6 +42,8 @@
 				</span>
 			</p>
 
+			<button type="button" class="text-[11px] text-primary hover:underline py-1" data-testid="cart-feed-details"
+				@click.stop="itemStore.openItemDetail(item as POSItem, posStore.profileName, posStore.warehouse, item.uid)">{{ __("Detailed view") }}</button>
 			<div class="flex items-center gap-1 mt-0.5 flex-wrap">
 				<template v-if="hasPermission('allow_change_price') && !item.pos_is_free_item">
 					<span class="text-[11px] text-muted-foreground">{{ currencySymbol }}</span>
@@ -264,7 +266,7 @@ import { useCartStore } from "@/stores/cartStore";
 import { useItemStore } from "@/stores/itemStore";
 import { Button } from "@/components/ui/button";
 import { Package, Minus, Plus, Trash2, Percent, ChevronDown } from "lucide-vue-next";
-import type { ItemUOM } from "@/types/pos.types";
+import type { ItemUOM, POSItem } from "@/types/pos.types";
 import __ from "@/lib/translate";
 import { useMoney } from "@/composables/useMoney";
 import { roundTo } from "@/utils/numberFormat";

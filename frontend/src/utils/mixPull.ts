@@ -1,3 +1,4 @@
+import type { FeedOrderComparison } from "@/types/feedDetails";
 import __ from "@/lib/translate";
 
 /**
@@ -11,6 +12,7 @@ export interface MixPull {
 	status?: string;
 	blocked?: boolean;
 	exact?: boolean;
+	comparison?: FeedOrderComparison | null;
 }
 
 /** One way to make a size work when no pull list passes, worked out by the site's rounder. */
