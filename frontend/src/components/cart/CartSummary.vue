@@ -125,6 +125,12 @@
 				</span>
 			</div>
 
+			<!-- A payment on account in the cart (MuleCity-biez): added after the sale's tax. -->
+			<div v-if="cartStore.hasPayBalance" class="flex items-center justify-between" data-testid="summary-pay-balance">
+				<span class="text-muted-foreground">{{ __("Pay balance (on account)") }}</span>
+				<span class="font-medium text-foreground">+{{ money(cartStore.payBalanceAmount) }}</span>
+			</div>
+
 			<Separator class="my-2!" />
 
 			<div class="flex items-center justify-between">

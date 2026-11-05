@@ -446,9 +446,9 @@ const menus = computed<Menu[]>(() => [
 				label: "Process Payment",
 				icon: CreditCard,
 				shortcut: "F4",
-				disabled: () => cartStore.items.length === 0 || !posStore.isShiftOpen,
+				disabled: () => cartStore.isEmpty || !posStore.isShiftOpen,
 				action: () => {
-					if (cartStore.items.length > 0 && posStore.isShiftOpen) {
+					if (!cartStore.isEmpty && posStore.isShiftOpen) {
 						cartStore.openPaymentDialog();
 					}
 				},

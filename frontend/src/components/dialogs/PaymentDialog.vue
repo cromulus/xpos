@@ -97,6 +97,7 @@
 						<div
 							v-if="
 								cartStore.summaryTaxes.length > 0 ||
+								cartStore.hasPayBalance ||
 								cartStore.offerItemDiscountTotal > 0 ||
 								cartStore.offerGrandTotalDiscountPct > 0 ||
 								cartStore.appliedCoupon
@@ -126,6 +127,15 @@
 								<span :class="tax.included_in_print_rate ? 'text-blue-500' : ''">
 									{{ tax.included_in_print_rate ? "" : "+" }}{{ money(tax.amount) }}
 								</span>
+							</div>
+							<!-- A payment on account in the cart (MuleCity-biez): no tax, added last. -->
+							<div
+								v-if="cartStore.hasPayBalance"
+								class="flex items-center justify-between text-xs text-muted-foreground"
+								data-testid="payment-pay-balance"
+							>
+								<span>{{ __("Pay balance (on account)") }}</span>
+								<span>+{{ money(cartStore.payBalanceAmount) }}</span>
 							</div>
 							<div
 								v-if="cartStore.offerItemDiscountTotal > 0"
