@@ -1,5 +1,19 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc53 (contains mc52)
+
+The customer email icon opens the contact editor. Mixes defaults to the selected
+customer's library, shows the composition and recorded run size, and adds that
+size directly to the cart. Switching bags/pounds preserves feed weight.
+Feed details show recorded FilePro guarantees separately from calculated recipe
+nutrition, with the current custom order's pull and nutrition deviations.
+Requires the matching Mule City backend (POS customer context and order comparison).
+
+Validation: 1,045 frontend tests across the full suite and final dialog additions;
+TypeScript checks and production build pass. Native backend tests are recorded in
+the Mule City application's xpos-product-context documentation. Deployment remains
+separate from this fork release.
+
 ## mule-v2.10.1-mc52 (unreleased; contains mc51)
 
 ### Pay by Card uses the register's own reader's Mode of Payment (MuleCity-bjjv.5)
