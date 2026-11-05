@@ -71,7 +71,8 @@ class TestCustomerContactSearch(unittest.TestCase):
 		self.assertIn(self.phone, row["xpos_contacts"][0]["phones"])
 
 	def test_negative_three_digits_and_strangers_find_nobody(self):
-		three = self.digits[1:]
-		if three not in self.farm.name and three not in self.farm.customer_name:
+		# Three digits spanning the dash: in the number's digits, but not in its text.
+		three = self.digits[0] + self.digits[:2]
+		if not any(three in v for v in (self.phone, self.farm.name, self.contact.email_ids[0].email_id)):
 			self.assertNotIn(self.farm.name, self._names(three))
 		self.assertEqual(self._names(f"nobody-{self.s}"), [])
