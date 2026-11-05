@@ -1,5 +1,22 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc57 (contains mc56)
+
+### Offline suite specs follow Frappe 16.54 and delivery by the mile (MuleCity-wx9f, 31dv)
+
+Test-only release; no till or server code changes.
+
+- `offline-vfd.cy.ts` and `offline-delivery.cy.ts` read a sale's comments from
+  the form timeline (`frappe.desk.form.load.getdoc` docinfo, new support helper
+  `invoiceComments`). Frappe 16.54 refuses `_comments` in `get_list` ("a cache
+  column, never a readable field"), so every erp2:offline run since the 16.54
+  pin failed these three stories.
+- `offline-delivery.cy.ts` compares the delivery line's amount, not its rate:
+  since mc56 the line is sold by the mile (qty = miles, rate a mile).
+
+Validation: erp2:offline (yarn test:offline, headless Chrome) on an erp2 slot
+at this tag: vitest 90/90, cypress 20/20.
+
 ## mule-v2.10.1-mc56 (contains mc55)
 
 ### Pay balance: a payment on account as a cart line (MuleCity-biez)
