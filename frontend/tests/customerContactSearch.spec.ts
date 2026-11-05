@@ -41,6 +41,13 @@ describe("matching a customer", () => {
 		expect(matchCustomer(ownMobile, "(336) 555 0042")).toEqual({ tier: 1, via: "336-555-0042" });
 	});
 
+	it("the primary contact's details copied onto the customer still name the contact", () => {
+		const copied = { ...sharp, email_id: "jane@sharpfarms.test", mobile_no: "(919) 555-1234" };
+		expect(matchCustomer(copied, "jane")).toEqual({ tier: 1, via: "Jane Sharp" });
+		expect(matchCustomer(copied, "jane@sharp")).toEqual({ tier: 1, via: "Jane Sharp · jane@sharpfarms.test" });
+		expect(matchCustomer(copied, "1234")).toEqual({ tier: 1, via: "Jane Sharp · (919) 555-1234" });
+	});
+
 	it("a farm-name match needs no 'via'", () => {
 		expect(matchCustomer(sharp, "sharp farms")).toEqual({ tier: 1, via: null });
 		expect(matchCustomer(sharp, "1001")).toEqual({ tier: 0, via: null });

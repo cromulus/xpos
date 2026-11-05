@@ -57,8 +57,12 @@ export function matchCustomer(customer: Customer, rawTerm: string): CustomerMatc
 		if (own) return { tier: ownTier, via: text(own) };
 	}
 	if (ownName) return { tier: exact ? 0 : 1, via: null };
-	if (has(customer.mobile_no)) return { tier: 1, via: text(customer.mobile_no) };
-	if (has(customer.email_id)) return { tier: 1, via: text(customer.email_id) };
+	// ERPNext copies the primary contact's email and mobile onto the Customer: name that person.
+	const own = [customer.mobile_no, customer.email_id].find(has);
+	if (own) {
+		const person = contacts.find((c) => has(c.full_name)) || contacts.find((c) => [...c.emails, ...c.phones].includes(text(own)));
+		return { tier: 1, via: person ? (has(person.full_name) ? person.full_name : `${person.full_name} · ${text(own)}`) : text(own) };
+	}
 
 	for (const contact of contacts) {
 		if (has(contact.full_name)) return { tier: 2, via: contact.full_name };
