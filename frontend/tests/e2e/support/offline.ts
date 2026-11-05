@@ -145,6 +145,18 @@ export function customerInvoices(buyer: string = customer(), fields: string[] = 
 	});
 }
 
+/**
+ * A sale's Comment texts, from the native form timeline (``getdoc`` docinfo).
+ * Frappe 16.54 no longer lets ``get_list`` read the ``_comments`` cache column
+ * ("a cache column, never a readable field"); the timeline checks the same read
+ * permission the cashier already has and returns each comment in full.
+ */
+export function invoiceComments(name: string) {
+	return cy
+		.request({ method: "GET", url: "/api/method/frappe.desk.form.load.getdoc", qs: { doctype: "Sales Invoice", name } })
+		.then((response) => ((response.body.docinfo?.comments || []) as Array<{ content: string }>).map((c) => c.content));
+}
+
 /** Always put the network back after a story, pass or fail. */
 export function restoreNetworkAfterEach() {
 	afterEach(() => {
