@@ -13,6 +13,7 @@ POS Payments API.
 """
 
 import json
+from contextlib import contextmanager
 
 import frappe
 from frappe import _
@@ -348,6 +349,32 @@ def to_cents(amount) -> float:
 	return flt(amount, frappe.get_precision("Payment Entry", "paid_amount") or 2)
 
 
+_READABLE_REFERENCES_FLAG = "xpos_readable_payment_references"
+
+
+@contextmanager
+def _references_readable(references):
+	"""Within the block, ``frappe.has_permission`` answers yes to reading exactly these
+	Payment Entry references (doctype, name), for this request only; every other check
+	is unchanged. Gated on a request-local flag, like the mix prepayment's bank read."""
+	allowed = {(row.reference_doctype, row.reference_name) for row in references}
+	checked = frappe.has_permission
+
+	def has_permission(doctype=None, ptype="read", doc=None, *args, **kwargs):
+		name = doc if isinstance(doc, str) else getattr(doc, "name", None)
+		if ptype == "read" and frappe.flags.get(_READABLE_REFERENCES_FLAG) and (doctype, name) in allowed:
+			return True
+		return checked(doctype, ptype, doc, *args, **kwargs)
+
+	frappe.flags[_READABLE_REFERENCES_FLAG] = True
+	frappe.has_permission = has_permission
+	try:
+		yield
+	finally:
+		frappe.has_permission = checked
+		frappe.flags.pop(_READABLE_REFERENCES_FLAG, None)
+
+
 @frappe.whitelist()
 def receive_on_account(
 	customer: str,
@@ -423,8 +450,13 @@ def receive_on_account(
 		)
 	pe.allocate_amount_to_references(amount, paid_amount_change=True, allocate_payment_amount=True)
 	pe.references = [row for row in pe.references if flt(row.allocated_amount) > 0]
-	pe.insert(ignore_permissions=True)
-	pe.submit()
+	# ERPNext re-reads each reference with a read-permission check; the till's login
+	# may not read Journal Entries, e.g. a customer's opening balance (Mule City's
+	# MULE-AR-OPEN journals, MuleCity-biez). Those references are the ones ERPNext
+	# itself just listed as this customer's outstanding, so they are readable here.
+	with _references_readable(pe.references):
+		pe.insert(ignore_permissions=True)
+		pe.submit()
 
 	return {
 		"payment_entry": pe.name,
