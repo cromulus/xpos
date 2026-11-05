@@ -1,3 +1,4 @@
+import { rankCustomerMatches } from "@/utils/customerMatch";
 import { isElectron } from "./electronBridge";
 import type { PendingPurchase } from "./idbService";
 import { sanitizeForIdb } from "./idbSanitize";
@@ -946,12 +947,14 @@ export async function getCachedCustomers(): Promise<Customer[]> {
 	return idb.getCachedCustomers();
 }
 
-export async function searchCachedCustomers(term: string): Promise<Customer[]> {
+export async function searchCachedCustomers(term: string, limit = 20): Promise<Customer[]> {
 	if (isElectron()) {
-		return (await getDb().getCustomers({ search: term, limit: 20 })) as unknown as Customer[];
+		// Contacts ride packed on the row, so the shared matcher filters them (MuleCity-1ptj).
+		const all = (await getDb().getCustomers({})) as unknown as Customer[];
+		return rankCustomerMatches(all, term, limit);
 	}
 	const idb = await import("./idbService");
-	return idb.searchCachedCustomers(term);
+	return idb.searchCachedCustomers(term, limit);
 }
 
 export async function addCachedCustomer(customer: Customer): Promise<void> {

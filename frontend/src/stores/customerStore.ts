@@ -44,44 +44,44 @@ export const useCustomerStore = defineStore("customers", () => {
 
 	const hasCredit = computed(() => (customerCredit.value?.total_credit || 0) > 0);
 
-	async function searchCustomers(term = "", posProfile?: string): Promise<void> {
-		if (isLoading.value) return;
-		isLoading.value = true;
-
+	/**
+	 * Customers matching ``term`` without touching the picker's list: online from the
+	 * server, offline (or when the server fails) from the cached rows. Both find a farm
+	 * by a contact's name, email or phone (MuleCity-1ptj).
+	 */
+	async function findCustomers(term: string, posProfile?: string, limit = 100): Promise<Customer[]> {
+		const offlineCapable = usePosStore().useOfflineMode;
+		if (!isOnline() && offlineCapable) return searchCachedCustomers(term, limit);
+		if (!isOnline()) return [];
 		try {
-			const searchText = term || searchTerm.value;
-
-			if (!isOnline() && usePosStore().useOfflineMode) {
-				const cached = await searchCachedCustomers(searchText);
-				customers.value = cached;
-				return;
-			}
-
-			if (isOnline()) {
-				const result = await call<Customer[]>("xpos.api.customers.get_customers", {
-					search_term: searchText,
-					pos_profile: posProfile || usePosStore().profileName || "",
-					limit: 100,
-				});
-				customers.value = result || [];
-			}
+			const result = await call<Customer[]>("xpos.api.customers.get_customers", {
+				search_term: term,
+				pos_profile: posProfile || usePosStore().profileName || "",
+				limit,
+			});
+			return result || [];
 		} catch (error) {
 			console.error("Error searching customers:", error);
-
-			if (usePosStore().useOfflineMode) {
-				try {
-					const cached = await searchCachedCustomers(term || searchTerm.value);
-					if (cached.length > 0) {
-						customers.value = cached;
-						return;
-					}
-				} catch (cacheError) {
-					console.warn("[XPOS Offline] Failed to load cached customers:", cacheError);
-				}
+			if (!offlineCapable) return [];
+			try {
+				return await searchCachedCustomers(term, limit);
+			} catch (cacheError) {
+				console.warn("[XPOS Offline] Failed to load cached customers:", cacheError);
+				return [];
 			}
-			customers.value = [];
+		}
+	}
+
+	// The newest search wins: a slower earlier reply never replaces what the cashier typed last.
+	let searchSeq = 0;
+	async function searchCustomers(term = "", posProfile?: string): Promise<void> {
+		const seq = ++searchSeq;
+		isLoading.value = true;
+		try {
+			const found = await findCustomers(term || searchTerm.value, posProfile, isOnline() ? 100 : 20);
+			if (seq === searchSeq) customers.value = found;
 		} finally {
-			isLoading.value = false;
+			if (seq === searchSeq) isLoading.value = false;
 		}
 	}
 
@@ -354,6 +354,7 @@ export const useCustomerStore = defineStore("customers", () => {
 		hasCredit,
 		// Actions
 		searchCustomers,
+		findCustomers,
 		cacheAllCustomers,
 		createCustomer,
 		updateCustomer,

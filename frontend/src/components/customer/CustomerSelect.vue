@@ -27,7 +27,7 @@
 							ref="searchInput"
 							v-model="search"
 							type="text"
-							:placeholder="__('Search by name, phone, email...')"
+							:placeholder="__('Search by farm, contact, phone, email...')"
 							class="ps-9"
 							@input="debouncedSearch"
 							@keydown.down.prevent="moveHighlight(1)"
@@ -76,6 +76,10 @@
 							<div class="flex-1 min-w-0">
 								<p class="text-sm font-medium text-foreground truncate">
 									{{ cust.customer_name }}
+								</p>
+								<!-- Found through a person or a number, not the farm's own name: say which (MuleCity-1ptj). -->
+								<p v-if="matchVia(cust)" class="text-xs font-medium text-primary truncate" data-testid="customer-match-via">
+									{{ __("via") }} {{ matchVia(cust) }}
 								</p>
 								<p v-if="typeof cust.xpos_sales_12mo === 'number'" class="text-xs text-foreground">
 									{{ formatCustomerSales(cust.xpos_sales_12mo, String(cust.xpos_sales_currency || 'USD')) }} · {{ __("sales in past 12 months") }}
@@ -262,6 +266,7 @@ import { Search, ChevronRight, Users, UserPlus, ArrowLeft, Loader2 } from "lucid
 import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import __ from "@/lib/translate";
 import type { Customer } from "@/types/pos.types";
+import { matchCustomer } from "@/utils/customerMatch";
 import DateTimeInput from "../ui/date-time-input/DateTimeInput.vue";
 
 const cartStore = useCartStore();
@@ -424,6 +429,10 @@ async function createAndSelect() {
 	} finally {
 		isCreating.value = false;
 	}
+}
+
+function matchVia(cust: Customer): string | null {
+	return search.value.trim() ? matchCustomer(cust, search.value)?.via ?? null : null;
 }
 
 function formatCustomerSales(amount: number, currency: string) {

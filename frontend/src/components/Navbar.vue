@@ -73,7 +73,7 @@
 
 		<div class="flex-1"></div>
 
-		<TooltipWrapper :content="__('Search Items (Ctrl+K)')">
+		<TooltipWrapper :content="__('Search items and customers (Ctrl+K)')">
 			<Button
 				variant="ghost"
 				size="sm"

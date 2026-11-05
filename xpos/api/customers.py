@@ -60,6 +60,15 @@ def _customer_search_fields() -> list[str]:
 	return fields
 
 
+def _customer_phone_fields(meta) -> list[str]:
+	"""Customer's own phone columns: mobile_no and any Phone-type field."""
+	fields = ["mobile_no"]
+	for df in meta.fields:
+		if df.fieldtype == "Phone" and df.fieldname not in fields:
+			fields.append(df.fieldname)
+	return fields
+
+
 def _search_description(customer: dict, fields: list[str]) -> str:
 	"""The search-field values desk shows under a customer, in configured order."""
 	# Search configuration is broader than useful counter identification.
@@ -78,12 +87,14 @@ def _search_description(customer: dict, fields: list[str]) -> str:
 def get_customers(
 	search_term: str = "", limit: int = 20, pos_profile: str = None, preload: int = 0, with_metadata: int = 0
 ):
-	"""Search customers by name, mobile, email, tax ID, or Customer's search fields.
+	"""Search customers by name, mobile, email, tax ID, Customer's search fields,
+	or a linked Contact's name, email or phone (phones compared digits-only).
 
 	The Customer DocType's standard ``search_fields`` (Customize Form) are searched
 	and shown too, as desk's customer dropdown does, so a site can make any code
 	that tells same-named customers apart findable and visible. A customer whose
-	ID or search-field value equals the term exactly is listed first.
+	ID or search-field value equals the term exactly is listed first, then those
+	matching on their own fields, then those found only through a Contact.
 
 	If a POS Profile is provided, respects customer group restrictions.
 	"""
@@ -158,37 +169,45 @@ def get_customers(
 
 	if search_term:
 		search_term = search_term.strip()
-		phone_condition = ""
-		phone_digits = re.sub(r"\D", "", search_term)
-		if len(phone_digits) >= 4:
-			# Imported phones live on Contacts, not necessarily Customer.mobile_no.
-			phone_condition = """ OR
-			 REGEXP_REPLACE(IFNULL(c.mobile_no, ''), '[^0-9]', '') LIKE %(phone)s
-			 OR EXISTS (
-			 SELECT 1 FROM `tabDynamic Link` dl
-			 JOIN `tabContact Phone` cp ON cp.parent = dl.parent
-			 WHERE dl.parenttype = 'Contact' AND dl.link_doctype = 'Customer'
-			 AND dl.link_name = c.name
-			 AND REGEXP_REPLACE(cp.phone, '[^0-9]', '') LIKE %(phone)s
-			 )"""
-			values["phone"] = f"%{phone_digits}%"
-		conditions += """ AND (
-			c.name LIKE %(search)s
-			OR c.customer_name LIKE %(search)s
-			OR c.mobile_no LIKE %(search)s
-			OR c.email_id LIKE %(search)s
-			OR c.tax_id LIKE %(search)s
-			{extra_like}
-			{phone_condition}
-		)""".format(
-			extra_like="".join(f" OR c.`{f}` LIKE %(search)s" for f in extra_fields),
-			phone_condition=phone_condition,
-		)
 		values["search"] = f"%{search_term}%"
+		own_like = " OR ".join(
+			f"c.`{f}` LIKE %(search)s"
+			for f in ("name", "customer_name", "mobile_no", "email_id", "tax_id", *extra_fields)
+		)
+		phone_digits = re.sub(r"\D", "", search_term)
+		own_phone = contact_phone = ""
+		if len(phone_digits) >= 4:
+			# Digits only, so "(919) 555-1234", "919-555-1234" and "1234" all find a
+			# number however it was typed into ERPNext. Imported phones live on
+			# Contacts, not necessarily on the Customer's own phone fields.
+			values["phone"] = f"%{phone_digits}%"
+			own_phone = "".join(
+				f" OR REGEXP_REPLACE(IFNULL(c.`{f}`, ''), '[^0-9]', '') LIKE %(phone)s"
+				for f in _customer_phone_fields(meta)
+			)
+			contact_phone = """ OR EXISTS (
+				SELECT 1 FROM `tabContact Phone` cp WHERE cp.parent = dl.parent
+				AND REGEXP_REPLACE(IFNULL(cp.phone, ''), '[^0-9]', '') LIKE %(phone)s)"""
+		# A person on the account finds the farm (Mule City, MuleCity-1ptj): the
+		# customer's linked Contacts by name, email or phone.
+		contact_match = f"""c.name IN (
+			SELECT dl.link_name FROM `tabDynamic Link` dl
+			JOIN `tabContact` ct ON ct.name = dl.parent
+			WHERE dl.parenttype = 'Contact' AND dl.link_doctype = 'Customer'
+			AND (
+				ct.full_name LIKE %(search)s
+				OR CONCAT_WS(' ', ct.first_name, ct.last_name) LIKE %(search)s
+				OR EXISTS (SELECT 1 FROM `tabContact Email` ce WHERE ce.parent = dl.parent
+					AND ce.email_id LIKE %(search)s)
+				{contact_phone}
+			)
+		)"""
+		conditions += f" AND ({own_like}{own_phone} OR {contact_match})"
 		# Exact hits first: typing a short code must not bury that customer under
-		# every phone number or ID that merely contains it.
+		# every phone number or ID that merely contains it. Then the customer's own
+		# name, code or numbers, then customers found only through a contact.
 		exact = " OR ".join(f"c.`{f}` = %(exact)s" for f in ("name", "customer_name", *extra_fields))
-		order_by = f"CASE WHEN {exact} THEN 0 ELSE 1 END, {order_by}"
+		order_by = f"CASE WHEN {exact} THEN 0 WHEN {own_like}{own_phone} THEN 1 ELSE 2 END, {order_by}"
 		values["exact"] = search_term
 
 	extra_columns = "".join(f", c.`{f}`" for f in extra_fields if f not in _CUSTOMER_LIST_COLUMNS)

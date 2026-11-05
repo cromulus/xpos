@@ -16,7 +16,7 @@
 					@keydown.up.prevent="navigateUp"
 					@keydown.enter.prevent="selectHighlighted"
 					@keydown.escape.prevent="close"
-					:placeholder="__('Search items, pages, actions...')"
+					:placeholder="__('Search items, customers, contacts, phones, pages...')"
 					class="flex-1 h-12 px-3 text-sm bg-transparent border-0 outline-none focus:ring-0 text-foreground placeholder:text-muted-foreground"
 				/>
 				<kbd
@@ -161,6 +161,12 @@
 						<span class="text-muted-foreground">{{ __("Search items by name or code") }}</span>
 					</div>
 					<div class="flex gap-3 items-start">
+						<code class="shrink-0 px-2 py-0.5 rounded bg-muted text-xs font-mono">Jane Sharp</code>
+						<span class="text-muted-foreground">{{
+							__("Find a customer by farm, contact name, email or phone (last 4 digits work)")
+						}}</span>
+					</div>
+					<div class="flex gap-3 items-start">
 						<code class="shrink-0 px-2 py-0.5 rounded bg-muted text-xs font-mono">go pos</code>
 						<span class="text-muted-foreground">{{
 							__("Navigate to a page (pos, orders, reports, expenses...)")
@@ -255,18 +261,22 @@ import { useMoney } from "@/composables/useMoney";
 import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
 import { usePaymentStore } from "@/stores/paymentStore";
-import type { POSItem } from "@/types/pos.types";
+import type { Customer, POSItem } from "@/types/pos.types";
+import { matchCustomer } from "@/utils/customerMatch";
+import { isCalculation } from "@/utils/commandSearch";
 import __ from "@/lib/translate";
+
+const CUSTOMER_RESULTS = 8;
 
 interface CommandResult {
 	id: string;
-	type: "page" | "action" | "item" | "calculator" | "help";
+	type: "page" | "action" | "customer" | "item" | "calculator" | "help";
 	label: string;
 	description?: string;
 	shortcut?: string;
 	icon?: Component;
 	action?: () => void;
-	meta?: POSItem | Record<string, unknown>;
+	meta?: POSItem | Customer | Record<string, unknown>;
 	_flatIndex?: number;
 }
 
@@ -534,6 +544,7 @@ const groupedResults = computed<ResultGroup[]>(() => {
 
 	const pageResults = results.value.filter((r) => r.type === "page");
 	const actionResults = results.value.filter((r) => r.type === "action");
+	const customerResults = results.value.filter((r) => r.type === "customer");
 	const itemResults = results.value.filter((r) => r.type === "item");
 	const calcResults = results.value.filter((r) => r.type === "calculator");
 	const helpResults = results.value.filter((r) => r.type === "help");
@@ -554,6 +565,12 @@ const groupedResults = computed<ResultGroup[]>(() => {
 		groups.push({
 			label: "Pages",
 			items: pageResults.map((r) => ({ ...r, _flatIndex: flatIdx++ })),
+		});
+	}
+	if (customerResults.length > 0) {
+		groups.push({
+			label: "Customers",
+			items: customerResults.map((r) => ({ ...r, _flatIndex: flatIdx++ })),
 		});
 	}
 	if (itemResults.length > 0) {
@@ -578,6 +595,8 @@ function getResultIconBg(type: string): string {
 			return "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300";
 		case "action":
 			return "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300";
+		case "customer":
+			return "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300";
 		case "item":
 			return "bg-muted";
 		case "calculator":
@@ -653,8 +672,8 @@ function onSearch() {
 	}
 	showHelp.value = false;
 
-	// Instant: calculator
-	if (term.startsWith("=") || /^\(?\d+[\d\s+\-*/().%]+/.test(term)) {
+	// Instant: calculator. A phone number ("(919) 555-1234", "1234") is a search, not a sum.
+	if (isCalculation(term)) {
 		handleCalculator(term);
 		return;
 	}
@@ -697,9 +716,12 @@ function onSearch() {
 	results.value = localResults;
 	highlightedIndex.value = 0;
 
-	// Debounced item search (skip if prefix commands)
+	// Debounced item and customer search (skip if prefix commands)
 	if (query && !query.startsWith("go ") && !query.startsWith("=") && query !== "?") {
-		debounceTimer = setTimeout(() => fetchItems(query), 250);
+		debounceTimer = setTimeout(() => {
+			fetchItems(query);
+			fetchCustomers(term);
+		}, 250);
 	}
 }
 
@@ -735,7 +757,40 @@ function handleCalculator(term: string) {
 	}
 }
 
+// Pending item/customer lookups; the spinner shows until both have answered.
+let pending = 0;
+
+async function fetchCustomers(term: string) {
+	pending++;
+	isSearching.value = true;
+	try {
+		// A farm by its name or code, or by a contact's name, email or phone (MuleCity-1ptj).
+		const found = await customerStore.findCustomers(term, props.posProfile, CUSTOMER_RESULTS);
+		if (searchTerm.value.trim() !== term) return;
+		const customerResults: CommandResult[] = found.slice(0, CUSTOMER_RESULTS).map((customer) => {
+			const via = matchCustomer(customer, term)?.via;
+			const code = customer.mule_filepro_alias_codes || (customer.name !== customer.customer_name ? customer.name : "");
+			return {
+				id: `customer-${customer.name}`,
+				type: "customer" as const,
+				label: customer.customer_name || customer.name,
+				description: [via ? `${__("via")} ${via}` : "", String(code || "")].filter(Boolean).join(" · "),
+				icon: Users,
+				meta: customer,
+				action: () => cartStore.setCustomer(customer),
+			};
+		});
+		const others = results.value.filter((r) => r.type !== "customer");
+		results.value = [...others, ...customerResults];
+	} catch {
+		// Keep existing results on error
+	} finally {
+		if (--pending === 0) isSearching.value = false;
+	}
+}
+
 async function fetchItems(query: string) {
+	pending++;
 	isSearching.value = true;
 	try {
 		const result = await call<POSItem[]>("xpos.api.items.get_pos_items", {
@@ -755,13 +810,14 @@ async function fetchItems(query: string) {
 				action: () => emit("selectItem", item),
 			}));
 			// Merge: keep existing local results, append items
+			if (searchTerm.value.trim().toLowerCase() !== query) return;
 			const nonItems = results.value.filter((r) => r.type !== "item");
 			results.value = [...nonItems, ...itemResults];
 		}
 	} catch {
 		// Keep existing local results on error
 	} finally {
-		isSearching.value = false;
+		if (--pending === 0) isSearching.value = false;
 	}
 }
 

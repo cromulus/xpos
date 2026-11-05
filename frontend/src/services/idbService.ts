@@ -1,3 +1,4 @@
+import { rankCustomerMatches } from "@/utils/customerMatch";
 import Dexie, { type PromiseExtended, type Table } from "dexie";
 import type { POSItem, ItemGroup, Customer } from "@/types/pos.types";
 import { sanitizeForIdb } from "./idbSanitize";
@@ -376,26 +377,10 @@ export async function getCachedCustomerByName(name: string): Promise<Customer | 
 	return db.customers.get(name);
 }
 
-export async function searchCachedCustomers(term: string): Promise<Customer[]> {
+export async function searchCachedCustomers(term: string, limit = 20): Promise<Customer[]> {
+	// Farm name or code, a contact's name or email, or a phone by digits (MuleCity-1ptj).
 	const all = await getCachedCustomers();
-	if (!term) return all.slice(0, 20);
-
-	const lower = term.toLowerCase();
-	return all
-		.filter(
-			(c) =>
-				c.customer_name.toLowerCase().includes(lower) ||
-				(term.replace(/\D/g, "").length >= 4 &&
-					[c.mobile_no, ...(c.xpos_phone_numbers || [])].some(phone =>
-						phone?.replace(/\D/g, "").includes(term.replace(/\D/g, "")))) ||
-				(c.mobile_no && c.mobile_no.toLowerCase().includes(lower)) ||
-				(c.email_id && c.email_id.toLowerCase().includes(lower)) ||
-				c.name.toLowerCase().includes(lower) ||
-				(typeof c.mule_filepro_alias_codes === "string" && c.mule_filepro_alias_codes.toLowerCase().includes(lower)) ||
-				(typeof c.xpos_search_description === "string" &&
-					c.xpos_search_description.toLowerCase().includes(lower)),
-		)
-		.slice(0, 20);
+	return rankCustomerMatches(all, term, limit);
 }
 
 export async function addCachedCustomer(customer: Customer): Promise<void> {
