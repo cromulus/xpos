@@ -59,6 +59,8 @@ import {
 	deliveryLine,
 	deliveryOffered,
 	wholeMiles,
+	perMileLine,
+	pricedByMiles,
 	isWalkInCustomer,
 	quoteOffline,
 	type DeliveryPolicy,
@@ -155,6 +157,27 @@ describe("the till prices delivery exactly as the site does (shared vectors)", (
 		expect(quoteOffline(policy, details(80, false), farm, 1600)).toMatchObject({ amount: 80, source: "standing", description: "Standing rate" });
 		expect(quoteOffline(policy, details(0, false), farm, 1600)).toMatchObject({ amount: 105, source: "miles", band: 2 });
 		expect(quoteOffline(policy, details(0, false), { ...farm, miles: null }, 1600)).toMatchObject({ amount: null, source: "none" });
+	});
+
+	it.each(vectors.per_mile_cases)("a customer's own rate a mile: $case", ({ miles, rate_per_mile, qty, uom, rate, amount }) => {
+		expect(perMileLine(vectors.policy, miles, rate_per_mile)).toMatchObject({ qty, uom, rate, amount });
+	});
+
+	// Bill 2026-11-05 (MuleCity-ua51): "if there is a historical delivery price, or historical
+	// price per mile, that stays. otherwise we use the default." The site's quote_line cases.
+	it.each(vectors.quote_cases)("which price applies: $case", ({ customer, miles, weight_lb, source, qty, uom, rate, amount, band }) => {
+		const details = customer ? { ...customer, addresses: [] } : null;
+		const quote = quoteOffline(vectors.policy, details, { ...farm, miles }, weight_lb);
+		expect(quote).toMatchObject({ source, qty, uom, rate, amount, band });
+	});
+
+	it("words a customer's rate a mile as the site does", () => {
+		const details = { standing_charge: 0, no_charge: false, rate_per_mile: 3, addresses: [] };
+		const quote = quoteOffline(policy, details, { ...farm, miles: 48.8 }, 500);
+		expect(quote).toMatchObject({ source: "per_mile", rule: "Customer's rate a mile", qty: 48, uom: "Mile", rate: 3, amount: 144 });
+		expect(quote.description).toBe("48.8 mi at $3.00 a mile (customer's rate)");
+		expect(pricedByMiles(quote)).toBe(true);
+		expect(pricedByMiles({ source: "standing" })).toBe(false);
 	});
 
 	it("weighs the load as ERPNext does: weight per stock unit x qty x conversion factor", () => {

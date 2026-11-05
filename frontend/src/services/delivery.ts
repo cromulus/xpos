@@ -10,9 +10,12 @@
  * sold by the mile, qty = the miles rounded DOWN, unit "Mile", at the band's
  * rate a mile; under the local miles the flat local charge, qty 1 in the
  * item's own unit. `quoteOffline` mirrors its
- * precedence (pricing/delivery.py quote_delivery): no charge, then the standing
- * charge, then the address's miles, else the clerk types it. Both are checked
- * against the site's own shared cases (tests/fixtures/delivery_charge_vectors.json).
+ * precedence (pricing/delivery_charge.py quote_line): no charge, then the
+ * standing charge, then the customer's own rate a mile (MuleCity-ua51, Bill
+ * 2026-11-05: "if there is a historical delivery price, or historical price per
+ * mile, that stays. otherwise we use the default."), then the address's miles,
+ * else the clerk types it. All are checked against the site's own shared cases
+ * (tests/fixtures/delivery_charge_vectors.json: cases, per_mile_cases, quote_cases).
  * `cartWeight` weighs the load as ERPNext does (weight_per_unit x stock qty).
  */
 
@@ -58,10 +61,17 @@ export type DeliveryMilesSource = "address" | "manual";
 export interface CustomerDelivery {
 	standing_charge: number;
 	no_charge: boolean;
+	/** The customer's own rate a mile (MuleCity-ua51); older sites send none. */
+	rate_per_mile?: number;
 	addresses: DeliveryAddress[];
 }
 
-export type QuoteSource = "exception" | "standing" | "miles" | "none";
+export type QuoteSource = "exception" | "standing" | "per_mile" | "miles" | "none";
+
+/** A quote priced from the address's miles: the default, or the customer's own rate a mile. */
+export function pricedByMiles(quote: Pick<DeliveryQuote, "source">): boolean {
+	return quote.source === "miles" || quote.source === "per_mile";
+}
 
 export interface DeliveryQuote {
 	/** Null when the clerk must type the charge. */
@@ -127,6 +137,20 @@ export function deliveryLine(policy: DeliveryPolicy, miles: number, weightLb: nu
 	return { qty, uom: MILE_UOM, rate, amount, per_mile: true };
 }
 
+/**
+ * The line for a customer's own rate a mile (the site's per_mile_line, MuleCity-ua51):
+ * whole miles at that rate whatever the load weighs, never below the local charge.
+ */
+export function perMileLine(policy: DeliveryPolicy, miles: number, ratePerMile: number): DeliveryLine {
+	const qty = wholeMiles(miles);
+	const rate = cents(Number(ratePerMile));
+	const amount = cents(qty * rate);
+	if (amount < policy.local_charge) {
+		return { qty: 1, uom: null, rate: policy.local_charge, amount: policy.local_charge, per_mile: false };
+	}
+	return { qty, uom: MILE_UOM, rate, amount, per_mile: true };
+}
+
 /** Dollar delivery charge for a load of `weightLb` driven `miles` one way. */
 export function deliveryCharge(policy: DeliveryPolicy, miles: number, weightLb: number): number {
 	return deliveryLine(policy, miles, weightLb).amount;
@@ -145,6 +169,19 @@ export function quoteOffline(
 		return { ...base, amount: 0, rate: 0, source: "exception", rule: "No delivery charge", description: "No delivery charge (standing exception)" };
 	if ((customer?.standing_charge || 0) > 0)
 		return { ...base, amount: customer!.standing_charge, rate: customer!.standing_charge, source: "standing", rule: "Standing delivery charge", description: "Standing rate" };
+	if (miles && miles > 0 && (customer?.rate_per_mile || 0) > 0) {
+		const line = perMileLine(policy, miles, customer!.rate_per_mile!);
+		return {
+			...base,
+			amount: line.amount,
+			qty: line.qty,
+			uom: line.uom,
+			rate: line.rate,
+			source: "per_mile",
+			rule: "Customer's rate a mile",
+			description: line.uom ? `${miles} mi at $${line.rate.toFixed(2)} a mile (customer's rate)` : `${miles} mi, local delivery (customer's rate a mile)`,
+		};
+	}
 	if (miles && miles > 0) {
 		const band = bandOf(policy, weightLb);
 		const pounds = Math.round(weightLb).toLocaleString("en-US");

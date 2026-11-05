@@ -1,5 +1,23 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc58 (contains mc57)
+
+### A customer's own delivery price or rate a mile stays (MuleCity-ua51)
+
+Bill 2026-11-05: "we have an override: if there is a historical delivery price,
+or historical price per mile, that stays. otherwise we use the default."
+
+- **Offline quote** (`services/delivery.ts`): a customer row's
+  `xpos_delivery.rate_per_mile` (sent by the site's `xpos_delivery_customers`;
+  older sites send none) prices the line as whole miles x that rate whatever the
+  load weighs (`perMileLine`, never below the local charge), source `per_mile`.
+  Precedence follows the site's `quote_line`: no charge, standing charge, rate
+  a mile, default by the mile, else typed. The shared vectors
+  (`tests/fixtures/delivery_charge_vectors.json`) carry the site's new
+  `per_mile_cases` and `quote_cases`.
+- A `per_mile` quote from typed miles is described and flagged like a `miles`
+  one (`pricedByMiles`; server `note_typed_miles`).
+
 ## mule-v2.10.1-mc57 (contains mc56)
 
 ### Offline suite specs follow Frappe 16.54 and delivery by the mile (MuleCity-wx9f, 31dv)

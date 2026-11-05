@@ -14,10 +14,10 @@ What (site hooks, all optional; with none, XPOS offers no quoted delivery)
       ``local_charge``, ``bands: [{min_lb, pct}]``) and ``item_code``, the
       delivery line's item.
     * ``xpos_delivery_quote(customer, address, weight_lb)`` -> ``{amount (None
-      when the clerk must type it), source (exception|standing|miles|none), rule,
+      when the clerk must type it), source (exception|standing|per_mile|miles|none), rule,
       miles, miles_source, band, description}``.
     * ``xpos_delivery_customers(customer_names)`` -> ``{name: {standing_charge,
-      no_charge, addresses: [{name, title, address_line1, address_line2, city,
+      no_charge, rate_per_mile (optional, MuleCity-ua51), addresses: [{name, title, address_line1, address_line2, city,
       state, pincode, miles, miles_source, is_primary_address,
       is_shipping_address}]}}``, one batch for the customer search rows the till
       caches offline (the offline picker shows, searches and preselects by
@@ -62,6 +62,8 @@ POLICY_HOOK = "xpos_delivery_policy"
 QUOTE_HOOK = "xpos_delivery_quote"
 CUSTOMERS_HOOK = "xpos_delivery_customers"
 TYPED_MILES_HOOK = "xpos_delivery_typed_miles"
+# Quote sources priced from an address's miles (the till's pricedByMiles).
+MILES_SOURCES = ("miles", "per_mile")
 WALK_IN_HOOK = "xpos_walk_in_customers"
 ADD_ADDRESS_HOOK = "xpos_add_delivery_address"
 AUTOCOMPLETE_HOOK = "xpos_address_autocomplete"
@@ -271,7 +273,8 @@ def note_typed_miles(invoice_doc, data: dict) -> None:
 	"""Flag a sale whose delivery was priced from typed miles: a Comment with the typed and current miles."""
 	quote = data.get("xpos_delivery") or {}
 	source = quote.get("miles_source")
-	if quote.get("source") != "miles" or not source or source == LOOKED_UP_MILES:
+	# Priced from the address's miles: the default, or the customer's own rate a mile (MuleCity-ua51).
+	if quote.get("source") not in MILES_SOURCES or not source or source == LOOKED_UP_MILES:
 		return
 	address = invoice_doc.get("shipping_address_name") or quote.get("address")
 	details = customer_delivery([invoice_doc.customer]).get(invoice_doc.customer) or {}

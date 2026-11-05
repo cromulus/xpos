@@ -59,6 +59,7 @@ import { roundTo } from "@/utils/numberFormat";
 import {
 	TYPED_OFFLINE,
 	isLocalAddress,
+	pricedByMiles,
 	fullAddress,
 	type CustomerDelivery,
 	type DeliveryAddress,
@@ -2581,7 +2582,7 @@ export const useCartStore = defineStore("cart", () => {
 		options: { milesSource?: DeliveryMilesSource; date?: string } = {},
 	): void {
 		const item = policy.item!;
-		const typed = quote.source === "miles" && (address.miles_source === TYPED_OFFLINE || options.milesSource === "manual");
+		const typed = pricedByMiles(quote) && (address.miles_source === TYPED_OFFLINE || options.milesSource === "manual");
 		const description = !typed
 			? quote.description
 			: `${quote.description}, ${address.miles_source === TYPED_OFFLINE ? "miles typed offline" : "miles typed at the till"}`;

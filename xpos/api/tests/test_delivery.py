@@ -267,6 +267,16 @@ class TestTheSaleIsFlagged(HookCase):
 		self.assertIn("now has 18.2 mi", text)
 		self.assertIn("not repriced", text)
 
+	def test_a_customers_rate_a_mile_from_typed_miles_is_flagged_too(self):
+		"""MuleCity-ua51: a customer's own rate a mile is priced from the address's miles as well."""
+		self.with_hooks(xpos_delivery_customers=lambda names: {"CUST": {"addresses": [{"name": "ADDR-NEW", "miles": 18.2}]}})
+		doc = self.invoice()
+		with patch.object(delivery.frappe.db, "exists", return_value=None):
+			delivery.note_typed_miles(doc, {"xpos_delivery": {"source": "per_mile", "miles": 17.4,
+				"miles_source": "manual_offline"}})
+		(kind, text), _ = doc.add_comment.call_args
+		self.assertIn("17.4 mi typed there (manual_offline) to ADDR-NEW", text)
+
 	def test_a_parked_tab_is_flagged_when_saved_and_only_once(self):
 		import inspect
 

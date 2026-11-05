@@ -1,5 +1,5 @@
 {
- "about": "Shared delivery-charge cases (MuleCity-l3p3, bi3t): pricing/delivery_charge.py (delivery_line) and the XPOS fork must give each case's qty, uom, rate and amount for this policy (the line is sold by the mile, miles rounded down; uom null = the item's own unit, the flat local charge). seed_amount is the earlier rounded charge scripts/delivery_rates.py priced the 2026-09 standing-charge seed with.",
+ "about": "Shared delivery-charge cases (MuleCity-l3p3, bi3t): pricing/delivery_charge.py (delivery_line) and the XPOS fork must give each case's qty, uom, rate and amount for this policy (the line is sold by the mile, miles rounded down; uom null = the item's own unit, the flat local charge). seed_amount is the earlier rounded charge scripts/delivery_rates.py priced the 2026-09 standing-charge seed with. per_mile_cases: a customer's own historical rate a mile (MuleCity-ua51, pricing/delivery_charge.py per_mile_line): whole miles x that rate whatever the weight, never below the local charge. quote_cases: which price applies (quote_line, and the till's quoteOffline): no delivery charge, then the customer's flat delivery price, then their rate a mile, then the default by the mile, else none (the clerk types it).",
  "policy": {
   "rate_per_mile": 5.0,
   "round_to": 5.0,
@@ -252,6 +252,204 @@
    "uom": "Mile",
    "rate": 1.25,
    "amount": 7.5
+  }
+ ],
+ "per_mile_cases": [
+  {
+   "case": "Saving Grace at Matt's $3 a mile: 48.8 mi -> 48 x $3.00",
+   "miles": 48.8,
+   "rate_per_mile": 3.0,
+   "qty": 48,
+   "uom": "Mile",
+   "rate": 3.0,
+   "amount": 144.0
+  },
+  {
+   "case": "the rate ignores the load's weight band ($7 a mile, 3.2 mi -> 3 x $7)",
+   "miles": 3.2,
+   "rate_per_mile": 7.0,
+   "qty": 3,
+   "uom": "Mile",
+   "rate": 7.0,
+   "amount": 21.0
+  },
+  {
+   "case": "under the local charge is the flat local charge",
+   "miles": 1.9,
+   "rate_per_mile": 3.0,
+   "qty": 1,
+   "uom": null,
+   "rate": 5.0,
+   "amount": 5.0
+  },
+  {
+   "case": "zero miles is the flat local charge",
+   "miles": 0.4,
+   "rate_per_mile": 5.0,
+   "qty": 1,
+   "uom": null,
+   "rate": 5.0,
+   "amount": 5.0
+  },
+  {
+   "case": "exactly the local charge is by the mile",
+   "miles": 2.0,
+   "rate_per_mile": 2.5,
+   "qty": 2,
+   "uom": "Mile",
+   "rate": 2.5,
+   "amount": 5.0
+  },
+  {
+   "case": "cents rate, miles rounded down: 57.1 mi at $4.15",
+   "miles": 57.1,
+   "rate_per_mile": 4.15,
+   "qty": 57,
+   "uom": "Mile",
+   "rate": 4.15,
+   "amount": 236.55
+  }
+ ],
+ "quote_cases": [
+  {
+   "case": "no delivery charge wins over everything",
+   "customer": {
+    "no_charge": true,
+    "standing_charge": 150,
+    "rate_per_mile": 3
+   },
+   "miles": 40,
+   "weight_lb": 4000,
+   "source": "exception",
+   "qty": 1,
+   "uom": null,
+   "rate": 0.0,
+   "amount": 0.0,
+   "band": null
+  },
+  {
+   "case": "a flat historical price stays (Saving Grace $150, not the $240 default)",
+   "customer": {
+    "no_charge": false,
+    "standing_charge": 150,
+    "rate_per_mile": 0
+   },
+   "miles": 48.8,
+   "weight_lb": 4000,
+   "source": "standing",
+   "qty": 1,
+   "uom": null,
+   "rate": 150.0,
+   "amount": 150.0,
+   "band": null
+  },
+  {
+   "case": "a flat price wins over a rate a mile",
+   "customer": {
+    "no_charge": false,
+    "standing_charge": 150,
+    "rate_per_mile": 3
+   },
+   "miles": 48.8,
+   "weight_lb": 4000,
+   "source": "standing",
+   "qty": 1,
+   "uom": null,
+   "rate": 150.0,
+   "amount": 150.0,
+   "band": null
+  },
+  {
+   "case": "a flat price needs no miles",
+   "customer": {
+    "no_charge": false,
+    "standing_charge": 63,
+    "rate_per_mile": 0
+   },
+   "miles": 0,
+   "weight_lb": 500,
+   "source": "standing",
+   "qty": 1,
+   "uom": null,
+   "rate": 63.0,
+   "amount": 63.0,
+   "band": null
+  },
+  {
+   "case": "a historical rate a mile stays, whatever the load",
+   "customer": {
+    "no_charge": false,
+    "standing_charge": 0,
+    "rate_per_mile": 3
+   },
+   "miles": 48.8,
+   "weight_lb": 500,
+   "source": "per_mile",
+   "qty": 48,
+   "uom": "Mile",
+   "rate": 3.0,
+   "amount": 144.0,
+   "band": null
+  },
+  {
+   "case": "a rate a mile needs the address's miles",
+   "customer": {
+    "no_charge": false,
+    "standing_charge": 0,
+    "rate_per_mile": 3
+   },
+   "miles": 0,
+   "weight_lb": 500,
+   "source": "none",
+   "qty": 1,
+   "uom": null,
+   "rate": null,
+   "amount": null,
+   "band": null
+  },
+  {
+   "case": "no history: the default by the mile (48.8 mi full load = 48 x $5)",
+   "customer": {
+    "no_charge": false,
+    "standing_charge": 0,
+    "rate_per_mile": 0
+   },
+   "miles": 48.8,
+   "weight_lb": 4000,
+   "source": "miles",
+   "qty": 48,
+   "uom": "Mile",
+   "rate": 5.0,
+   "amount": 240.0,
+   "band": 4
+  },
+  {
+   "case": "no customer row (a new customer): the default",
+   "customer": null,
+   "miles": 20.9,
+   "weight_lb": 1500,
+   "source": "miles",
+   "qty": 20,
+   "uom": "Mile",
+   "rate": 2.5,
+   "amount": 50.0,
+   "band": 2
+  },
+  {
+   "case": "no history and no miles: the clerk types it",
+   "customer": {
+    "no_charge": false,
+    "standing_charge": 0,
+    "rate_per_mile": 0
+   },
+   "miles": null,
+   "weight_lb": 4000,
+   "source": "none",
+   "qty": 1,
+   "uom": null,
+   "rate": null,
+   "amount": null,
+   "band": null
   }
  ]
 }
