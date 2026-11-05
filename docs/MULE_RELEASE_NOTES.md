@@ -39,6 +39,14 @@ number of miles down."
   delivery line; a standing, free or typed charge is qty 1 in the item's own
   unit; another address re-sets the miles on the one line. Vectors re-copied.
 
+Validation: full frontend suite (102 files, 1,079 tests), TypeScript checks and
+production build pass; native server tests on erp2 (test_counter_balance_payment,
+test_xpos_delivery, test_delivery_miles, test_endpoint_exposure,
+test_xpos_counter_settings and the delivery and charge suites) pass;
+browser-checked on an erp2 slot: Pay balance alone (Credit Card), with feed
+(part payment, cash), and delivery by the mile (7.5 mi -> 7 Mile, changed to
+14.5 mi -> 14 Mile). erp2:offline not run (broken today by MuleCity-wx9f).
+
 ## mule-v2.10.1-mc55 (contains mc54)
 
 ### No customer means the default sales tax; a busy server never strands the till (MuleCity-s9jt)
