@@ -96,10 +96,11 @@ describe("delivery while the store's internet is down", () => {
 									invoiceComments(posted[0].name).then((comments) =>
 										expect(comments.join(" ")).to.contain("12.5 mi typed there (manual_offline)"));
 									cy.benchCall("frappe.client.get", { doctype: "Sales Invoice", name: posted[0].name }).then(
-										(sale: { items: Array<{ item_code: string; rate: number; description: string }> }) => {
+										(sale: { items: Array<{ item_code: string; amount: number; description: string }> }) => {
 											const lines = sale.items.filter((row) => row.item_code === policy!.item!.item_code);
 											expect(lines, "one delivery line").to.have.length(1);
-											expect(Number(lines[0].rate)).to.equal(expected);
+											// Sold by the mile since mc56 (MuleCity-bi3t): the line's amount is the charge.
+											expect(Number(lines[0].amount)).to.equal(expected);
 											expect(lines[0].description).to.contain("12.5 mi").and.to.contain("miles typed offline");
 										},
 									);
@@ -191,10 +192,10 @@ describe("delivery while the store's internet is down", () => {
 										fieldname: "address_line1" }).then((address: { address_line1: string }) =>
 										expect(address.address_line1).to.equal("5 Back Rd"));
 									cy.benchCall("frappe.client.get", { doctype: "Sales Invoice", name: sale.name }).then(
-										(doc: { shipping_address?: string; items: Array<{ item_code: string; rate: number }> }) => {
+										(doc: { shipping_address?: string; items: Array<{ item_code: string; amount: number }> }) => {
 											expect(doc.shipping_address || "").to.contain("5 Back Rd");
 											const lines = doc.items.filter((row) => row.item_code === policy!.item!.item_code);
-											expect(lines.map((row) => Number(row.rate))).to.deep.equal([expected]);
+											expect(lines.map((row) => Number(row.amount))).to.deep.equal([expected]);
 										},
 									);
 								},
@@ -276,9 +277,9 @@ describe("delivery while the store's internet is down", () => {
 										filters: { address_line1: street } }).then((rows: Array<{ name: string }>) =>
 										expect(rows, "one Address, made once").to.have.length(1));
 									cy.benchCall("frappe.client.get", { doctype: "Sales Invoice", name: sale.name }).then(
-										(doc: { items: Array<{ item_code: string; rate: number }> }) => {
+										(doc: { items: Array<{ item_code: string; amount: number }> }) => {
 											const lines = doc.items.filter((row) => row.item_code === policy!.item!.item_code);
-											expect(lines.map((row) => Number(row.rate))).to.deep.equal([expected]);
+											expect(lines.map((row) => Number(row.amount))).to.deep.equal([expected]);
 										},
 									);
 								},
