@@ -1,5 +1,35 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc54 (contains mc53)
+
+### Find a farm by its contacts and phone numbers (MuleCity-1ptj)
+
+Bill 2026-11-05: "in pos I should be able to search not only the farm, but the
+contacts as well. in both the search and the customer lookup" and "phone
+numbers as well."
+
+- **Server:** `get_customers` also finds a customer through a linked Contact
+  (Dynamic Link): its full name or first and last name, email, or phone. Phones
+  compare digits only, on Contact Phone rows and the customer's own phone fields
+  (`mobile_no` and any Phone field): a full number however it is typed, or 4+
+  of its digits (the last four). Ranking: exact name/code first, then customers
+  matching on their own fields, then customers found only through a contact.
+- **Customer picker (F6):** a row found through a person or a number says so,
+  "via Jane Whitaker · (919) 555-7314". The newest search wins (an earlier,
+  slower reply no longer replaces it; a search typed during one in flight is no
+  longer dropped).
+- **Search (Ctrl+K, the navbar Search):** a Customers group above Items; Enter
+  or click picks that customer for the sale. A phone number there is a search,
+  not a calculator sum (sums need an operator other than "-", or "=").
+- **Offline:** the picker and Search match the contacts, emails and phones
+  already cached on each customer row (IndexedDB, and Electron through the same
+  matcher), ranked the same way.
+
+Validation: full frontend suite (100 files, 1,070 tests), TypeScript checks and production
+build pass; native server tests on erp2 (test_customer_contact_search and the
+customer picker suites) pass; browser-checked on an erp2 slot online and offline
+in both places. Deployment remains separate from this fork release.
+
 ## mule-v2.10.1-mc53 (contains mc52)
 
 The customer email icon opens the contact editor. Mixes defaults to the selected
