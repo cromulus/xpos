@@ -47,6 +47,7 @@ import type { CartPricingLine, FreeItemLine } from "@/services/pricingEngine";
 import { nowDate, toDateOrNow } from "@/utils/datetime";
 import { debounce, extractErrorMessage, isNetworkError, isOnline } from "@/utils";
 import { hasPermission } from "@/services/userRights";
+import type { PayBalanceSettings } from "@/utils/payBalance";
 import {
 	maxAdditionalDiscount as capAdditionalDiscount,
 	maxLineDiscount as capLineDiscount,
@@ -317,6 +318,20 @@ export const useCartStore = defineStore("cart", () => {
 	const serverPreviewError = ref("");
 
 	const isReturnMode = ref(false);
+
+	/**
+	 * "Pay balance" (Bill 2026-11-05, MuleCity-biez): a payment toward what the
+	 * customer owes, rung up as a cart line and paid with the normal tenders. It is
+	 * kept apart from `items` (never taxed, discounted, priced or previewed as a
+	 * sale) and added to the total after everything else; getInvoiceData sends it
+	 * as one line of the site's item, and Pay sends such a cart to the site's
+	 * checkout, which posts it as Payment Entries (never income).
+	 */
+	const payBalanceSettings = ref<PayBalanceSettings | null>(null);
+	const payBalance = ref<{ amount: number } | null>(null);
+	const showPayBalanceDialog = ref(false);
+	const hasPayBalance = computed(() => !isReturnMode.value && !!payBalance.value && payBalance.value.amount > 0);
+	const payBalanceAmount = computed(() => (hasPayBalance.value ? payBalance.value!.amount : 0));
 	const returnAgainst = ref("");
 	const returnItemCodes = ref<string[]>([]);
 	const orderNotes = ref("");
@@ -568,7 +583,8 @@ export const useCartStore = defineStore("cart", () => {
 	 */
 	const orderAdvance = ref(0);
 
-	const grandTotal = computed(() => {
+	/** The sale's own total (everything but a Pay balance line). */
+	const goodsTotal = computed(() => {
 		const posStore = usePosStore();
 		// A cart with custom mix orders: today's ticket, plus the orders when paid now.
 		if (counterQuote.value && counterQuote.value.key === previewKey.value) {
@@ -617,6 +633,9 @@ export const useCartStore = defineStore("cart", () => {
 		return total;
 	});
 
+	/** What the cart charges: the sale, plus any Pay balance line (MuleCity-biez). */
+	const grandTotal = computed(() => money(goodsTotal.value + payBalanceAmount.value));
+
 	/**
 	 * What is still to pay (Mule City, MuleCity-m2s4), the figure the Pay dialog
 	 * shows as Amount Due. Once the server has priced this cart the total is
@@ -630,7 +649,7 @@ export const useCartStore = defineStore("cart", () => {
 		return Math.max(0, Math.round((total - orderAdvance.value) * 100) / 100);
 	});
 
-	const isEmpty = computed(() => items.value.length === 0);
+	const isEmpty = computed(() => items.value.length === 0 && !hasPayBalance.value);
 
 	const customerName = computed(() => {
 		if (!customer.value) return "Walk-in Customer";
@@ -863,6 +882,7 @@ export const useCartStore = defineStore("cart", () => {
 	}
 
 	function addItem(item: POSItem, qty = 1): { success: boolean; message?: string } {
+		if (isPayBalanceCode(item.item_code)) return openPayBalance();
 		if (!Number.isFinite(qty) || qty <= 0) return { success: false, message: __("Enter a positive quantity") };
 		if (
 			isReturnMode.value &&
@@ -944,6 +964,7 @@ export const useCartStore = defineStore("cart", () => {
 		batchNo?: string,
 		conversionFactor?: number,
 	): { success: boolean; message?: string } {
+		if (isPayBalanceCode(item.item_code)) return openPayBalance();
 		if (
 			isReturnMode.value &&
 			returnItemCodes.value.length > 0 &&
@@ -1220,6 +1241,8 @@ export const useCartStore = defineStore("cart", () => {
 		if (cust?.name !== customer.value?.name) {
 			if (shippingAddress.value) deliveryDate.value = "";
 			clearDelivery();
+			// A balance payment is for one customer's account only.
+			payBalance.value = null;
 		}
 		customer.value = cust;
 	}
@@ -1648,6 +1671,7 @@ export const useCartStore = defineStore("cart", () => {
 		conversionRate.value = 1;
 		selectedDeliveryCharge.value = null;
 		clearDelivery();
+		payBalance.value = null;
 	}
 
 	function clearDelivery(): void {
@@ -1691,6 +1715,8 @@ export const useCartStore = defineStore("cart", () => {
 			loyalty_amount,
 			...cart
 		} = getInvoiceData(posStore.profileName, posStore.posOpeningShift?.name || "");
+		// The sale alone is priced; a Pay balance line is a payment (MuleCity-biez).
+		if (hasPayBalance.value) cart.items = cart.items.filter((line) => !isPayBalanceCode(line.item_code));
 		return cart;
 	}
 
@@ -1750,7 +1776,8 @@ export const useCartStore = defineStore("cart", () => {
 			return;
 		}
 		// Offline the server can't be asked; the offline queue posts what the server decides.
-		if (!isReturnMode.value && isOnline()) {
+		// A cart that is only a Pay balance line has no sale to price (MuleCity-biez).
+		if (!isReturnMode.value && isOnline() && items.value.length) {
 			const key = previewKey.value;
 			serverPreviewPending.value = true;
 			serverPreviewError.value = "";
@@ -2415,6 +2442,7 @@ export const useCartStore = defineStore("cart", () => {
 			data.pos_delivery_miles_source = delivery.milesSource || "address";
 		}
 
+		if (hasPayBalance.value && payBalanceSettings.value) data.items.push(payBalanceLine());
 		return data;
 	}
 
@@ -2603,7 +2631,74 @@ export const useCartStore = defineStore("cart", () => {
 		if (hasOrderLines.value && day) pickupDate.value = day;
 	}
 
+	// ---------------------------------------------------------------- Pay balance (MuleCity-biez)
+	function isPayBalanceCode(itemCode: string | undefined | null): boolean {
+		return !!itemCode && !!payBalanceSettings.value && itemCode === payBalanceSettings.value.item_code;
+	}
+
+	/** The site's Pay balance item and checkout (xpos.api.payments.get_pay_balance_settings), once per till. */
+	async function loadPayBalanceSettings(): Promise<PayBalanceSettings | null> {
+		if (payBalanceSettings.value || !isOnline()) return payBalanceSettings.value;
+		try {
+			payBalanceSettings.value =
+				(await call<PayBalanceSettings | null>("xpos.api.payments.get_pay_balance_settings", {
+					pos_profile: posStore.profileName,
+				})) || null;
+		} catch {
+			payBalanceSettings.value = null;
+		}
+		return payBalanceSettings.value;
+	}
+
+	/** Why this cart can't take a Pay balance line now, or "" (the site checks the same again). */
+	function payBalanceRefusal(): string {
+		if (!payBalanceSettings.value) return __("This till doesn't take balance payments.");
+		if (isReturnMode.value) return __("A balance payment can't be returned at the till; the office handles it on the desk.");
+		if (!customer.value || (posStore.defaultCustomer && customer.value.name === posStore.defaultCustomer))
+			return __("Choose the customer whose account it pays first (never the walk-in account).");
+		if (!isOnline()) return __("A balance payment needs the till online. Take it when the connection is back.");
+		if (!posStore.allowOutstandingSettlement) return __("You are not permitted to take payments on account.");
+		if (hasOrderLines.value) return __("Pay a balance on its own cart, or with feed on hand; a custom mix order has its own Pay.");
+		return "";
+	}
+
+	/** "Pay balance" picked (item search or the customer's button): open its amount dialog. */
+	function openPayBalance(): { success: boolean; message?: string } {
+		const refusal = payBalanceRefusal();
+		if (refusal) return { success: false, message: refusal };
+		showPayBalanceDialog.value = true;
+		return { success: true };
+	}
+
+	/** Put the Pay balance line in the cart (or change its amount), in cents. */
+	function setPayBalance(amount: number): void {
+		const cents = Math.round((Number(amount) || 0) * 100) / 100;
+		payBalance.value = cents > 0 ? { amount: cents } : null;
+	}
+
+	function clearPayBalance(): void {
+		payBalance.value = null;
+	}
+
+	/** The line the site's checkout receives (qty 1 at the amount, the site's item). */
+	function payBalanceLine(): InvoiceItem {
+		const settings = payBalanceSettings.value!;
+		return {
+			item_code: settings.item_code,
+			item_name: settings.item_name || "Pay balance",
+			qty: 1,
+			rate: payBalanceAmount.value,
+			price_list_rate: payBalanceAmount.value,
+			uom: "Nos",
+			discount_percentage: 0,
+			discount_amount: 0,
+		} as InvoiceItem;
+	}
+
 	return {
+		payBalanceSettings, payBalance, showPayBalanceDialog, hasPayBalance, payBalanceAmount, goodsTotal,
+		isPayBalanceCode, loadPayBalanceSettings, payBalanceRefusal, openPayBalance, setPayBalance, clearPayBalance,
+		previewPayload,
 		items,
 		quotedOrder, setMixLineFields, loadDeskUsers, deskUsers, sendMixToDesk, deskMessage,
 		customer,

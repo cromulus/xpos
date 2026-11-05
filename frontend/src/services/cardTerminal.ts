@@ -116,6 +116,8 @@ export interface CardPayContext {
 	isReturn: boolean;
 	onAccount: boolean;
 	hasOrderLines: boolean;
+	/** The cart holds a "Pay balance" line (MuleCity-biez). */
+	paysBalance?: boolean;
 	billsAnOrder: boolean;
 	redeemsPoints: boolean;
 	writeOff: number;
@@ -136,6 +138,8 @@ export function cardPayBlockReason(ctx: CardPayContext): string | null {
 	if (ctx.onAccount) return __("A sale charged On Account is not paid by card.");
 	if (ctx.hasOrderLines || ctx.billsAnOrder)
 		return __("Custom mix orders are not paid on the card reader yet.");
+	if (ctx.paysBalance)
+		return __("A balance payment is not taken on the card reader yet; use Credit Card, cash or check.");
 	if (ctx.redeemsPoints) return __("Loyalty points and the card reader cannot be combined.");
 	if (ctx.writeOff > 0) return __("A write-off and the card reader cannot be combined.");
 	if (ctx.foreignTender) return __("Foreign cash cannot be combined with the card reader.");

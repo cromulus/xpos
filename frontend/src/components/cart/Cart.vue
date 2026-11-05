@@ -125,6 +125,7 @@
 			<!-- Add delivery is its own button below the account row (Bill 2026-10-01, MuleCity-qajl.2);
 			     The recent-sales link is gone: Repeat in the top bar does that. -->
 			<AddDelivery v-if="cartStore.customer && !cartStore.isReturnMode" />
+			<PayBalanceButton v-if="cartStore.customer && !cartStore.isReturnMode" />
 			<p
 				v-if="showCreditInfo && isOverCreditLimit"
 				class="mt-1 flex items-center gap-1.5 text-xs font-semibold text-destructive"
@@ -196,6 +197,7 @@
 					@update-uom="handleUpdateUOM"
 					@remove="cartStore.removeItem"
 				/>
+				<PayBalanceLine />
 			</div>
 		</div>
 
@@ -276,6 +278,8 @@ import {
 import __ from "@/lib/translate";
 import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import AddDelivery from "@/components/cart/AddDelivery.vue";
+import PayBalanceButton from "@/components/cart/PayBalanceButton.vue";
+import PayBalanceLine from "@/components/cart/PayBalanceLine.vue";
 import ClearCustomer from "@/components/cart/ClearCustomer.vue";
 import CustomerOrdersBadge from "@/components/cart/CustomerOrdersBadge.vue";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
@@ -360,7 +364,7 @@ watch(
 );
 
 const { balance: customerBalance, creditLimit: customerCreditLimit } = useCustomerAccount();
-const projectedBalance = computed(() => (customerBalance.value ?? 0) + Math.max(cartStore.grandTotal, 0));
+const projectedBalance = computed(() => (customerBalance.value ?? 0) + Math.max(cartStore.goodsTotal, 0) - cartStore.payBalanceAmount);
 const isOverCreditLimit = computed(
 	() => customerCreditLimit.value > 0 && projectedBalance.value > customerCreditLimit.value,
 );

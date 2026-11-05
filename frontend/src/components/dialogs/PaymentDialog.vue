@@ -262,7 +262,7 @@
 							<!-- Mule City: a payment toward what the customer already owes (Bill 2026-09-29,
 							     MuleCity-nfxn.3). Opens Receive on Account; this ticket stays in the cart. -->
 							<button
-								v-if="canReceiveOnAccount"
+								v-if="canReceiveOnAccount && !cartStore.hasPayBalance"
 								type="button"
 								data-testid="receive-on-account"
 								class="flex-1 min-w-20 p-2.5 rounded-xl border-2 text-center transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-ring border-border bg-card text-muted-foreground hover:border-muted-foreground/30"
@@ -822,6 +822,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { usePaymentStore } from "@/stores/paymentStore";
 import { useCardPaymentStore } from "@/stores/cardPaymentStore";
 import { cardPayBlockReason, roundCents } from "@/services/cardTerminal";
+import { payBalanceTenderRefusal, type PayBalanceCheckoutResult } from "@/utils/payBalance";
 import { call, showSuccess, showError, showInfo, isNetworkError } from "@/services/api";
 import { __ } from "@/lib/translate";
 import { usePrintInvoice } from "@/composables/usePrintInvoice";
@@ -994,7 +995,9 @@ const mixPayModes = [
 	{ value: "pickup" as const, label: __("Pay at pickup") },
 ];
 // A prepaid mix is paid with cash, card or check, never on account.
+// A Pay balance line (MuleCity-biez) is paid now too: never charged back to the account.
 const showOnAccount = computed(() =>
+	!cartStore.hasPayBalance &&
 	!(cartStore.hasOrderLines && cartStore.mixPayMode === "now") &&
 	canChargeToAccount({
 		allowCreditSale: !!posStore.allowCreditSale,
@@ -1171,6 +1174,7 @@ const cardBlock = computed(() =>
 		isReturn: cartStore.isReturnMode,
 		onAccount: chargingToAccount.value,
 		hasOrderLines: cartStore.hasOrderLines,
+		paysBalance: cartStore.hasPayBalance,
 		billsAnOrder: cartStore.items.some((item) => !!(item as { so_detail?: string }).so_detail),
 		redeemsPoints: !!cartStore.redeemLoyaltyPoints,
 		writeOff: writeOffInput.value || 0,
@@ -1608,6 +1612,11 @@ async function submitPayment(withPrint: boolean = true) {
 			await submitMixOrder(invoiceData, withPrint);
 			return;
 		}
+		// A Pay balance line (MuleCity-biez): the site's checkout, online only, never queued offline.
+		if (cartStore.hasPayBalance) {
+			await submitPayBalance(invoiceData, withPrint);
+			return;
+		}
 
 		if (isElectron() && window.electronAPI?.db) {
 			const result = await window.electronAPI.db.addPendingInvoice({
@@ -1684,6 +1693,9 @@ async function submitPayment(withPrint: boolean = true) {
 			showError(__("This tab was changed on another terminal. Reload it and try again."));
 			close();
 			cartStore.openDraftDialog();
+		} else if (isNetworkError(error) && cartStore.hasPayBalance) {
+			// The payment may or may not have posted: Pay again sends the same cart id, which finds it.
+			showError(__("The connection dropped while taking the balance payment. Press Pay again when the till is online; it will not be taken twice."));
 		} else if (isNetworkError(error) && cartStore.hasOrderLines) {
 			// An order and its advance need the server; never queue them as a plain sale.
 			mixRefusal.value = __("Custom mixes can't be ordered offline. Go online, or take the order at the desk.");
@@ -1789,6 +1801,44 @@ async function submitMixOrder(invoiceData: InvoiceData, withPrint: boolean) {
 		{ answers: isOverrideAnswer },
 	);
 	await finishMixOrder(result, withPrint);
+}
+
+/**
+ * Pay for a cart holding a "Pay balance" line (Bill 2026-11-05, MuleCity-biez). The
+ * site does it all in one request: a Payment Entry per tender that pays the balance
+ * (card and check first, then cash), then XPOS's own ticket for the rest of the cart.
+ * The ticket prints with a "Paid on account" block; a balance-only cart prints the
+ * payment receipt. Offline it is refused: nothing is queued.
+ */
+async function submitPayBalance(invoiceData: InvoiceData, withPrint: boolean) {
+	const refusal = payBalanceTenderRefusal({ online: isOnline(), electron: isElectron(), onAccount: !!invoiceData.is_credit_sale });
+	if (refusal) {
+		showError(__(refusal));
+		return;
+	}
+	const settings = cartStore.payBalanceSettings!;
+	const result = await call<PayBalanceCheckoutResult>(settings.checkout_method, { data: JSON.stringify(invoiceData) });
+	const paid = money(result.paid_on_account);
+	const balance = money(result.balance_after);
+	posStore.lastInvoiceName = result.invoice?.name || "";
+	showSuccess(
+		result.invoice
+			? __("Ticket {0} saved; {1} paid on account. Balance now {2}.", [result.invoice.name, paid, balance])
+			: __("{0} paid on account. Balance now {1}.", [paid, balance]),
+	);
+	cartStore.clearAll();
+	if (!withPrint) return;
+	try {
+		if (result.invoice?.name) await printInvoice(result.invoice.name);
+		else if (result.payments[0])
+			for (const payment of result.payments)
+				await printInvoice(payment.payment_entry, {
+					doctype: "Payment Entry",
+					format: settings.receipt_format || "Mule Payment Receipt",
+				});
+	} catch {
+		showError(__("Payment saved. Receipt printing failed; use Reprint."));
+	}
 }
 
 async function finishMixOrder(result: CounterCheckoutResult, withPrint: boolean) {

@@ -40,6 +40,35 @@ class TestPrivilegedHelpersAreNotExposed(unittest.TestCase):
 		self.assertTrue(is_whitelisted("xpos.api.payments", "receive_on_account"))
 		self.assertIn("can_settle_outstanding(pos_profile)", inspect.getsource(payments.receive_on_account))
 
+	def test_pay_balance_settings_are_gated_like_receive_on_account(self):
+		"""Pay balance (MuleCity-biez) is offered only to who may settle; the site names the item."""
+		import inspect
+		from unittest.mock import patch
+
+		from xpos.api import payments
+
+		self.assertTrue(is_whitelisted("xpos.api.payments", "get_pay_balance_settings"))
+		self.assertIn("can_settle_outstanding(pos_profile)", inspect.getsource(payments.get_pay_balance_settings))
+		site = {"item_code": "PAYBAL", "checkout_method": "site.checkout"}
+		with patch.object(payments.frappe, "get_hooks", return_value=["site.hook"]), \
+				patch.object(payments.frappe, "get_attr", return_value=lambda: site):
+			with patch.object(payments, "can_settle_outstanding", return_value=False):
+				self.assertIsNone(payments.get_pay_balance_settings("Till"))
+			with patch.object(payments, "can_settle_outstanding", return_value=True):
+				self.assertEqual(payments.get_pay_balance_settings("Till"), site)
+		with patch.object(payments.frappe, "get_hooks", return_value=[]):
+			self.assertIsNone(payments.get_pay_balance_settings("Till"))
+
+	def test_a_site_defines_the_customer_balance_the_till_shows(self):
+		"""Hook ``xpos_customer_balance`` replaces the GL sum (Mule City nets its Payment Ledger)."""
+		from unittest.mock import patch
+
+		from xpos.api import customers
+
+		with patch.object(customers.frappe, "get_hooks", return_value=["site.balance"]), \
+				patch.object(customers.frappe, "get_attr", return_value=lambda customer: 12.345):
+			self.assertEqual(customers.get_customer_balance("Anyone"), 12.345)
+
 	def test_settle_outstanding_invoice_remains_the_public_entry_point(self):
 		"""The gated wrapper stays reachable so the feature keeps working."""
 		self.assertTrue(is_whitelisted("xpos.api.payments", "settle_outstanding_invoice"))

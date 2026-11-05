@@ -10,6 +10,7 @@
 		@received="onReceivedOnAccount"
 	/>
 	<CustomerEditDialog />
+	<PayBalanceDialog />
 </template>
 
 <script setup lang="ts">
@@ -18,6 +19,7 @@ import { useCustomerStore } from "@/stores/customerStore";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import CustomerEditDialog from "@/components/dialogs/CustomerEditDialog.vue";
 import ReceiveOnAccountDialog from "@/components/dialogs/ReceiveOnAccountDialog.vue";
+import PayBalanceDialog from "@/components/dialogs/PayBalanceDialog.vue";
 
 const cartStore = useCartStore();
 const customerStore = useCustomerStore();

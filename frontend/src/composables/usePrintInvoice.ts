@@ -8,7 +8,7 @@ import { extractErrorMessage, isNetworkError, isOnline } from "@/utils";
 
 export interface PrintInvoiceOptions {
 	format?: string;
-	doctype?: "Sales Invoice" | "POS Invoice";
+	doctype?: "Sales Invoice" | "POS Invoice" | "Payment Entry";
 }
 
 /**

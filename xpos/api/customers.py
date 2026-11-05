@@ -1098,7 +1098,15 @@ def get_sales_person_names(pos_profile: str | None = None):
 
 
 def get_customer_balance(customer: str):
-	"""Get outstanding balance for a customer."""
+	"""Get outstanding balance for a customer.
+
+	A site may define the figure (hook ``xpos_customer_balance``: a function of the
+	customer returning the amount). Mule City nets the Payment Ledger as its
+	past-due stop does, the figure "Pay balance" defaults to (MuleCity-biez).
+	"""
+	methods = frappe.get_hooks("xpos_customer_balance")
+	if methods:
+		return flt(frappe.get_attr(methods[-1])(customer))
 	balance = frappe.db.sql(
 		"""
 		SELECT SUM(debit - credit) AS balance

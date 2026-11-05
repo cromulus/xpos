@@ -437,6 +437,24 @@ def receive_on_account(
 	}
 
 
+# "Pay balance" (Mule City, Bill 2026-11-05, MuleCity-biez): a customer pays toward
+# what they owe as a cart line. The site names the item and the checkout a cart
+# holding it is paid through (hook ``xpos_pay_balance``: a function returning
+# {item_code, item_name, checkout_method, receipt_format} or None); the checkout
+# posts the payment as Payment Entries, never as a sale line.
+PAY_BALANCE_HOOK = "xpos_pay_balance"
+
+
+@frappe.whitelist()
+def get_pay_balance_settings(pos_profile: str | None = None) -> dict | None:
+	"""The site's Pay balance item and checkout, or None (no hook, or this user may not settle)."""
+	methods = frappe.get_hooks(PAY_BALANCE_HOOK)
+	if not methods or not can_settle_outstanding(pos_profile):
+		return None
+	settings = frappe.get_attr(methods[-1])()
+	return dict(settings) if settings else None
+
+
 @frappe.whitelist()
 def create_payment_request(doc: str | dict) -> dict | None:
 	"""Creates a phone payment request."""
