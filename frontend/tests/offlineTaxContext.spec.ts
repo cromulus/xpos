@@ -45,13 +45,16 @@ vi.mock("@/stores/posStore", () => ({
 	})),
 }));
 
-import { useCartStore } from "@/stores/cartStore";
+import { muleTaxTiming, useCartStore } from "@/stores/cartStore";
 
 const CONTEXT = { taxes: [{ account_head: "NC Sales Tax", rate: 6.75 }], tax_category: "", tax_exempt_reason: "" };
 
 async function pick(cart: ReturnType<typeof useCartStore>, name: string) {
 	cart.customer = { name } as never;
-	await flushPromises();
+	for (let i = 0; i < 4; i++) {
+		await flushPromises();
+		await new Promise((resolve) => setTimeout(resolve, 1));
+	}
 }
 
 beforeEach(() => {
@@ -61,6 +64,8 @@ beforeEach(() => {
 	categories.clear();
 	synced.clear();
 	online.value = true;
+	// A failed online lookup is asked once more (MuleCity-s9jt); no wait in tests.
+	muleTaxTiming.retryMs = 0;
 });
 
 describe("the customer's tax context while offline", () => {

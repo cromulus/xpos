@@ -2,7 +2,11 @@
 	<div class="flex flex-col h-full overflow-hidden">
     <MuleWorkspace :customer="cartStore.customer?.name" :customer-name="cartStore.customerName" :profile="posStore.profileName" :request="call"
       :cart-has-items="!cartStore.isEmpty" :add-mix="addCustomerMix" @pickup="cartStore.loadFromInvoice" />
-    <p v-if="cartStore.muleTaxError" role="alert" class="p-2 text-red-700">{{ cartStore.muleTaxError }}</p>
+    <p v-if="cartStore.muleTaxError" role="alert" class="p-2 text-red-700 flex items-center gap-2">
+      <span>{{ cartStore.muleTaxError }}</span>
+      <button type="button" data-testid="retry-tax-lookup" class="underline font-semibold" :disabled="cartStore.muleTaxPending"
+        @click="cartStore.retryTaxLookup()">{{ __("Retry") }}</button>
+    </p>
 		<div
 			class="md:hidden shrink-0 flex items-center bg-muted/60 border-b border-border mx-3 mt-2 mb-0 rounded-xl overflow-hidden"
 		>

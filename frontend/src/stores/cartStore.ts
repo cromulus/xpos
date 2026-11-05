@@ -184,6 +184,55 @@ async function offlineTaxContext(profile: string, buyer: string, row: { tax_cate
 	return own;
 }
 
+/** How long the till waits before asking the server again (tests shorten it). */
+export const muleTaxTiming = { retryMs: 1500 };
+
+/** The server is up but not answering: a deploy's maintenance window or a worker restart. */
+function serverUnavailable(error: unknown): boolean {
+	const status = (error as { status?: number } | null)?.status;
+	return status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * The buyer's tax context (Mule City). The server decides it; it is kept per
+ * customer so a later cart for them is taxed the same while offline.
+ *
+ * Why the retry (MuleCity-s9jt, Bill 2026-11-05): saving a draft resets the cart
+ * to the walk-in, and that lookup landed in a staging deploy's maintenance
+ * window (503). The till treated it as a failed lookup and said "Reselect the
+ * customer" on an empty walk-in cart with nobody to reselect. Now a server that
+ * is down for a moment is treated like offline (the context this till kept for
+ * the customer, else their category's), and any other failure is asked once
+ * more before the till gives up. It never falls back to the default rate for a
+ * named customer: a farm or resale customer would be overcharged.
+ *
+ * No buyer (empty string) is taxed like a customer with no tax category: the
+ * server answers with the walk-in's taxes, and offline the "" category's.
+ */
+async function muleTaxContext(profile: string, buyer: string, row: { tax_category?: string | null } | null,
+	stale: () => boolean): Promise<any | null> {
+	const kept = () => buyer ? offlineTaxContext(profile, buyer, row) : getCachedCategoryTaxContext(profile, "");
+	const ask = async () => {
+		const context = await call<any>("mulecity_erpnext.pos_workspace.tax_context", {customer: buyer || null, pos_profile: profile});
+		if (buyer) cacheTaxContext(profile, buyer, context).catch(() => {});
+		return context;
+	};
+	try {
+		return await ask();
+	} catch (error) {
+		const offline = !isOnline() || isNetworkError(error);
+		if (offline || serverUnavailable(error)) {
+			const context = await kept();
+			if (context) return context;
+			// No buyer offline and nothing kept: the walk-in is put on next, and taxed then.
+			if (offline) { if (!buyer) return null; throw new OfflineTaxMissing(); }
+		}
+		await new Promise((resolve) => setTimeout(resolve, muleTaxTiming.retryMs));
+		if (stale()) return null;
+		return await ask();
+	}
+}
+
 export const useCartStore = defineStore("cart", () => {
 	const posStore = usePosStore();
 	const items = ref<CartItem[]>([]);
@@ -215,27 +264,24 @@ export const useCartStore = defineStore("cart", () => {
   // Why the buyer is tax-exempt (Mule City), for the counter's customer bar.
   const muleTaxExemptReason = ref("");
   let muleTaxRequest = 0;
-  watch(() => [customer.value?.name, posStore.profileName], async ([buyer, profile]) => {
-    if (!buyer || !profile) return;
+  // Bumped by retryTaxLookup(): the watch below looks the buyer's taxes up again.
+  const muleTaxRetry = ref(0);
+  /** Look the buyer's taxes up again (the Retry next to a failed lookup). */
+  function retryTaxLookup(): void { muleTaxRetry.value++; }
+  watch(() => [customer.value?.name, posStore.profileName, muleTaxRetry.value] as const, async ([buyer, profile]) => {
+    if (!profile) return;
     const request = ++muleTaxRequest;
     muleTaxPending.value = true;
     muleTaxError.value = "";
     muleTaxExemptReason.value = "";
     showPaymentDialog.value = false;
     try {
-      // The context comes from the server when it can be reached, and is kept per
-      // customer so a later cart for them is taxed the same while offline.
-      let context: any;
-      try {
-        context = await call<any>("mulecity_erpnext.pos_workspace.tax_context", {customer: buyer, pos_profile: profile});
-        cacheTaxContext(String(profile), String(buyer), context).catch(() => {});
-      } catch (error) {
-        const offline = !isOnline() || isNetworkError(error);
-        context = offline ? await offlineTaxContext(String(profile), String(buyer), customer.value) : null;
-        if (!context) throw offline ? new OfflineTaxMissing() : error;
-      }
+      // No buyer is taxed at the default rate (the walk-in's, MuleCity-s9jt),
+      // never left with the last customer's taxes or none.
+      const context = await muleTaxContext(String(profile), buyer ? String(buyer) : "", customer.value,
+        () => request !== muleTaxRequest);
       const offlineContext = !isOnline();
-      if (request !== muleTaxRequest) return;
+      if (request !== muleTaxRequest || !context) return;
       posStore.taxes = context.taxes;
       muleTaxCategory.value = context.tax_category || "";
       muleTaxExemptReason.value = context.tax_exempt_reason || "";
@@ -251,7 +297,7 @@ export const useCartStore = defineStore("cart", () => {
       if (request === muleTaxRequest) {
         muleTaxError.value = error instanceof OfflineTaxMissing
           ? "No tax information for this customer on this till yet. Go online once, or ring them up at the desk."
-          : "Tax lookup failed. Reselect the customer to retry before taking payment.";
+          : "Tax lookup failed for this customer. Press Retry before taking payment.";
       }
     } finally { if (request === muleTaxRequest) muleTaxPending.value = false; }
   });
@@ -2551,7 +2597,7 @@ export const useCartStore = defineStore("cart", () => {
 		customer,
 		discountPercentage,
 		discountAmount,
-		muleTaxPending, muleTaxError, muleTaxCategory, muleTaxExemptReason,
+		muleTaxPending, muleTaxError, muleTaxCategory, muleTaxExemptReason, retryTaxLookup,
 		serverPreview, serverPreviewPending, serverPreviewError, serverLinesDiffer,
 		previewExpectedTotal, ticketChanged,
 		showPaymentDialog,
