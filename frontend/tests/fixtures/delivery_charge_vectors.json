@@ -1,5 +1,5 @@
 {
- "about": "Shared delivery-charge cases (MuleCity-l3p3): pricing/delivery_charge.py, scripts/delivery_rates.py and the XPOS fork must all give these amounts for this policy.",
+ "about": "Shared delivery-charge cases (MuleCity-l3p3, bi3t): pricing/delivery_charge.py (delivery_line) and the XPOS fork must give each case's qty, uom, rate and amount for this policy (the line is sold by the mile, miles rounded down; uom null = the item's own unit, the flat local charge). seed_amount is the earlier rounded charge scripts/delivery_rates.py priced the 2026-09 standing-charge seed with.",
  "policy": {
   "rate_per_mile": 5.0,
   "round_to": 5.0,
@@ -30,126 +30,228 @@
    "miles": 3.2,
    "weight_lb": 4500,
    "band": 4,
-   "amount": 5.0
+   "qty": 1,
+   "uom": null,
+   "rate": 5.0,
+   "amount": 5.0,
+   "seed_amount": 5.0
   },
   {
-   "case": "local, band 1: 25% of $5 rounds to $0, floored at the local charge",
+   "case": "HQ itself (0 mi), band 1: the flat local charge",
    "miles": 0,
    "weight_lb": 0,
    "band": 1,
-   "amount": 5.0
+   "qty": 1,
+   "uom": null,
+   "rate": 5.0,
+   "amount": 5.0,
+   "seed_amount": 5.0
   },
   {
    "case": "just under local_miles",
    "miles": 4.99,
    "weight_lb": 1200,
    "band": 2,
-   "amount": 5.0
+   "qty": 1,
+   "uom": null,
+   "rate": 5.0,
+   "amount": 5.0,
+   "seed_amount": 5.0
   },
   {
    "case": "exactly local_miles is no longer local (strict <)",
    "miles": 5,
    "weight_lb": 4000,
    "band": 4,
-   "amount": 25.0
+   "qty": 5,
+   "uom": "Mile",
+   "rate": 5.0,
+   "amount": 25.0,
+   "seed_amount": 25.0
   },
   {
-   "case": "0 lb is band 1; $210 x 25% = $52.50 rounds up to $55",
+   "case": "0 lb is band 1: 42 x $1.25 = $52.50 (the seed rounded to $55)",
    "miles": 42,
    "weight_lb": 0,
    "band": 1,
-   "amount": 55.0
+   "qty": 42,
+   "uom": "Mile",
+   "rate": 1.25,
+   "amount": 52.5,
+   "seed_amount": 55.0
   },
   {
    "case": "999.99 lb is still band 1",
    "miles": 42,
    "weight_lb": 999.99,
    "band": 1,
-   "amount": 55.0
+   "qty": 42,
+   "uom": "Mile",
+   "rate": 1.25,
+   "amount": 52.5,
+   "seed_amount": 55.0
   },
   {
    "case": "1000 lb starts band 2",
    "miles": 42,
    "weight_lb": 1000,
    "band": 2,
-   "amount": 105.0
+   "qty": 42,
+   "uom": "Mile",
+   "rate": 2.5,
+   "amount": 105.0,
+   "seed_amount": 105.0
   },
   {
    "case": "1999.99 lb is still band 2",
    "miles": 42,
    "weight_lb": 1999.99,
    "band": 2,
-   "amount": 105.0
+   "qty": 42,
+   "uom": "Mile",
+   "rate": 2.5,
+   "amount": 105.0,
+   "seed_amount": 105.0
   },
   {
    "case": "2000 lb starts band 3",
    "miles": 42,
    "weight_lb": 2000,
    "band": 3,
-   "amount": 160.0
+   "qty": 42,
+   "uom": "Mile",
+   "rate": 3.75,
+   "amount": 157.5,
+   "seed_amount": 160.0
   },
   {
    "case": "1,600 lb is band 2",
    "miles": 42,
    "weight_lb": 1600,
    "band": 2,
-   "amount": 105.0
+   "qty": 42,
+   "uom": "Mile",
+   "rate": 2.5,
+   "amount": 105.0,
+   "seed_amount": 105.0
   },
   {
    "case": "3999.99 lb is still band 3",
    "miles": 42,
    "weight_lb": 3999.99,
    "band": 3,
-   "amount": 160.0
+   "qty": 42,
+   "uom": "Mile",
+   "rate": 3.75,
+   "amount": 157.5,
+   "seed_amount": 160.0
   },
   {
    "case": "4000 lb starts band 4 (full load)",
    "miles": 42,
    "weight_lb": 4000,
    "band": 4,
-   "amount": 210.0
+   "qty": 42,
+   "uom": "Mile",
+   "rate": 5.0,
+   "amount": 210.0,
+   "seed_amount": 210.0
   },
   {
-   "case": "full-load half rounds up: 12.5 mi x $5 = $62.50 -> $65",
+   "case": "12.5 mi rounds down to 12 miles: 12 x $5 = $60 (the seed rounded $62.50 to $65)",
    "miles": 12.5,
    "weight_lb": 5000,
    "band": 4,
-   "amount": 65.0
+   "qty": 12,
+   "uom": "Mile",
+   "rate": 5.0,
+   "amount": 60.0,
+   "seed_amount": 65.0
   },
   {
-   "case": "band half rounds up: $50 full x 25% = $12.50 -> $15",
+   "case": "10 mi band 1: 10 x $1.25 = $12.50 (the seed rounded to $15)",
    "miles": 10,
    "weight_lb": 500,
    "band": 1,
-   "amount": 15.0
+   "qty": 10,
+   "uom": "Mile",
+   "rate": 1.25,
+   "amount": 12.5,
+   "seed_amount": 15.0
   },
   {
-   "case": "$25 x 25% = $6.25 rounds to $5",
+   "case": "5.1 mi band 1: 5 x $1.25 = $6.25 (the seed rounded to $5)",
    "miles": 5.1,
    "weight_lb": 100,
    "band": 1,
-   "amount": 5.0
+   "qty": 5,
+   "uom": "Mile",
+   "rate": 1.25,
+   "amount": 6.25,
+   "seed_amount": 5.0
   },
   {
    "case": "long distance, full load",
    "miles": 74.3,
    "weight_lb": 6000,
    "band": 4,
-   "amount": 370.0
+   "qty": 74,
+   "uom": "Mile",
+   "rate": 5.0,
+   "amount": 370.0,
+   "seed_amount": 370.0
   },
   {
    "case": "long distance, band 3",
    "miles": 74.3,
    "weight_lb": 2500,
    "band": 3,
-   "amount": 280.0
+   "qty": 74,
+   "uom": "Mile",
+   "rate": 3.75,
+   "amount": 277.5,
+   "seed_amount": 280.0
   },
   {
-   "case": "fractional miles round to the nearest $5: 17.4 mi = $87 -> $85",
+   "case": "17.4 mi rounds down to 17 miles: 17 x $5 = $85",
    "miles": 17.4,
    "weight_lb": 4000,
    "band": 4,
+   "qty": 17,
+   "uom": "Mile",
+   "rate": 5.0,
+   "amount": 85.0,
+   "seed_amount": 85.0
+  },
+  {
+   "case": "17.9 mi rounds DOWN to 17 miles, full load $5.00 a mile",
+   "miles": 17.9,
+   "weight_lb": 4000,
+   "band": 4,
+   "qty": 17,
+   "uom": "Mile",
+   "rate": 5.0,
    "amount": 85.0
+  },
+  {
+   "case": "Southern States Creedmoor 57.1 mi, 40 bags (2,000 lb) band 3: 57 x $3.75",
+   "miles": 57.1,
+   "weight_lb": 2000,
+   "band": 3,
+   "qty": 57,
+   "uom": "Mile",
+   "rate": 3.75,
+   "amount": 213.75
+  },
+  {
+   "case": "6 mi, band 1: 6 x $1.25 = $7.50, above the local charge",
+   "miles": 6,
+   "weight_lb": 10,
+   "band": 1,
+   "qty": 6,
+   "uom": "Mile",
+   "rate": 1.25,
+   "amount": 7.5
   }
  ]
 }

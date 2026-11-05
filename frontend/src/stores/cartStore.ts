@@ -2539,8 +2539,11 @@ export const useCartStore = defineStore("cart", () => {
 
 	/**
 	 * Deliver the sale to `address` for `amount` (MuleCity-6nb1): one line of the
-	 * site's delivery item, qty 1, described by the quote. A second "Add delivery"
-	 * updates that line; it stays an ordinary line (editable within the discount cap).
+	 * site's delivery item, described by the quote. Sold by the mile (MuleCity-bi3t):
+	 * a quote priced from miles fills qty = the miles rounded down, in its uom
+	 * ("Mile"), at its rate a mile; a standing, free, local or typed charge is qty 1
+	 * in the item's own unit. A second "Add delivery" (another address) updates
+	 * that line; it stays an ordinary line (qty and rate editable within the cap).
 	 */
 	function setDelivery(
 		policy: DeliveryPolicy,
@@ -2554,18 +2557,27 @@ export const useCartStore = defineStore("cart", () => {
 		const description = !typed
 			? quote.description
 			: `${quote.description}, ${address.miles_source === TYPED_OFFLINE ? "miles typed offline" : "miles typed at the till"}`;
+		// The quote's own line, when the clerk kept its amount (a typed charge is qty 1 at that amount).
+		const byLine =
+			quote.amount === amount &&
+			quote.rate != null &&
+			(quote.qty || 0) > 0 &&
+			Math.abs(Math.round(quote.qty! * quote.rate * 100) / 100 - amount) < 0.005;
+		const qty = byLine ? quote.qty! : 1;
+		const rate = byLine ? quote.rate! : amount;
+		const uom = (byLine && quote.uom) || item.stock_uom;
 		const line = items.value.find((i) => i.item_code === item.item_code);
 		if (line) {
-			Object.assign(line, { qty: 1, rate: normalizeItemRate(amount), description, discount_percentage: 0, discount_amount: 0 });
+			Object.assign(line, { qty, uom, conversion_factor: 1, rate: normalizeItemRate(rate), description, discount_percentage: 0, discount_amount: 0 });
 		} else {
 			items.value.push({
 				uid: nextRowId(),
 				item_code: item.item_code,
 				item_name: item.item_name,
 				item_group: item.item_group,
-				rate: normalizeItemRate(amount),
-				qty: 1,
-				uom: item.stock_uom,
+				rate: normalizeItemRate(rate),
+				qty,
+				uom,
 				stock_uom: item.stock_uom,
 				conversion_factor: 1,
 				discount_percentage: 0,

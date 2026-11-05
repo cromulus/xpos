@@ -5,8 +5,11 @@
  * the till is offline it cannot ask, so it prices from what it cached: the
  * site's policy and each customer's standing charge and addresses' miles.
  *
- * What: `deliveryCharge` mirrors the site's pure function
- * (mulecity_erpnext/pricing/delivery_charge.py); `quoteOffline` mirrors its
+ * What: `deliveryLine` / `deliveryCharge` mirror the site's pure functions
+ * (mulecity_erpnext/pricing/delivery_charge.py): since MuleCity-bi3t the line is
+ * sold by the mile, qty = the miles rounded DOWN, unit "Mile", at the band's
+ * rate a mile; under the local miles the flat local charge, qty 1 in the
+ * item's own unit. `quoteOffline` mirrors its
  * precedence (pricing/delivery.py quote_delivery): no charge, then the standing
  * charge, then the address's miles, else the clerk types it. Both are checked
  * against the site's own shared cases (tests/fixtures/delivery_charge_vectors.json).
@@ -63,6 +66,14 @@ export type QuoteSource = "exception" | "standing" | "miles" | "none";
 export interface DeliveryQuote {
 	/** Null when the clerk must type the charge. */
 	amount: number | null;
+	/**
+	 * The delivery line (MuleCity-bi3t): by the mile, qty = whole miles in uom
+	 * MILE_UOM at `rate` a mile; a standing, free or local charge is qty 1 with
+	 * uom null (the item's own unit). Older sites send none: qty 1 at amount.
+	 */
+	qty?: number;
+	uom?: string | null;
+	rate?: number | null;
 	source: QuoteSource;
 	rule: string | null;
 	miles: number | null;
@@ -74,9 +85,25 @@ export interface DeliveryQuote {
 /** Miles typed at the till for an address made while offline (the site flags them). */
 export const TYPED_OFFLINE = "manual_offline";
 
-/** Nearest multiple of step, halves up (as the site rounds; not banker's rounding). */
-function roundTo(amount: number, step: number): number {
-	return Math.floor(amount / step + 0.5) * step;
+/** The unit the delivery line is sold in by the mile (an ERPNext UOM the site ensures). */
+export const MILE_UOM = "Mile";
+
+/** The miles rounded DOWN to a whole mile (17.9 -> 17); a hair under is float noise. */
+export function wholeMiles(miles: number): number {
+	return Math.max(Math.floor((Number(miles) || 0) + 1e-9), 0);
+}
+
+function cents(amount: number): number {
+	return Math.floor(amount * 100 + 0.5) / 100;
+}
+
+export interface DeliveryLine {
+	qty: number;
+	/** MILE_UOM by the mile; null for the flat local charge (the item's own unit). */
+	uom: string | null;
+	rate: number;
+	amount: number;
+	per_mile: boolean;
 }
 
 /** 1-based weight band: the last band whose minimum the load reaches. */
@@ -88,12 +115,21 @@ export function bandOf(policy: DeliveryPolicy, weightLb: number): number {
 	return band;
 }
 
+/** The delivery line for a load of `weightLb` driven `miles` one way (the site's delivery_line). */
+export function deliveryLine(policy: DeliveryPolicy, miles: number, weightLb: number): DeliveryLine {
+	const pct = policy.bands[bandOf(policy, weightLb) - 1].pct;
+	const qty = wholeMiles(miles);
+	const rate = cents((policy.rate_per_mile * pct) / 100);
+	const amount = cents(qty * rate);
+	if (miles < policy.local_miles || amount < policy.local_charge) {
+		return { qty: 1, uom: null, rate: policy.local_charge, amount: policy.local_charge, per_mile: false };
+	}
+	return { qty, uom: MILE_UOM, rate, amount, per_mile: true };
+}
+
 /** Dollar delivery charge for a load of `weightLb` driven `miles` one way. */
 export function deliveryCharge(policy: DeliveryPolicy, miles: number, weightLb: number): number {
-	const fullLoad =
-		miles < policy.local_miles ? policy.local_charge : roundTo(miles * policy.rate_per_mile, policy.round_to);
-	const pct = policy.bands[bandOf(policy, weightLb) - 1].pct;
-	return Math.max(roundTo((fullLoad * pct) / 100, policy.round_to), policy.local_charge);
+	return deliveryLine(policy, miles, weightLb).amount;
 }
 
 /** The site's quote, worked out at the till from cached details (same precedence and wording). */
@@ -104,24 +140,28 @@ export function quoteOffline(
 	weightLb: number,
 ): DeliveryQuote {
 	const miles = address.miles || null;
-	const base = { rule: null, miles, miles_source: address.miles_source || null, band: null };
+	const base = { rule: null, miles, miles_source: address.miles_source || null, band: null, qty: 1, uom: null };
 	if (customer?.no_charge)
-		return { ...base, amount: 0, source: "exception", rule: "No delivery charge", description: "No delivery charge (standing exception)" };
+		return { ...base, amount: 0, rate: 0, source: "exception", rule: "No delivery charge", description: "No delivery charge (standing exception)" };
 	if ((customer?.standing_charge || 0) > 0)
-		return { ...base, amount: customer!.standing_charge, source: "standing", rule: "Standing delivery charge", description: "Standing rate" };
+		return { ...base, amount: customer!.standing_charge, rate: customer!.standing_charge, source: "standing", rule: "Standing delivery charge", description: "Standing rate" };
 	if (miles && miles > 0) {
 		const band = bandOf(policy, weightLb);
 		const pounds = Math.round(weightLb).toLocaleString("en-US");
+		const line = deliveryLine(policy, miles, weightLb);
 		return {
 			...base,
-			amount: deliveryCharge(policy, miles, weightLb),
+			amount: line.amount,
+			qty: line.qty,
+			uom: line.uom,
+			rate: line.rate,
 			source: "miles",
 			rule: "Miles from HQ",
 			band,
 			description: `${miles} mi, band ${band} (${pounds} lb)`,
 		};
 	}
-	return { ...base, amount: null, source: "none", description: "No miles for this address; type the delivery charge" };
+	return { ...base, amount: null, rate: null, source: "none", description: "No miles for this address; type the delivery charge" };
 }
 
 /** The load's weight as ERPNext sums it: weight_per_unit x qty x conversion factor, per line. */

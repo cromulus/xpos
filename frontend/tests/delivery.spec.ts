@@ -56,7 +56,9 @@ import {
 	bandOf,
 	cartWeight,
 	deliveryCharge,
+	deliveryLine,
 	deliveryOffered,
+	wholeMiles,
 	isWalkInCustomer,
 	quoteOffline,
 	type DeliveryPolicy,
@@ -88,7 +90,8 @@ const stubs = {
 
 /** The site's quote, as xpos.api.delivery.quote_delivery answers online. */
 function siteQuote(overrides: Record<string, unknown> = {}) {
-	return { amount: 105, source: "miles", rule: "Miles from HQ", miles: 42, miles_source: "routes", band: 2, description: "42 mi, band 2 (1,600 lb)", ...overrides };
+	// Sold by the mile (MuleCity-bi3t): 42 miles at band 2's $2.50 a mile.
+	return { amount: 105, qty: 42, uom: "Mile", rate: 2.5, source: "miles", rule: "Miles from HQ", miles: 42, miles_source: "routes", band: 2, description: "42 mi, band 2 (1,600 lb)", ...overrides };
 }
 
 function serve(details: Record<string, unknown>, quote = siteQuote()) {
@@ -114,6 +117,10 @@ function deliveryLines(cart: ReturnType<typeof useCartStore>) {
 	return cart.items.filter((i) => i.item_code === "MC-ITEM-DEL").map((i) => [i.qty, i.rate, i.description]);
 }
 
+function deliveryUnits(cart: ReturnType<typeof useCartStore>) {
+	return cart.items.filter((i) => i.item_code === "MC-ITEM-DEL").map((i) => [i.qty, i.uom, i.rate]);
+}
+
 beforeEach(() => {
 	setActivePinia(createPinia());
 	vi.clearAllMocks();
@@ -123,9 +130,18 @@ beforeEach(() => {
 });
 
 describe("the till prices delivery exactly as the site does (shared vectors)", () => {
-	it.each(vectors.cases)("$case", ({ miles, weight_lb, band, amount }) => {
+	it.each(vectors.cases)("$case", ({ miles, weight_lb, band, qty, uom, rate, amount }) => {
 		expect(bandOf(vectors.policy, weight_lb)).toBe(band);
 		expect(deliveryCharge(vectors.policy, miles, weight_lb)).toBe(amount);
+		expect(deliveryLine(vectors.policy, miles, weight_lb)).toMatchObject({ qty, uom, rate, amount });
+	});
+
+	it("rounds the miles DOWN to a whole mile (Bill 2026-11-05, MuleCity-bi3t)", () => {
+		expect(wholeMiles(17.9)).toBe(17);
+		expect(wholeMiles(16.999999999999)).toBe(17);
+		expect(quoteOffline(policy, null, { ...farm, miles: 17.9 }, 4000)).toMatchObject({ qty: 17, uom: "Mile", rate: 5, amount: 85 });
+		// Under the local miles: the flat local charge, qty 1 in the item's own unit.
+		expect(quoteOffline(policy, null, { ...farm, miles: 3.2 }, 4000)).toMatchObject({ qty: 1, uom: null, rate: 5, amount: 5 });
 	});
 
 	it("words the line as the site does: miles, band and pounds", () => {
@@ -152,6 +168,31 @@ describe("the till prices delivery exactly as the site does (shared vectors)", (
 	});
 });
 
+describe("delivery sold by the mile (Bill 2026-11-05, MuleCity-bi3t)", () => {
+	it("the line is the miles rounded down in Mile; another address re-sets them; a flat charge is qty 1", () => {
+		const cart = useCartStore();
+		cart.setCustomer({ name: "MC-CUST-4112", customer_name: "Albert Adkins" } as never);
+		const atFarm = quoteOffline(policy, null, { ...farm, miles: 42.8 }, 1600);
+		cart.setDelivery(policy, { ...farm, miles: 42.8 }, atFarm, atFarm.amount!);
+		expect(deliveryUnits(cart)).toEqual([[42, "Mile", 2.5]]);
+		expect(cart.getInvoiceData("Till", "SHIFT-1").items.at(-1)).toMatchObject({ qty: 42, uom: "Mile", conversion_factor: 1, rate: 2.5 });
+		// Change delivery to the barn, 17.4 mi: the same line, now 17 miles.
+		const atBarn = quoteOffline(policy, null, barn, 1600);
+		cart.setDelivery(policy, barn, atBarn, atBarn.amount!);
+		expect(deliveryUnits(cart)).toEqual([[17, "Mile", 2.5]]);
+		// The clerk typed a different charge: qty 1 at that amount, in the item's own unit.
+		cart.setDelivery(policy, barn, atBarn, 30);
+		expect(deliveryUnits(cart)).toEqual([[1, "Nos", 30]]);
+		// A standing charge is the price, not miles.
+		const standing = quoteOffline(policy, { standing_charge: 80, no_charge: false, addresses: [] }, barn, 1600);
+		cart.setDelivery(policy, barn, standing, standing.amount!);
+		expect(deliveryUnits(cart)).toEqual([[1, "Nos", 80]]);
+		// A new customer drops the delivery line's address (and with it the line's quote).
+		cart.setCustomer({ name: "MC-CUST-9", customer_name: "Other" } as never);
+		expect(cart.activeDelivery).toBeNull();
+	});
+});
+
 describe("Add delivery at the counter (online: the site quotes)", () => {
 	it("one address: quoted straight away, one delivery line at the quote, shipped there", async () => {
 		serve({ standing_charge: 0, no_charge: false, addresses: [farm] });
@@ -163,16 +204,16 @@ describe("Add delivery at the counter (online: the site quotes)", () => {
 			address: "ADDR-FARM",
 			items: JSON.stringify([{ item_code: "FEED-50", qty: 32, conversion_factor: 1 }]),
 		});
-		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb)"]]);
+		expect(deliveryLines(cart)).toEqual([[42, 2.5, "42 mi, band 2 (1,600 lb)"]]);
 		expect(wrapper.find("[data-testid='delivery-dialog']").exists()).toBe(false);
 		const sale = cart.getInvoiceData("Till", "SHIFT-1");
 		expect(sale.shipping_address_name).toBe("ADDR-FARM");
-		expect(sale.items.at(-1)).toMatchObject({ item_code: "MC-ITEM-DEL", qty: 1, rate: 105, description: "42 mi, band 2 (1,600 lb)" });
+		expect(sale.items.at(-1)).toMatchObject({ item_code: "MC-ITEM-DEL", qty: 42, uom: "Mile", rate: 2.5, description: "42 mi, band 2 (1,600 lb)" });
 		expect(sale.xpos_new_shipping_address).toBeUndefined();
 	});
 
 	it("several addresses: a picker lists street, town, miles and cost, and the chosen one is quoted", async () => {
-		serve({ standing_charge: 0, no_charge: false, addresses: [farm, barn] }, siteQuote({ amount: 45, miles: 17.4, description: "17.4 mi, band 2 (1,600 lb)" }));
+		serve({ standing_charge: 0, no_charge: false, addresses: [farm, barn] }, siteQuote({ amount: 42.5, qty: 17, rate: 2.5, miles: 17.4, description: "17.4 mi, band 2 (1,600 lb)" }));
 		const { cart, wrapper } = await counter({ xpos_has_address: true, xpos_address_count: 2 });
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
@@ -182,18 +223,18 @@ describe("Add delivery at the counter (online: the site quotes)", () => {
 		// 1,600 lb, band 2: 42 mi -> $105; 17.4 mi -> $87 full load -> $45 (the shared vectors).
 		expect(choices.map((c) => c.get("[data-testid='delivery-address-cost']").text())).toEqual([
 			expect.stringContaining("105.00"),
-			expect.stringContaining("45.00"),
+			expect.stringContaining("42.50"),
 		]);
 		await choices[1].trigger("click");
 		await wrapper.get("[data-testid='delivery-use']").trigger("click");
 		await flushPromises();
 		expect(state.call).toHaveBeenCalledWith("xpos.api.delivery.quote_delivery", expect.objectContaining({ address: "ADDR-BARN" }));
-		expect(deliveryLines(cart)).toEqual([[1, 45, "17.4 mi, band 2 (1,600 lb)"]]);
+		expect(deliveryLines(cart)).toEqual([[17, 2.5, "17.4 mi, band 2 (1,600 lb)"]]);
 		expect(cart.getInvoiceData("Till", "SHIFT-1").shipping_address_name).toBe("ADDR-BARN");
 	});
 
 	it("a standing-charge customer gets their charge; adding delivery again updates the one line", async () => {
-		serve({ standing_charge: 80, no_charge: false, addresses: [farm] }, siteQuote({ amount: 80, source: "standing", description: "Standing rate" }));
+		serve({ standing_charge: 80, no_charge: false, addresses: [farm] }, siteQuote({ amount: 80, qty: 1, uom: null, rate: 80, source: "standing", description: "Standing rate" }));
 		const { cart, wrapper } = await counter({ xpos_has_address: true });
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
@@ -206,7 +247,7 @@ describe("Add delivery at the counter (online: the site quotes)", () => {
 	});
 
 	it("a free-delivery exception adds a $0 line", async () => {
-		serve({ standing_charge: 0, no_charge: true, addresses: [farm] }, siteQuote({ amount: 0, source: "exception", description: "No delivery charge (standing exception)" }));
+		serve({ standing_charge: 0, no_charge: true, addresses: [farm] }, siteQuote({ amount: 0, qty: 1, uom: null, rate: 0, source: "exception", description: "No delivery charge (standing exception)" }));
 		const { cart, wrapper } = await counter({ xpos_has_address: true });
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
@@ -286,7 +327,7 @@ describe("Bill's address rule (2026-10-01 22:52, MuleCity-qajl)", () => {
 
 	it("online: the one Shipping address among several is quoted and added without asking", async () => {
 		serve({ standing_charge: 0, no_charge: false, addresses: [billing(farm), shipping(barn)] },
-			siteQuote({ amount: 45, miles: 17.4, description: "17.4 mi, band 2 (1,600 lb)" }));
+			siteQuote({ amount: 42.5, qty: 17, rate: 2.5, miles: 17.4, description: "17.4 mi, band 2 (1,600 lb)" }));
 		const { cart, wrapper } = await counter({ xpos_has_address: true, xpos_address_count: 2 });
 		await wrapper.get("[data-testid='add-delivery']").trigger("click");
 		await flushPromises();
@@ -322,7 +363,7 @@ describe("Bill's address rule (2026-10-01 22:52, MuleCity-qajl)", () => {
 		});
 		// The cart's quote weighs this cart (the add's own quote has no cart).
 		expect(state.call).toHaveBeenCalledWith("xpos.api.delivery.quote_delivery", expect.objectContaining({ address: "Albert Adkins-Shipping" }));
-		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb)"]]);
+		expect(deliveryLines(cart)).toEqual([[42, 2.5, "42 mi, band 2 (1,600 lb)"]]);
 		expect(cart.getInvoiceData("Till", "SHIFT-1").shipping_address_name).toBe("Albert Adkins-Shipping");
 		// The picker (and the cached row) know it at once.
 		expect(cart.customer?.xpos_delivery?.addresses.map((a) => a.name)).toEqual(["Albert Adkins-Shipping"]);
@@ -355,7 +396,7 @@ describe("Bill's address rule (2026-10-01 22:52, MuleCity-qajl)", () => {
 		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
 		await flushPromises();
 		expect(adds.map((a) => [a.delivery_miles, a.miles_source])).toEqual([[null, undefined], [42, "manual"]]);
-		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb)"]]);
+		expect(deliveryLines(cart)).toEqual([[42, 2.5, "42 mi, band 2 (1,600 lb)"]]);
 	});
 
 	it("the picker always offers Add new address, online too", async () => {
@@ -383,7 +424,7 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		expect(state.call).not.toHaveBeenCalled();
 		expect(wrapper.find("[data-testid='delivery-dialog']").exists()).toBe(false);
 		// 32 bags x 50 lb = 1,600 lb, band 2; 42 mi x $5 = $210 x 50% = $105 (a shared vector).
-		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb)"]]);
+		expect(deliveryLines(cart)).toEqual([[42, 2.5, "42 mi, band 2 (1,600 lb)"]]);
 		expect(cart.getInvoiceData("Till", "SHIFT-1").shipping_address_name).toBe("ADDR-FARM");
 	});
 
@@ -415,8 +456,9 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
 		await flushPromises();
 		expect(state.call).not.toHaveBeenCalled();
-		// 17.4 mi x $5 = $87 -> $85 at full load (a shared vector).
-		expect(deliveryLines(cart)).toEqual([[1, 85, "17.4 mi, band 4 (4,000 lb), miles typed offline"]]);
+		// 17.4 mi rounds down to 17 miles at $5 a mile, full load: $85 (a shared vector).
+		expect(deliveryLines(cart)).toEqual([[17, 5, "17.4 mi, band 4 (4,000 lb), miles typed offline"]]);
+		expect(deliveryUnits(cart)).toEqual([[17, "Mile", 5]]);
 		const [queued] = JSON.parse(state.meta.get("pending_delivery_addresses")!);
 		expect(queued).toMatchObject({ customer: "MC-CUST-4112", address_line1: "88 New Ground Rd", address_line2: "Back gate",
 			city: "Coats", state: "NC", pincode: "27521", miles: 17.4 });
@@ -440,7 +482,7 @@ describe("Add delivery with the till offline (priced from the cache)", () => {
 		await fillNewAddress(wrapper, { ...NEW_FARM, miles: "42" });
 		await wrapper.get("[data-testid='delivery-new-address-use']").trigger("click");
 		await flushPromises();
-		expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb), miles typed offline"]]);
+		expect(deliveryLines(cart)).toEqual([[42, 2.5, "42 mi, band 2 (1,600 lb), miles typed offline"]]);
 		// Save as draft sends getInvoiceData(); save_draft_invoice flags the tab with a Comment.
 		const parked = cart.getInvoiceData("Till", "SHIFT-1");
 		expect(parked.xpos_delivery).toMatchObject({ source: "miles", miles: 42, miles_source: "manual_offline" });
@@ -569,7 +611,7 @@ describe("the address picker (Bill 2026-10-01, MuleCity-qajl.3)", () => {
 			expect(selectedText(wrapper)).toEqual(["77 Feed Lot Ln, Gate 3, Benson, NC 27504"]);
 			expect(rows(wrapper).map((r) => r.get("[data-testid='delivery-address-miles']").text())).toEqual(["17.4 mi", "no miles", "42 mi"]);
 			const costs = rows(wrapper).map((r) => r.get("[data-testid='delivery-address-cost']").text());
-			expect(costs[0]).toContain("45.00");
+			expect(costs[0]).toContain("42.50");
 			expect(costs[1]).toBe("—");
 			expect(costs[2]).toContain("105.00");
 		});
@@ -582,10 +624,10 @@ describe("the address picker (Bill 2026-10-01, MuleCity-qajl.3)", () => {
 			expect(rows(wrapper)).toHaveLength(1);
 			await wrapper.get("[data-testid='delivery-search']").setValue("mill");
 			await rows(wrapper)[0].trigger("click");
-			if (online) serve(places, siteQuote({ amount: 45, miles: 17.4, description: "17.4 mi, band 2 (1,600 lb)" }));
+			if (online) serve(places, siteQuote({ amount: 42.5, qty: 17, rate: 2.5, miles: 17.4, description: "17.4 mi, band 2 (1,600 lb)" }));
 			await wrapper.get("[data-testid='delivery-use']").trigger("click");
 			await flushPromises();
-			expect(deliveryLines(cart)).toEqual([[1, 45, "17.4 mi, band 2 (1,600 lb)"]]);
+			expect(deliveryLines(cart)).toEqual([[17, 2.5, "17.4 mi, band 2 (1,600 lb)"]]);
 			const sale = cart.getInvoiceData("Till", "SHIFT-1");
 			expect([sale.shipping_address_name, sale.pos_delivery_miles, sale.pos_delivery_miles_source]).toEqual(["ADDR-BARN", 17.4, "address"]);
 		});
@@ -604,7 +646,7 @@ describe("the address picker (Bill 2026-10-01, MuleCity-qajl.3)", () => {
 			await flushPromises();
 			// Priced at the till; the site has no miles for the shed to quote from.
 			expect(state.call).not.toHaveBeenCalledWith("xpos.api.delivery.quote_delivery", expect.anything());
-			expect(deliveryLines(cart)).toEqual([[1, 105, "42 mi, band 2 (1,600 lb), miles typed at the till"]]);
+			expect(deliveryLines(cart)).toEqual([[42, 2.5, "42 mi, band 2 (1,600 lb), miles typed at the till"]]);
 			const sale = cart.getInvoiceData("Till", "SHIFT-1");
 			expect([sale.shipping_address_name, sale.pos_delivery_miles, sale.pos_delivery_miles_source]).toEqual(["ADDR-SHED", 42, "manual"]);
 			// The site flags a sale priced from typed miles (xpos.api.delivery.note_typed_miles).
