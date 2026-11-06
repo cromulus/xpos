@@ -23,9 +23,17 @@
 			</table>
 		</section>
 
+		<section v-if="Object.keys(details.reference_analysis || {}).length" aria-labelledby="feed-reference-title" data-testid="reference-analysis">
+			<h3 id="feed-reference-title" class="font-semibold">{{ __("Reference estimates") }}</h3>
+			<p class="text-xs text-muted-foreground mt-1">{{ __("Typical ingredient composition, as fed. These estimates are used in recipe calculations.") }}</p>
+			<table class="w-full mt-2"><thead><tr><th>{{ __("Nutrient") }}</th><th class="numeric">{{ __("Estimated value") }}</th></tr></thead>
+				<tbody><tr v-for="field in Object.keys(details.reference_analysis || {})" :key="field"><td>{{ label(field) }}<details class="text-xs text-muted-foreground"><summary>{{ __("Source") }}</summary><p>{{ details.reference_analysis_sources?.[field] }}</p></details></td><td class="numeric">{{ number(details.reference_analysis?.[field]) }}</td></tr></tbody>
+			</table>
+		</section>
+
 		<section v-if="details.calculated_analysis" data-testid="recipe-analysis">
 			<h3 class="font-semibold">{{ __("Calculated recipe nutrition") }}</h3>
-			<p class="text-xs text-muted-foreground mt-1">{{ __("Weighted from ingredient analysis. Unknown means analysis or weight is missing.") }}</p>
+			<p class="text-xs text-muted-foreground mt-1">{{ __("Weighted from ingredient analysis, including any reference estimates. Unknown means analysis or weight is missing.") }}</p>
 			<table class="w-full mt-2"><thead><tr><th>{{ __("Nutrient") }}</th><th class="numeric">{{ __("Recipe") }}</th></tr></thead>
 				<tbody><tr v-for="field in fields(details.calculated_analysis)" :key="field"><td>{{ label(field) }}</td><td class="numeric" :title="missing(field)">{{ number(details.calculated_analysis[field]) }}</td></tr></tbody>
 			</table>

@@ -9,6 +9,8 @@ export interface FeedDetails {
 	composition?: Array<{ item_code: string; item_name: string; lbs: number | null; share_pct: number | null; qty?: number; uom?: string }>;
 	guaranteed_analysis?: FeedAnalysis;
 	guaranteed_analysis_source?: string;
+	reference_analysis?: FeedAnalysis;
+	reference_analysis_sources?: Record<string, string>;
 	calculated_analysis?: FeedAnalysis;
 	analysis_missing_items?: Record<string, string[]>;
 	nutrient_labels?: Record<string, string>;

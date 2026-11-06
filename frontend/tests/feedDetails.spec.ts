@@ -16,6 +16,18 @@ const pull: MixPull = {
 		recipe_analysis: { protein_pct: 10, fat_pct: 0, fiber_pct: null }, planned_analysis: { protein_pct: 9.8, fat_pct: 0, fiber_pct: null } },
 };
 describe("Feed detailed view", () => {
+	it("shows reference estimates separately from recorded guarantees and escapes source text", () => {
+		const view = mount(FeedDetails, { props: { details: { ...details,
+			reference_analysis: { methionine_pct: 0.16 },
+			reference_analysis_sources: { methionine_pct: "Reference estimate — Feedtables, as fed <script>alert(1)</script>" },
+		} } });
+		const section = view.get('[data-testid="reference-analysis"]');
+		expect(section.text()).toContain("Reference estimates");
+		expect(section.text()).toContain("Feedtables, as fed");
+		expect(section.text()).toContain("0.16");
+		expect(view.get('[data-testid="guaranteed-analysis"]').text()).not.toContain("0.16");
+		expect(view.find("script").exists()).toBe(false);
+	});
 	it("keeps recorded guarantees, calculated nutrition and missing values distinct", () => {
 		const view = mount(FeedDetails, { props: { details } });
 		const guarantee = view.get('[data-testid="guaranteed-analysis"]').text();
