@@ -273,14 +273,14 @@
    "amount": 45.5
   },
   {
-   "case": "E W Ellis 25.6 mi, a light load: 25.6 x $1.25 = $32 (was 25 x $1.25 = $31.25)",
-   "miles": 25.6,
+   "case": "E W Ellis, Clayton 25.1 mi, a light load: 25.1 x $1.25 = $31.38 (was 25 x $1.25 = $31.25)",
+   "miles": 25.1,
    "weight_lb": 300,
    "band": 1,
-   "qty": 25.6,
+   "qty": 25.1,
    "uom": "Mile",
    "rate": 1.25,
-   "amount": 32.0
+   "amount": 31.38
   }
  ],
  "per_mile_cases": [
