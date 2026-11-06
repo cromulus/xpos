@@ -12,7 +12,7 @@ import frappe
 
 from xpos.api import delivery
 
-POLICY = {"rate_per_mile": 5.0, "round_to": 5.0, "local_miles": 5.0, "local_charge": 5.0,
+POLICY = {"rate_per_mile": 5.0, "local_miles": 5.0, "local_charge": 5.0,
 	"bands": [{"min_lb": 0.0, "pct": 25.0}], "item_code": "DEL"}
 
 

@@ -7,9 +7,11 @@
  *
  * What: `deliveryLine` / `deliveryCharge` mirror the site's pure functions
  * (mulecity_erpnext/pricing/delivery_charge.py): since MuleCity-bi3t the line is
- * sold by the mile, qty = the miles rounded DOWN, unit "Mile", at the band's
- * rate a mile; under the local miles the flat local charge, qty 1 in the
- * item's own unit. `quoteOffline` mirrors its
+ * sold by the mile, unit "Mile", at the band's rate a mile; since MuleCity-qgvv
+ * (Bill 2026-11-05: "lets not round deliveries, or, round to pennies. if it's
+ * 1.5 miles, it's $7.50.") qty = the miles to the tenth and the charge is
+ * qty x rate to the cent, never rounded to dollars. Under the local miles the
+ * flat local charge, qty 1 in the item's own unit. `quoteOffline` mirrors its
  * precedence (pricing/delivery_charge.py quote_line): no charge, then the
  * standing charge, then the customer's own rate a mile (MuleCity-ua51, Bill
  * 2026-11-05: "if there is a historical delivery price, or historical price per
@@ -21,7 +23,6 @@
 
 export interface DeliveryPolicy {
 	rate_per_mile: number;
-	round_to: number;
 	local_miles: number;
 	local_charge: number;
 	bands: { min_lb: number; pct: number }[];
@@ -77,7 +78,7 @@ export interface DeliveryQuote {
 	/** Null when the clerk must type the charge. */
 	amount: number | null;
 	/**
-	 * The delivery line (MuleCity-bi3t): by the mile, qty = whole miles in uom
+	 * The delivery line (MuleCity-bi3t, qgvv): by the mile, qty = the miles to the tenth in uom
 	 * MILE_UOM at `rate` a mile; a standing, free or local charge is qty 1 with
 	 * uom null (the item's own unit). Older sites send none: qty 1 at amount.
 	 */
@@ -98,13 +99,22 @@ export const TYPED_OFFLINE = "manual_offline";
 /** The unit the delivery line is sold in by the mile (an ERPNext UOM the site ensures). */
 export const MILE_UOM = "Mile";
 
-/** The miles rounded DOWN to a whole mile (17.9 -> 17); a hair under is float noise. */
-export function wholeMiles(miles: number): number {
-	return Math.max(Math.floor((Number(miles) || 0) + 1e-9), 0);
+/**
+ * The miles the line bills: to the tenth, halves up (12.37 -> 12.4; 17.9 stays 17.9),
+ * the site's billed_miles. Never rounded down to a whole mile (MuleCity-qgvv); float
+ * noise (16.999999999999) is not a tenth less.
+ */
+export function billedMiles(miles: number | null | undefined): number {
+	return Math.max(Math.floor((Number(miles) || 0) * 10 + 0.5 + 1e-9) / 10, 0);
 }
 
-function cents(amount: number): number {
-	return Math.floor(amount * 100 + 0.5) / 100;
+/**
+ * To the cent, halves up, as ERPNext rounds a line (57.1 x 3.75 = 214.125 -> 214.13).
+ * The product is tidied to 6 places of cents first, so float noise
+ * (214.12499999999997) cannot drop the half cent; the site's _cents.
+ */
+export function cents(amount: number): number {
+	return Math.floor(Number((amount * 100).toFixed(6)) + 0.5) / 100;
 }
 
 export interface DeliveryLine {
@@ -128,7 +138,7 @@ export function bandOf(policy: DeliveryPolicy, weightLb: number): number {
 /** The delivery line for a load of `weightLb` driven `miles` one way (the site's delivery_line). */
 export function deliveryLine(policy: DeliveryPolicy, miles: number, weightLb: number): DeliveryLine {
 	const pct = policy.bands[bandOf(policy, weightLb) - 1].pct;
-	const qty = wholeMiles(miles);
+	const qty = billedMiles(miles);
 	const rate = cents((policy.rate_per_mile * pct) / 100);
 	const amount = cents(qty * rate);
 	if (miles < policy.local_miles || amount < policy.local_charge) {
@@ -139,10 +149,10 @@ export function deliveryLine(policy: DeliveryPolicy, miles: number, weightLb: nu
 
 /**
  * The line for a customer's own rate a mile (the site's per_mile_line, MuleCity-ua51):
- * whole miles at that rate whatever the load weighs, never below the local charge.
+ * the miles at that rate whatever the load weighs, never below the local charge.
  */
 export function perMileLine(policy: DeliveryPolicy, miles: number, ratePerMile: number): DeliveryLine {
-	const qty = wholeMiles(miles);
+	const qty = billedMiles(miles);
 	const rate = cents(Number(ratePerMile));
 	const amount = cents(qty * rate);
 	if (amount < policy.local_charge) {

@@ -1,5 +1,22 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc59 (contains mc58)
+
+### Delivery billed to the tenth of a mile, to the cent (MuleCity-qgvv)
+
+Bill 2026-11-05: "lets not round deliveries, or, round to pennies. if it's 1.5
+miles, it's $7.50." Supersedes mc57's "miles rounded down".
+
+- `billedMiles` replaces `wholeMiles`: the line's qty is the address's miles to
+  the tenth (12.37 -> 12.4; 17.9 stays 17.9), UOM "Mile"; `deliveryLine` and
+  `perMileLine` charge qty x rate to the cent, halves up as ERPNext rounds a
+  line (`cents`, float-noise safe: 57.1 x $3.75 = $214.13). A customer's own $5
+  rate a mile to 1.5 mi is $7.50.
+- `round_to` is gone from `DeliveryPolicy` (the site no longer sends it).
+- The cart keeps the quote's line when the clerk keeps its amount, comparing
+  with the same `cents` (a half-cent product no longer falls back to qty 1).
+- Vectors re-copied from the site (`tests/fixtures/delivery_charge_vectors.json`).
+
 ## mule-v2.10.1-mc58 (contains mc57)
 
 ### A customer's own delivery price or rate a mile stays (MuleCity-ua51)

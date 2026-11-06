@@ -10,7 +10,7 @@ Why
 
 What (site hooks, all optional; with none, XPOS offers no quoted delivery)
     * ``xpos_delivery_policy()`` -> dict: the pricing inputs the till caches to
-      price offline (``rate_per_mile``, ``round_to``, ``local_miles``,
+      price offline (``rate_per_mile``, ``local_miles``,
       ``local_charge``, ``bands: [{min_lb, pct}]``) and ``item_code``, the
       delivery line's item.
     * ``xpos_delivery_quote(customer, address, weight_lb)`` -> ``{amount (None

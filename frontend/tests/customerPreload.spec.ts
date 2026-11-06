@@ -52,7 +52,7 @@ it("uses the active POS profile when the picker does not pass one", async () => 
 });
 
 it("keeps the site's delivery policy with the customers, to price deliveries offline (MuleCity-6nb1)", async () => {
-	const policy = { rate_per_mile: 5, round_to: 5, local_miles: 5, local_charge: 5, bands: [], item_code: "DEL" };
+	const policy = { rate_per_mile: 5, local_miles: 5, local_charge: 5, bands: [], item_code: "DEL" };
 	mocks.call.mockImplementation(async (method: string) =>
 		method.endsWith("get_delivery_policy") ? policy : { customers: [{ name: "A" }], complete: true },
 	);

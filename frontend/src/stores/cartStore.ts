@@ -60,6 +60,7 @@ import {
 	TYPED_OFFLINE,
 	isLocalAddress,
 	pricedByMiles,
+	cents as toCents,
 	fullAddress,
 	type CustomerDelivery,
 	type DeliveryAddress,
@@ -2569,7 +2570,7 @@ export const useCartStore = defineStore("cart", () => {
 	/**
 	 * Deliver the sale to `address` for `amount` (MuleCity-6nb1): one line of the
 	 * site's delivery item, described by the quote. Sold by the mile (MuleCity-bi3t):
-	 * a quote priced from miles fills qty = the miles rounded down, in its uom
+	 * a quote priced from miles fills qty = the miles to the tenth (MuleCity-qgvv), in its uom
 	 * ("Mile"), at its rate a mile; a standing, free, local or typed charge is qty 1
 	 * in the item's own unit. A second "Add delivery" (another address) updates
 	 * that line; it stays an ordinary line (qty and rate editable within the cap).
@@ -2591,7 +2592,7 @@ export const useCartStore = defineStore("cart", () => {
 			quote.amount === amount &&
 			quote.rate != null &&
 			(quote.qty || 0) > 0 &&
-			Math.abs(Math.round(quote.qty! * quote.rate * 100) / 100 - amount) < 0.005;
+			Math.abs(toCents(quote.qty! * quote.rate) - amount) < 0.005;
 		const qty = byLine ? quote.qty! : 1;
 		const rate = byLine ? quote.rate! : amount;
 		const uom = (byLine && quote.uom) || item.stock_uom;

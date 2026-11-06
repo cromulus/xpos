@@ -1,8 +1,7 @@
 {
- "about": "Shared delivery-charge cases (MuleCity-l3p3, bi3t): pricing/delivery_charge.py (delivery_line) and the XPOS fork must give each case's qty, uom, rate and amount for this policy (the line is sold by the mile, miles rounded down; uom null = the item's own unit, the flat local charge). seed_amount is the earlier rounded charge scripts/delivery_rates.py priced the 2026-09 standing-charge seed with. per_mile_cases: a customer's own historical rate a mile (MuleCity-ua51, pricing/delivery_charge.py per_mile_line): whole miles x that rate whatever the weight, never below the local charge. quote_cases: which price applies (quote_line, and the till's quoteOffline): no delivery charge, then the customer's flat delivery price, then their rate a mile, then the default by the mile, else none (the clerk types it).",
+ "about": "Shared delivery-charge cases (MuleCity-l3p3, bi3t): pricing/delivery_charge.py (delivery_line) and the XPOS fork must give each case's qty, uom, rate and amount for this policy (the line is sold by the mile: the miles to the tenth, the amount to the cent, never rounded to dollars (Bill 2026-11-05, MuleCity-qgvv: \"if it's 1.5 miles, it's $7.50\"); uom null = the item's own unit, the flat local charge). seed_amount is the earlier rounded charge scripts/delivery_rates.py priced the 2026-09 standing-charge seed with. per_mile_cases: a customer's own historical rate a mile (MuleCity-ua51, pricing/delivery_charge.py per_mile_line): the miles x that rate whatever the weight, never below the local charge. quote_cases: which price applies (quote_line, and the till's quoteOffline): no delivery charge, then the customer's flat delivery price, then their rate a mile, then the default by the mile, else none (the clerk types it).",
  "policy": {
   "rate_per_mile": 5.0,
-  "round_to": 5.0,
   "local_miles": 5.0,
   "local_charge": 5.0,
   "bands": [
@@ -63,7 +62,7 @@
    "miles": 5,
    "weight_lb": 4000,
    "band": 4,
-   "qty": 5,
+   "qty": 5.0,
    "uom": "Mile",
    "rate": 5.0,
    "amount": 25.0,
@@ -74,7 +73,7 @@
    "miles": 42,
    "weight_lb": 0,
    "band": 1,
-   "qty": 42,
+   "qty": 42.0,
    "uom": "Mile",
    "rate": 1.25,
    "amount": 52.5,
@@ -85,7 +84,7 @@
    "miles": 42,
    "weight_lb": 999.99,
    "band": 1,
-   "qty": 42,
+   "qty": 42.0,
    "uom": "Mile",
    "rate": 1.25,
    "amount": 52.5,
@@ -96,7 +95,7 @@
    "miles": 42,
    "weight_lb": 1000,
    "band": 2,
-   "qty": 42,
+   "qty": 42.0,
    "uom": "Mile",
    "rate": 2.5,
    "amount": 105.0,
@@ -107,7 +106,7 @@
    "miles": 42,
    "weight_lb": 1999.99,
    "band": 2,
-   "qty": 42,
+   "qty": 42.0,
    "uom": "Mile",
    "rate": 2.5,
    "amount": 105.0,
@@ -118,7 +117,7 @@
    "miles": 42,
    "weight_lb": 2000,
    "band": 3,
-   "qty": 42,
+   "qty": 42.0,
    "uom": "Mile",
    "rate": 3.75,
    "amount": 157.5,
@@ -129,7 +128,7 @@
    "miles": 42,
    "weight_lb": 1600,
    "band": 2,
-   "qty": 42,
+   "qty": 42.0,
    "uom": "Mile",
    "rate": 2.5,
    "amount": 105.0,
@@ -140,7 +139,7 @@
    "miles": 42,
    "weight_lb": 3999.99,
    "band": 3,
-   "qty": 42,
+   "qty": 42.0,
    "uom": "Mile",
    "rate": 3.75,
    "amount": 157.5,
@@ -151,21 +150,21 @@
    "miles": 42,
    "weight_lb": 4000,
    "band": 4,
-   "qty": 42,
+   "qty": 42.0,
    "uom": "Mile",
    "rate": 5.0,
    "amount": 210.0,
    "seed_amount": 210.0
   },
   {
-   "case": "12.5 mi rounds down to 12 miles: 12 x $5 = $60 (the seed rounded $62.50 to $65)",
+   "case": "12.5 mi is 12.5 miles: 12.5 x $5 = $62.50 (the seed rounded to $65)",
    "miles": 12.5,
    "weight_lb": 5000,
    "band": 4,
-   "qty": 12,
+   "qty": 12.5,
    "uom": "Mile",
    "rate": 5.0,
-   "amount": 60.0,
+   "amount": 62.5,
    "seed_amount": 65.0
   },
   {
@@ -173,114 +172,144 @@
    "miles": 10,
    "weight_lb": 500,
    "band": 1,
-   "qty": 10,
+   "qty": 10.0,
    "uom": "Mile",
    "rate": 1.25,
    "amount": 12.5,
    "seed_amount": 15.0
   },
   {
-   "case": "5.1 mi band 1: 5 x $1.25 = $6.25 (the seed rounded to $5)",
+   "case": "5.1 mi band 1: 5.1 x $1.25 = $6.38 to the cent (the seed rounded to $5)",
    "miles": 5.1,
    "weight_lb": 100,
    "band": 1,
-   "qty": 5,
+   "qty": 5.1,
    "uom": "Mile",
    "rate": 1.25,
-   "amount": 6.25,
+   "amount": 6.38,
    "seed_amount": 5.0
   },
   {
-   "case": "long distance, full load",
+   "case": "long distance, full load: 74.3 x $5",
    "miles": 74.3,
    "weight_lb": 6000,
    "band": 4,
-   "qty": 74,
+   "qty": 74.3,
    "uom": "Mile",
    "rate": 5.0,
-   "amount": 370.0,
+   "amount": 371.5,
    "seed_amount": 370.0
   },
   {
-   "case": "long distance, band 3",
+   "case": "long distance, band 3: 74.3 x $3.75 = $278.63",
    "miles": 74.3,
    "weight_lb": 2500,
    "band": 3,
-   "qty": 74,
+   "qty": 74.3,
    "uom": "Mile",
    "rate": 3.75,
-   "amount": 277.5,
+   "amount": 278.63,
    "seed_amount": 280.0
   },
   {
-   "case": "17.4 mi rounds down to 17 miles: 17 x $5 = $85",
+   "case": "17.4 mi is 17.4 miles: 17.4 x $5 = $87",
    "miles": 17.4,
    "weight_lb": 4000,
    "band": 4,
-   "qty": 17,
+   "qty": 17.4,
    "uom": "Mile",
    "rate": 5.0,
-   "amount": 85.0,
+   "amount": 87.0,
    "seed_amount": 85.0
   },
   {
-   "case": "17.9 mi rounds DOWN to 17 miles, full load $5.00 a mile",
+   "case": "17.9 mi is not rounded down: 17.9 x $5 = $89.50",
    "miles": 17.9,
    "weight_lb": 4000,
    "band": 4,
-   "qty": 17,
+   "qty": 17.9,
    "uom": "Mile",
    "rate": 5.0,
-   "amount": 85.0
+   "amount": 89.5
   },
   {
-   "case": "Southern States Creedmoor 57.1 mi, 40 bags (2,000 lb) band 3: 57 x $3.75",
+   "case": "Southern States Creedmoor 57.1 mi, 40 bags (2,000 lb) band 3: 57.1 x $3.75 = $214.13",
    "miles": 57.1,
    "weight_lb": 2000,
    "band": 3,
-   "qty": 57,
+   "qty": 57.1,
    "uom": "Mile",
    "rate": 3.75,
-   "amount": 213.75
+   "amount": 214.13
   },
   {
    "case": "6 mi, band 1: 6 x $1.25 = $7.50, above the local charge",
    "miles": 6,
    "weight_lb": 10,
    "band": 1,
-   "qty": 6,
+   "qty": 6.0,
    "uom": "Mile",
    "rate": 1.25,
    "amount": 7.5
+  },
+  {
+   "case": "Bill 2026-11-05: 12.37 mi (typed to the hundredth) bills 12.4 miles: 12.4 x $5 = $62",
+   "miles": 12.37,
+   "weight_lb": 4000,
+   "band": 4,
+   "qty": 12.4,
+   "uom": "Mile",
+   "rate": 5.0,
+   "amount": 62.0
+  },
+  {
+   "case": "float noise: 9.049999999999 mi is 9.05, which bills 9.1 miles (halves up): 9.1 x $5 = $45.50",
+   "miles": 9.049999999999,
+   "weight_lb": 4000,
+   "band": 4,
+   "qty": 9.1,
+   "uom": "Mile",
+   "rate": 5.0,
+   "amount": 45.5
+  },
+  {
+   "case": "E W Ellis 25.6 mi, a light load: 25.6 x $1.25 = $32 (was 25 x $1.25 = $31.25)",
+   "miles": 25.6,
+   "weight_lb": 300,
+   "band": 1,
+   "qty": 25.6,
+   "uom": "Mile",
+   "rate": 1.25,
+   "amount": 32.0
   }
  ],
  "per_mile_cases": [
   {
-   "case": "Saving Grace at Matt's $3 a mile: 48.8 mi -> 48 x $3.00",
+   "case": "Saving Grace at Matt's $3 a mile: 48.8 x $3.00 = $146.40",
    "miles": 48.8,
    "rate_per_mile": 3.0,
-   "qty": 48,
+   "qty": 48.8,
    "uom": "Mile",
    "rate": 3.0,
-   "amount": 144.0
+   "amount": 146.4
   },
   {
-   "case": "the rate ignores the load's weight band ($7 a mile, 3.2 mi -> 3 x $7)",
+   "case": "the rate ignores the load's weight band ($7 a mile, 3.2 x $7 = $22.40)",
    "miles": 3.2,
    "rate_per_mile": 7.0,
-   "qty": 3,
+   "qty": 3.2,
    "uom": "Mile",
    "rate": 7.0,
-   "amount": 21.0
+   "amount": 22.4
   },
   {
-   "case": "under the local charge is the flat local charge",
+   "case": "1.9 x $3 = $5.70 is above the local charge: by the mile",
    "miles": 1.9,
    "rate_per_mile": 3.0,
-   "qty": 1,
-   "uom": null,
-   "rate": 5.0,
-   "amount": 5.0
+   "qty": 1.9,
+   "uom": "Mile",
+   "rate": 3.0,
+   "amount": 5.7
   },
   {
    "case": "zero miles is the flat local charge",
@@ -295,19 +324,37 @@
    "case": "exactly the local charge is by the mile",
    "miles": 2.0,
    "rate_per_mile": 2.5,
-   "qty": 2,
+   "qty": 2.0,
    "uom": "Mile",
    "rate": 2.5,
    "amount": 5.0
   },
   {
-   "case": "cents rate, miles rounded down: 57.1 mi at $4.15",
+   "case": "cents rate: 57.1 x $4.15 = $236.97 to the cent",
    "miles": 57.1,
    "rate_per_mile": 4.15,
-   "qty": 57,
+   "qty": 57.1,
    "uom": "Mile",
    "rate": 4.15,
-   "amount": 236.55
+   "amount": 236.97
+  },
+  {
+   "case": "Bill 2026-11-05: 1.5 mi at $5 a mile is $7.50",
+   "miles": 1.5,
+   "rate_per_mile": 5.0,
+   "qty": 1.5,
+   "uom": "Mile",
+   "rate": 5.0,
+   "amount": 7.5
+  },
+  {
+   "case": "under the local charge is the flat local charge (1.2 x $3 = $3.60)",
+   "miles": 1.2,
+   "rate_per_mile": 3.0,
+   "qty": 1,
+   "uom": null,
+   "rate": 5.0,
+   "amount": 5.0
   }
  ],
  "quote_cases": [
@@ -328,7 +375,7 @@
    "band": null
   },
   {
-   "case": "a flat historical price stays (Saving Grace $150, not the $240 default)",
+   "case": "a flat historical price stays (Saving Grace $150, not the $244 default)",
    "customer": {
     "no_charge": false,
     "standing_charge": 150,
@@ -385,10 +432,10 @@
    "miles": 48.8,
    "weight_lb": 500,
    "source": "per_mile",
-   "qty": 48,
+   "qty": 48.8,
    "uom": "Mile",
    "rate": 3.0,
-   "amount": 144.0,
+   "amount": 146.4,
    "band": null
   },
   {
@@ -408,7 +455,7 @@
    "band": null
   },
   {
-   "case": "no history: the default by the mile (48.8 mi full load = 48 x $5)",
+   "case": "no history: the default by the mile (48.8 mi full load = 48.8 x $5 = $244)",
    "customer": {
     "no_charge": false,
     "standing_charge": 0,
@@ -417,10 +464,10 @@
    "miles": 48.8,
    "weight_lb": 4000,
    "source": "miles",
-   "qty": 48,
+   "qty": 48.8,
    "uom": "Mile",
    "rate": 5.0,
-   "amount": 240.0,
+   "amount": 244.0,
    "band": 4
   },
   {
@@ -429,10 +476,10 @@
    "miles": 20.9,
    "weight_lb": 1500,
    "source": "miles",
-   "qty": 20,
+   "qty": 20.9,
    "uom": "Mile",
    "rate": 2.5,
-   "amount": 50.0,
+   "amount": 52.25,
    "band": 2
   },
   {
