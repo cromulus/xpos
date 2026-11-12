@@ -105,6 +105,7 @@
 				variant="ghost"
 				size="sm"
 				class="text-muted-foreground hover:text-amber-500 gap-1"
+				data-testid="open-return"
 				@click="showReturnDialog = true"
 			>
 				<RotateCcw class="w-4 h-4" />

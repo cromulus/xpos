@@ -44,7 +44,7 @@ The profile's discount cap (`max_discount_percentage_allowed`) must be under
 
 ```bash
 yarn test:offline:unit   # the offline unit specs (tests/offline*.spec.ts), no bench needed
-yarn test:offline        # those, then every tests/e2e/bench/offline-*.cy.ts story on the bench
+yarn test:offline        # those, then every tests/e2e/bench/{offline,till}-*.cy.ts story on the bench
 ```
 
 One story file per concern, named `offline-<concern>.cy.ts`, each story "who does
@@ -57,6 +57,7 @@ what offline, and what the server shows after sync":
 | `offline-delivery.cy.ts` | a delivery to an address typed offline (with its miles) is priced at the till; the synced sale ships there, keeps that price and is flagged (MuleCity-6nb1); a customer with three addresses: the picker opens offline on the primary shipping one, a searched address with no miles is priced from typed miles, and the synced sale keeps the address, day and miles (MuleCity-qajl.3/.4) |
 | `offline-reload.cy.ts` | with the internet down, a reload (F5) and a cold start of another till page open the till from the service worker's app shell with the boot saved at the last online start (no CSRF token on the device); a bag sold then queues, and on reconnect the till fetches a fresh boot and token before anything is sent, and the sale posts with that token; online, a reload is always the server's page (MuleCity-q8aq) |
 | `offline-cold-start.cy.ts` | a browser that ran X POS online once opens `/xpos` and `/xpos/` as a new page with the internet down: with a shift open it starts as the saved user, sells, and the sale syncs with a fresh CSRF token on reconnect; with no shift open it says it is offline and that a shift needs the internet (MuleCity-q8aq, mc30) |
+| `till-returns-and-cart.cy.ts` | online counter stories (Bill and Grant, 2026-11-12, MuleCity-rj2o): a return with a sale in the cart asks first and parks the sale as a draft; a refund check asks for its number and the posted return keeps it; a return left as credit on account pays nothing out and posts a credit; a past purchase is added to the cart, not swapped in; with a busy cart Load for payment asks to park it |
 | `offline-orders.cy.ts` | the Orders view, opened online, keeps its list of Sales Orders in flight; offline it shows that list marked last known with its time (never "no orders"), searchable, and cannot load an order for payment (MuleCity-zstm.23) |
 
 Shared steps live in `tests/e2e/support/offline.ts` (`openTillOnline`, which starts from
