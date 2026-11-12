@@ -44,8 +44,10 @@ function returnOf(sale: string) {
 	cy.get("[data-testid='process-return']").click();
 }
 
+/** The cart's own "Process Return $x" button, as the cashier presses it. */
 function openPay() {
-	cy.window().then((win) => win.dispatchEvent(new CustomEvent("xpos:process-payment")));
+	cy.contains("button:visible", /Process Return\s+\$/).click();
+	cy.get("[data-testid='payment-method']", { timeout: 15000 }).should("exist");
 }
 
 function newestReturn(known: Set<string>) {
