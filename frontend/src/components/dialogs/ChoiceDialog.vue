@@ -9,7 +9,9 @@
 			}
 		"
 	>
-		<DialogContent class="max-w-md" data-testid="choice-dialog">
+		<DialogContent class="max-w-md">
+			<!-- The test id sits inside: DialogContent's root is a portal, which drops attributes. -->
+			<div class="grid gap-4" data-testid="choice-dialog">
 			<DialogHeader>
 				<DialogTitle class="text-base">{{ title }}</DialogTitle>
 				<DialogDescription v-if="description" class="text-sm">{{ description }}</DialogDescription>
@@ -34,6 +36,7 @@
 					{{ __("Cancel") }}
 				</Button>
 			</DialogFooter>
+			</div>
 		</DialogContent>
 	</Dialog>
 </template>
