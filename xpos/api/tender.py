@@ -76,7 +76,7 @@ def build_tender_legs(
 			amount = flt(client_amount, invoice_precision)
 			if amount == 0 and mode not in keep_zero_modes:
 				continue
-			rows.append({"mode_of_payment": mode, "amount": amount})
+			rows.append({"mode_of_payment": mode, "amount": amount, **_reference(payment)})
 			total += amount
 			continue
 
@@ -114,11 +114,18 @@ def build_tender_legs(
 				"pos_tender_currency": tender_currency,
 				"pos_tender_amount": native,
 				"pos_exchange_rate": rate,
+				**_reference(payment),
 			}
 		)
 		total += amount
 
 	return rows, flt(total, invoice_precision)
+
+
+def _reference(payment: dict) -> dict:
+	"""A tender's own reference, e.g. the number of the check written or taken."""
+	reference = str(payment.get("reference_no") or "").strip()[:140]
+	return {"reference_no": reference} if reference else {}
 
 
 def build_change_legs(change_legs: list[dict], invoice_doc, rate_cache: dict | None = None) -> tuple:

@@ -8,24 +8,30 @@
 				<h2 class="text-base font-bold text-foreground" data-testid="open-orders-scope">
 					{{ scope ? __("Orders for {0}", [scopeName]) : __("All orders in flight") }}
 				</h2>
-				<Button
-					v-if="scope"
-					variant="outline"
-					size="sm"
-					data-testid="open-orders-show-all"
-					@click="showAll"
-				>
-					{{ __("Show all orders") }}
-				</Button>
-				<Button
-					v-else-if="cartScope"
-					variant="outline"
-					size="sm"
-					data-testid="open-orders-show-customer"
-					@click="showCustomer"
-				>
-					{{ __("Only {0}", [cartStore.customerName || cartScope]) }}
-				</Button>
+				<!-- Everyone's orders, or one customer's, one press either way (Bill 2026-11-12,
+				     MuleCity-rj2o): the clerk can load any customer's order for payment. -->
+				<div v-if="scope || cartScope" class="inline-flex rounded-md border border-border overflow-hidden" role="group">
+					<Button
+						size="sm"
+						:variant="scope ? 'ghost' : 'secondary'"
+						class="rounded-none"
+						:aria-pressed="!scope"
+						data-testid="open-orders-show-all"
+						@click="showAll"
+					>
+						{{ __("All orders") }}
+					</Button>
+					<Button
+						size="sm"
+						:variant="scope ? 'secondary' : 'ghost'"
+						class="rounded-none"
+						:aria-pressed="!!scope"
+						data-testid="open-orders-show-customer"
+						@click="showCustomer"
+					>
+						{{ __("Only {0}", [scope ? scopeName : cartStore.customerName || cartScope]) }}
+					</Button>
+				</div>
 			</div>
 			<form class="flex gap-2" @submit.prevent="refresh">
 				<Input
@@ -68,8 +74,8 @@
 						: __("None in the last known list (as of {0}).", [fetchedAtText(result.fetchedAt)])
 				}}
 			</p>
-			<p v-if="!cartStore.isEmpty" class="text-xs text-destructive">
-				{{ __("Finish or park the current basket before loading an order.") }}
+			<p v-if="!cartStore.isEmpty" class="text-xs text-muted-foreground" data-testid="open-orders-cart-busy">
+				{{ __("The cart has a sale in it: loading an order saves that sale as a draft first.") }}
 			</p>
 		</div>
 		<div class="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-3 space-y-2">
@@ -124,7 +130,7 @@
 					<Button
 						size="sm"
 						data-testid="open-order-load"
-						:disabled="busy || !cartStore.isEmpty || !offline.isOnline || !!pickupBlockedReason(row)"
+						:disabled="busy || !offline.isOnline || !!pickupBlockedReason(row)"
 						:title="
 							pickupBlockedReason(row)
 								? __(pickupBlockedReason(row))
@@ -149,6 +155,14 @@
 				}}
 			</p>
 		</div>
+		<ChoiceDialog
+			:open="!!waiting"
+			:title="__('The cart has a sale in it')"
+			:description="__('Save it as a draft (bring it back with Restore draft), then load {0} for payment?', [waiting?.customer_name || waiting?.customer || ''])"
+			:choices="[{ key: 'park', label: __('Save the sale as a draft, then load the order') }]"
+			@choose="parkThenLoad"
+			@cancel="waiting = null"
+		/>
 	</div>
 </template>
 
@@ -165,6 +179,8 @@ import { useOfflineStore } from "@/stores/offlineStore";
 import { useOpenOrdersStore } from "@/stores/openOrdersStore";
 import { useMoney } from "@/composables/useMoney";
 import { call, showInfo } from "@/services/api";
+import ChoiceDialog from "@/components/dialogs/ChoiceDialog.vue";
+import { useParkCart } from "@/composables/useParkCart";
 import { fetchedAtText, pickupBlockedReason, readinessLabel, type OpenOrder, type OrdersResult } from "@/utils/openOrders";
 import __ from "@/lib/translate";
 
@@ -175,6 +191,9 @@ const posStore = usePosStore();
 const offline = useOfflineStore();
 const orders = useOpenOrdersStore();
 const { money } = useMoney();
+const { parkCart } = useParkCart();
+/** An order the clerk asked to load while the cart had a sale in it (MuleCity-rj2o). */
+const waiting = ref<OpenOrder | null>(null);
 
 /** The cart's customer, unless it is the walk-in. */
 const cartScope = computed(() => orders.scopeOf(cartStore.customer?.name));
@@ -215,12 +234,16 @@ function showAll() {
 	router.replace({ query: { ...route.query, customer: "" } });
 }
 function showCustomer() {
-	router.replace({ query: { ...route.query, customer: cartScope.value } });
+	router.replace({ query: { ...route.query, customer: cartScope.value || scope.value } });
 }
 
 /** The same steps as the Mule City dialog: the server maps the order (pickup, advances), the cart loads it. */
 async function pickup(row: OpenOrder) {
-	if (!cartStore.isEmpty || pickupBlockedReason(row)) return;
+	if (pickupBlockedReason(row)) return;
+	if (!cartStore.isEmpty) {
+		waiting.value = row;
+		return;
+	}
 	busy.value = true;
 	error.value = "";
 	try {
@@ -237,6 +260,12 @@ async function pickup(row: OpenOrder) {
 	} finally {
 		busy.value = false;
 	}
+}
+
+async function parkThenLoad() {
+	const row = waiting.value;
+	waiting.value = null;
+	if (row && (await parkCart())) await pickup(row);
 }
 
 watch(scope, () => {

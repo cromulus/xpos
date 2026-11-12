@@ -215,6 +215,8 @@ export interface POSItem {
 
 export interface CartItem extends POSItem {
 	qty: number;
+	/** A return line: the sold row it refunds (Sales Invoice Item), so it refunds that row's price. */
+	sales_invoice_item?: string;
 	discount_percentage: number;
 	/**
 	 * Money off the whole line, as the cashier types and sees it. The invoice
@@ -444,6 +446,8 @@ export interface InvoiceItem {
 export interface InvoicePayment {
 	mode_of_payment: string;
 	amount: number;
+	/** The number of the check taken or written. */
+	reference_no?: string;
 	base_amount?: number;
 	account?: string;
 	type?: string;
@@ -509,6 +513,8 @@ export interface InvoiceData {
 	currency?: string;
 	conversion_rate?: number;
 	is_credit_sale?: boolean;
+	/** A return: "Paid out", "Credit on account" or "Mail a check" (MuleCity-rj2o). */
+	pos_refund_method?: string;
 	pos_awaiting_settlement?: boolean;
 	pos_delivery_charges?: string;
 	pos_delivery_charges_rate?: number;

@@ -295,6 +295,22 @@
 			</DialogFooter>
 		</DialogScrollContent>
 	</Dialog>
+	<ChoiceDialog
+		:open="repeat.asking.value"
+		:title="repeat.title.value"
+		:description="repeat.description.value"
+		:choices="repeat.choices.value"
+		@choose="repeat.choose"
+		@cancel="repeat.cancel"
+	/>
+	<ChoiceDialog
+		:open="askingRoom"
+		:title="tillReturn.busyTitle.value"
+		:description="tillReturn.busyDescription.value"
+		:choices="tillReturn.busyChoices.value"
+		@choose="onRoomChoice"
+		@cancel="askingRoom = false"
+	/>
 </template>
 
 <script setup lang="ts">
@@ -317,6 +333,9 @@ import { useCartStore } from "@/stores/cartStore";
 // The server posts a $ line discount per unit; the cart shows it for the whole line.
 import { lineDiscountFromPerUnit } from "@/utils/lineDiscount";
 import __ from "@/lib/translate";
+import ChoiceDialog from "@/components/dialogs/ChoiceDialog.vue";
+import { useRepeatPurchase } from "@/composables/useRepeatPurchase";
+import { useTillReturn, type ReturnRow } from "@/composables/useTillReturn";
 import { ref } from "vue";
 import { Invoice } from "@/types/pos.types";
 import { useRouter } from "vue-router";
@@ -337,6 +356,8 @@ const cartStore = useCartStore();
 const router = useRouter();
 
 const isRepeatLoading = ref(false);
+const repeat = useRepeatPurchase();
+const tillReturn = useTillReturn();
 
 function statusVariant(
 	status: string,
@@ -388,14 +409,11 @@ async function repeatFromOrder(order: Invoice) {
 			return;
 		}
 
-		cartStore.loadFromInvoice({
-			customer: result.customer,
-			customer_name: result.customer_name,
-			items: result.items,
+		// With something in the cart the cashier picks Add or Replace (MuleCity-rj2o).
+		repeat.put({ customer: result.customer, customer_name: result.customer_name, items: result.items }, () => {
+			emit("close");
+			router.push("/pos");
 		});
-
-		emit("close");
-		router.push("/pos");
 	} catch (error) {
 		console.error("Error repeating order:", error);
 		showError(__("Failed to repeat invoice"));
@@ -404,12 +422,17 @@ async function repeatFromOrder(order: Invoice) {
 	}
 }
 
-async function returnFromOrder(order: Invoice) {
-	emit("close");
+/** The receipt's Return: the sold rows, then the cart as the Return dialog does it (MuleCity-rj2o). */
+const returning = ref<{ order: Invoice; rows: ReturnRow[] } | null>(null);
+const askingRoom = ref(false);
 
+async function returnFromOrder(order: Invoice) {
 	try {
 		const details = await call<{
+			customer?: string;
+			customer_name?: string;
 			items: Array<{
+				name?: string;
 				item_code: string;
 				item_name: string;
 				rate: number;
@@ -424,40 +447,47 @@ async function returnFromOrder(order: Invoice) {
 			doctype: posStore.invoiceType,
 			invoice_name: order.name,
 		});
-
-		cartStore.clearCart();
-		const allowedItemCodes = (details?.items || []).map((i) => i.item_code);
-		cartStore.enterReturnMode(order.name, allowedItemCodes);
-		cartStore.setCustomer({
-			name: order.customer || order.customer_name || "",
-			customer_name: order.customer_name,
-		});
-
-		if (details?.items) {
-			for (const item of details.items) {
-				const returnQty = item.remaining_returnable_qty ?? item.qty;
-				if (returnQty > 0) {
-					cartStore.addItemWithDetails(
-						{
-							item_code: item.item_code,
-							item_name: item.item_name,
-							rate: item.rate,
-							uom: item.uom,
-							stock_uom: item.stock_uom || item.uom,
-						},
-						returnQty,
-						item.rate,
-						item.uom,
-						item.serial_no,
-						item.batch_no,
-					);
-				}
-			}
+		const rows: ReturnRow[] = (details?.items || []).map((item) => ({
+			name: item.name,
+			item_code: item.item_code,
+			item_name: item.item_name,
+			rate: item.rate,
+			uom: item.uom,
+			stock_uom: item.stock_uom || item.uom,
+			return_qty: item.remaining_returnable_qty ?? item.qty,
+			serial_no: item.serial_no,
+			batch_no: item.batch_no,
+		}));
+		returning.value = { order, rows };
+		if (tillReturn.cartBusy.value) {
+			askingRoom.value = true;
+			return;
 		}
-
-		router.push("/pos");
+		beginReturn();
 	} catch (error) {
 		console.error("Error preparing return:", error);
+		showError(__("Could not load this sale for a return. Please retry."));
 	}
+}
+
+async function onRoomChoice(choice: string) {
+	askingRoom.value = false;
+	if (await tillReturn.makeRoom(choice)) beginReturn();
+}
+
+function beginReturn() {
+	const current = returning.value;
+	returning.value = null;
+	if (!current) return;
+	tillReturn.startReturn(
+		{
+			name: current.order.name,
+			customer: current.order.customer,
+			customer_name: current.order.customer_name,
+		},
+		current.rows,
+	);
+	emit("close");
+	router.push("/pos");
 }
 </script>

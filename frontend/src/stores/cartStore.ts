@@ -2221,35 +2221,23 @@ export const useCartStore = defineStore("cart", () => {
 		showDraftDialog.value = false;
 	}
 
-	function loadFromInvoice(invoiceData: {
-		customer: string;
-		customer_name: string;
-		items: Array<{
-			item_code: string;
-			item_name: string;
-			local_item_name?: string;
-			qty: number;
-			rate: number;
-			price_list_rate?: number;
-			uom: string;
-			stock_uom?: string;
-			discount_percentage?: number;
-			discount_amount?: number;
-			serial_no?: string;
-			batch_no?: string;
-		}>;
-		pos_notes?: string;
-		total_advance?: number;
-	}): void {
-		clearCart();
-		orderAdvance.value = Math.max(0, Number(invoiceData.total_advance) || 0);
-		customer.value = {
-			name: invoiceData.customer,
-			customer_name: invoiceData.customer_name,
-		};
-		// An order loaded for pickup brings its note (Sales Order pos_notes, MuleCity-qajl.7).
-		if (invoiceData.pos_notes?.trim()) orderNotes.value = invoiceData.pos_notes.trim();
-		for (const item of invoiceData.items) {
+	type InvoiceLine = {
+		item_code: string;
+		item_name: string;
+		local_item_name?: string;
+		qty: number;
+		rate: number;
+		price_list_rate?: number;
+		uom: string;
+		stock_uom?: string;
+		discount_percentage?: number;
+		discount_amount?: number;
+		serial_no?: string;
+		batch_no?: string;
+	};
+
+	function pushInvoiceLines(lines: InvoiceLine[]): void {
+		for (const item of lines) {
 			items.value.push({
                 ...muleOrderFields(item),
 				uid: nextRowId(),
@@ -2272,6 +2260,75 @@ export const useCartStore = defineStore("cart", () => {
 				conversion_factor: (item as any).conversion_factor || 1,
 			} as CartItem);
 		}
+	}
+
+	function loadFromInvoice(invoiceData: {
+		customer: string;
+		customer_name: string;
+		items: InvoiceLine[];
+		pos_notes?: string;
+		total_advance?: number;
+	}): void {
+		clearCart();
+		orderAdvance.value = Math.max(0, Number(invoiceData.total_advance) || 0);
+		customer.value = {
+			name: invoiceData.customer,
+			customer_name: invoiceData.customer_name,
+		};
+		// An order loaded for pickup brings its note (Sales Order pos_notes, MuleCity-qajl.7).
+		if (invoiceData.pos_notes?.trim()) orderNotes.value = invoiceData.pos_notes.trim();
+		pushInvoiceLines(invoiceData.items);
+	}
+
+	/**
+	 * "Add to cart" from a past purchase (Bill 2026-11-12, MuleCity-rj2o): its lines
+	 * join the cart as it is. The cart's customer stays; a cart with none (or the
+	 * walk-in) takes the purchase's customer.
+	 */
+	function addFromInvoice(invoiceData: { customer: string; customer_name: string; items: InvoiceLine[] }): void {
+		const current = customer.value?.name;
+		if (!current || current === usePosStore().defaultCustomer) {
+			customer.value = { name: invoiceData.customer, customer_name: invoiceData.customer_name };
+		}
+		pushInvoiceLines(invoiceData.items);
+	}
+
+	/**
+	 * One sold row as its own return line (MuleCity-rj2o): it keeps that row's price
+	 * and names the row it refunds (``sales_invoice_item``), so two rows of one item
+	 * at two prices (paid bags and a custom mix's free extra bags) are never merged.
+	 */
+	function addReturnLine(row: {
+		item_code: string;
+		item_name: string;
+		qty: number;
+		rate: number;
+		uom: string;
+		stock_uom?: string;
+		sales_invoice_item?: string;
+		serial_no?: string;
+		batch_no?: string;
+	}): void {
+		if (!isReturnMode.value) return;
+		items.value.push({
+			uid: nextRowId(),
+			item_code: row.item_code,
+			item_name: row.item_name,
+			rate: normalizeItemRate(row.rate || 0),
+			qty: -Math.abs(row.qty),
+			uom: row.uom,
+			stock_uom: row.stock_uom || row.uom,
+			image: "",
+			discount_percentage: 0,
+			discount_amount: 0,
+			serial_no: row.serial_no || "",
+			batch_no: row.batch_no || "",
+			actual_qty: 0,
+			has_serial_no: false,
+			has_batch_no: false,
+			conversion_factor: 1,
+			...(row.sales_invoice_item ? { sales_invoice_item: row.sales_invoice_item } : {}),
+		} as CartItem);
 	}
 
 	function getInvoiceData(posProfile: string, posOpeningShift: string): InvoiceData {
@@ -2801,6 +2858,8 @@ export const useCartStore = defineStore("cart", () => {
 		getInvoiceData,
 		getReceiptSnapshot,
 		loadFromInvoice,
+		addFromInvoice,
+		addReturnLine,
 		fetchDraftInvoices,
 		loadDraftInvoice,
 		openDraftDialog,

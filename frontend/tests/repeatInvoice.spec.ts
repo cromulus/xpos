@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { shallowMount, flushPromises } from "@vue/test-utils";
 import { reactive } from "vue";
 import RepeatInvoiceDialog from "@/components/dialogs/RepeatInvoiceDialog.vue";
+import ChoiceDialog from "@/components/dialogs/ChoiceDialog.vue";
 
 const mocks = vi.hoisted(() => ({ call: vi.fn(), showError: vi.fn(), cart: {} as any }));
 vi.mock("@/services/api", () => ({ call: mocks.call, showError: mocks.showError }));
@@ -20,7 +21,8 @@ function mountDialog() {
 describe("Repeat Invoice", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mocks.cart = reactive({ customer: { name: "CUST-1" }, customerName: "Southern Woods", loadFromInvoice: vi.fn() });
+		mocks.cart = reactive({ customer: { name: "CUST-1" }, customerName: "Southern Woods", isEmpty: true, isReturnMode: false,
+			items: [], loadFromInvoice: vi.fn(), addFromInvoice: vi.fn(), clearAll: vi.fn() });
 		mocks.call.mockResolvedValue({ invoices: [], has_more: false });
 	});
 
@@ -36,20 +38,59 @@ describe("Repeat Invoice", () => {
 		wrapper.unmount();
 	});
 
-	it("shows recognizable purchased items and preserves a cart when replacement is declined", async () => {
-		mocks.cart.itemCount = 1;
-		const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-		mocks.call.mockResolvedValue({ invoices: [{ name: "INV-1", items: [
+	it("shows recognizable purchased items and asks Add or Replace before touching a full cart", async () => {
+		// Bill 2026-11-12 (MuleCity-rj2o): loading history always replaced the cart.
+		Object.assign(mocks.cart, { isEmpty: false, isReturnMode: false, items: [{ item_code: "SBM" }] });
+		mocks.call.mockResolvedValueOnce({ invoices: [{ name: "INV-1", items: [
 			{ item_code: "MP", item_name: "Max Nutrition Prime", qty: 10, uom: "Bag" },
 		] }], has_more: false });
+		mocks.call.mockResolvedValueOnce({ name: "INV-1", customer: "CUST-1", customer_name: "Southern Woods",
+			items: [{ item_code: "MP", item_name: "Max Nutrition Prime", qty: 10, rate: 20, uom: "Bag" }] });
 		const wrapper = mountDialog();
 		await flushPromises();
 		expect(wrapper.text()).toContain("10 Bag — Max Nutrition Prime");
 		await wrapper.findAll("button").find(button => button.text().includes("INV-1"))!.trigger("click");
-		expect(confirm).toHaveBeenCalled();
+		await flushPromises();
+		const choice = wrapper.findComponent(ChoiceDialog);
+		expect(choice.props("open")).toBe(true);
+		expect(choice.props("choices").map((c: { key: string }) => c.key)).toEqual(["add", "replace"]);
 		expect(mocks.cart.loadFromInvoice).not.toHaveBeenCalled();
-		expect(mocks.call).toHaveBeenCalledTimes(1);
-		confirm.mockRestore();
+
+		choice.vm.$emit("choose", "add");
+		await flushPromises();
+		expect(mocks.cart.addFromInvoice).toHaveBeenCalledWith(expect.objectContaining({ customer: "CUST-1" }));
+		expect(mocks.cart.loadFromInvoice).not.toHaveBeenCalled();
+		expect(wrapper.emitted("close")).toBeTruthy();
+		wrapper.unmount();
+	});
+
+	it("replaces the cart when the cashier picks Replace", async () => {
+		Object.assign(mocks.cart, { isEmpty: false, isReturnMode: false, items: [{ item_code: "SBM" }] });
+		mocks.call.mockResolvedValueOnce({ invoices: [{ name: "INV-1" }], has_more: false });
+		mocks.call.mockResolvedValueOnce({ name: "INV-1", customer: "CUST-1", customer_name: "Southern Woods",
+			items: [{ item_code: "MP", item_name: "Max Nutrition Prime", qty: 10, rate: 20, uom: "Bag" }] });
+		const wrapper = mountDialog();
+		await flushPromises();
+		await wrapper.findAll("button").find(button => button.text().includes("INV-1"))!.trigger("click");
+		await flushPromises();
+		wrapper.findComponent(ChoiceDialog).vm.$emit("choose", "replace");
+		await flushPromises();
+		expect(mocks.cart.loadFromInvoice).toHaveBeenCalledOnce();
+		expect(mocks.cart.addFromInvoice).not.toHaveBeenCalled();
+		wrapper.unmount();
+	});
+
+	it("loads straight into an empty cart without asking", async () => {
+		Object.assign(mocks.cart, { isEmpty: true, isReturnMode: false, items: [] });
+		mocks.call.mockResolvedValueOnce({ invoices: [{ name: "INV-1" }], has_more: false });
+		mocks.call.mockResolvedValueOnce({ name: "INV-1", customer: "CUST-1", customer_name: "Southern Woods",
+			items: [{ item_code: "MP", item_name: "Max Nutrition Prime", qty: 10, rate: 20, uom: "Bag" }] });
+		const wrapper = mountDialog();
+		await flushPromises();
+		await wrapper.findAll("button").find(button => button.text().includes("INV-1"))!.trigger("click");
+		await flushPromises();
+		expect(wrapper.findComponent(ChoiceDialog).props("open")).toBe(false);
+		expect(mocks.cart.loadFromInvoice).toHaveBeenCalledOnce();
 		wrapper.unmount();
 	});
 

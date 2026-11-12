@@ -401,6 +401,7 @@ import { isElectron } from "@/services/electronBridge";
 import { isTabConflictError } from "@/utils";
 import { useOfflineStore } from "@/stores/offlineStore";
 import { usePrintInvoice } from "@/composables/usePrintInvoice";
+import { useParkCart } from "@/composables/useParkCart";
 import { Button } from "@/components/ui/button";
 import { TooltipWrapper } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
@@ -430,6 +431,7 @@ const authStore = useAuthStore();
 const offerStore = useOfferStore();
 const offlineStore = useOfflineStore();
 const { printInvoice, printInvoiceLocal } = usePrintInvoice();
+const { parkCart } = useParkCart();
 
 // A site that quotes delivery adds it from the customer card ("Add delivery"),
 // so the profile's fixed delivery charges are not offered too (MuleCity-6nb1).
@@ -720,74 +722,10 @@ function extractErrorMessage(error: unknown): string {
 	}
 }
 
+/** Save as draft: the shared park step (useParkCart), so other screens park the same way. */
 async function holdOrder() {
 	if (cartStore.isEmpty) return;
-
-	const profileName = posStore.profileName;
-	const shiftName = posStore.posOpeningShift?.name || "";
-
-	if (!profileName) {
-		showError(__("POS Profile is not set. Please close and reopen the shift."));
-		return;
-	}
-
-	if (!shiftName) {
-		showError(__("No open shift found. Please open a shift first."));
-		return;
-	}
-
-	try {
-		const data = cartStore.getInvoiceData(profileName, shiftName);
-		if (!data.customer) {
-			const bootCustomer = (window.xpos?.boot as Record<string, unknown>)?.sysdefaults as
-				| Record<string, string>
-				| undefined;
-			data.customer = bootCustomer?.customer || "";
-		}
-
-		if (!data.customer) {
-			showError(__("Please select a customer before holding the order."));
-			return;
-		}
-
-		if (!data.items || data.items.length === 0) {
-			showError(__("No items in cart to save."));
-			return;
-		}
-
-		if (isElectron() && window.electronAPI?.db) {
-			await window.electronAPI.db.addPendingInvoice({
-				data: { ...data, is_draft: true, pos_opening_shift_local_id: shiftName },
-				customer_name: cartStore.customerName || data.customer,
-				grand_total: cartStore.grandTotal || 0,
-			});
-			cartStore.clearAll();
-			showSuccess(__("Order saved as draft locally"));
-		} else {
-			const serverData = { ...data };
-			if (serverData.pos_opening_shift && /^\d+$/.test(String(serverData.pos_opening_shift))) {
-				delete serverData.pos_opening_shift;
-			}
-			if (offlineStore.isOnline) {
-				await call("xpos.api.invoices.save_draft_invoice", {
-					data: JSON.stringify(serverData),
-				});
-				cartStore.clearAll();
-				showSuccess(__("Order saved as draft"));
-			} else {
-				await offlineStore.saveOffline(
-					{ ...serverData, is_draft: true } as Parameters<typeof offlineStore.saveOffline>[0],
-					cartStore.customerName || data.customer,
-					cartStore.grandTotal || 0,
-				);
-				cartStore.clearAll();
-				showSuccess(__("No connection – draft saved offline"));
-			}
-		}
-	} catch (error: unknown) {
-		if (handleTabConflict(error)) return;
-		showError(__("Failed to save draft: {0}", [extractErrorMessage(error)]));
-	}
+	await parkCart();
 }
 
 function handleTabConflict(error: unknown): boolean {

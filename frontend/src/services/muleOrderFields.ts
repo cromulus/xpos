@@ -5,6 +5,8 @@ export function muleOrderFields(row: Record<string, any>): Record<string, any> {
     // A custom mix's own choices at the till (Mule City MuleCity-erqg.17): the customer's
     // stored grain, bulk to truck, and the pull-list fix picked when no plan passed.
     'mule_stored_grain_use', 'mule_stored_grain_use_lbs', 'mule_bulk_no_bags', 'mule_pull_remedy_json',
+    // A return line names the sold row it refunds, so it refunds that row's price (MuleCity-rj2o).
+    'sales_invoice_item',
   ];
   return Object.fromEntries(fields.filter(key => row[key] != null).map(key => [key, row[key]]));
 }

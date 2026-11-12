@@ -117,6 +117,7 @@
 										v-for="(item, idx) in returnItems"
 										:key="idx"
 										class="border-t border-border"
+										data-testid="return-row"
 									>
 										<td class="px-3 py-2">
 											<p class="font-medium text-foreground">
@@ -124,6 +125,8 @@
 											</p>
 											<p class="text-[11px] text-muted-foreground font-mono">
 												{{ item.item_code }}
+												<template v-if="!item.rate"> · {{ __("given free") }}</template>
+												<template v-else> · {{ __("{0} each", [money(item.rate)]) }}</template>
 											</p>
 										</td>
 										<td class="px-3 py-2 text-center text-muted-foreground">
@@ -154,6 +157,7 @@
 					v-if="selectedInvoice"
 					class="flex-1 font-bold bg-amber-500 hover:bg-amber-600 text-white"
 					:disabled="!hasReturnItems"
+					data-testid="process-return"
 					@click="processReturn"
 				>
 					<RotateCcw class="w-4 h-4" />
@@ -162,6 +166,14 @@
 			</DialogFooter>
 		</DialogContent>
 	</Dialog>
+	<ChoiceDialog
+		:open="askingRoom"
+		:title="busyTitle"
+		:description="busyDescription"
+		:choices="busyChoices"
+		@choose="onRoomChoice"
+		@cancel="askingRoom = false"
+	/>
 </template>
 
 <script setup lang="ts">
@@ -182,6 +194,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Search, RotateCcw, ArrowLeft, Loader2 } from "lucide-vue-next";
+import ChoiceDialog from "@/components/dialogs/ChoiceDialog.vue";
+import { useTillReturn } from "@/composables/useTillReturn";
 import __ from "@/lib/translate";
 
 const props = defineProps<{ open: boolean }>();
@@ -189,6 +203,8 @@ const emit = defineEmits<{ (e: "close"): void }>();
 
 const cartStore = useCartStore();
 const posStore = usePosStore();
+const { cartBusy, busyTitle, busyDescription, busyChoices, makeRoom, startReturn } = useTillReturn();
+const askingRoom = ref(false);
 const { money } = useMoney();
 
 interface SearchInvoice {
@@ -200,6 +216,8 @@ interface SearchInvoice {
 }
 
 interface ReturnItem {
+	/** The sold row (Sales Invoice Item) this line refunds. */
+	name?: string;
 	item_code: string;
 	item_name: string;
 	rate: number;
@@ -261,8 +279,10 @@ async function selectInvoice(invoiceName: string) {
 			customer: string;
 			customer_name: string;
 			items: Array<{
+				name?: string;
 				item_code: string;
 				item_name: string;
+				stock_uom?: string;
 				qty: number;
 				rate: number;
 				amount: number;
@@ -285,11 +305,12 @@ async function selectInvoice(invoiceName: string) {
 		}
 
 		returnItems.value = (result?.items || []).map((item) => ({
+			name: item.name,
 			item_code: item.item_code,
 			item_name: item.item_name,
 			rate: item.rate,
 			uom: item.uom,
-			stock_uom: item.uom,
+			stock_uom: item.stock_uom || item.uom,
 			max_qty: item.remaining_returnable_qty,
 			return_qty: item.remaining_returnable_qty,
 			serial_no: item.serial_no,
@@ -302,35 +323,22 @@ async function selectInvoice(invoiceName: string) {
 
 function processReturn() {
 	if (!selectedInvoice.value || !hasReturnItems.value) return;
-
-	cartStore.clearCart();
-	const allowedItemCodes = returnItems.value.map((i) => i.item_code);
-	cartStore.enterReturnMode(selectedInvoice.value.name, allowedItemCodes);
-
-	cartStore.setCustomer({
-		name: selectedInvoice.value.customer || selectedInvoice.value.customer_name,
-		customer_name: selectedInvoice.value.customer_name,
-	});
-
-	for (const item of returnItems.value) {
-		if (item.return_qty > 0) {
-			cartStore.addItemWithDetails(
-				{
-					item_code: item.item_code,
-					item_name: item.item_name,
-					rate: item.rate,
-					uom: item.uom,
-					stock_uom: item.stock_uom || item.uom,
-				},
-				item.return_qty,
-				item.rate,
-				item.uom,
-				item.serial_no,
-				item.batch_no,
-			);
-		}
+	// A return has the cart to itself: ask before anything in it is dropped (MuleCity-rj2o).
+	if (cartBusy.value) {
+		askingRoom.value = true;
+		return;
 	}
+	begin();
+}
 
+async function onRoomChoice(choice: string) {
+	askingRoom.value = false;
+	if (await makeRoom(choice)) begin();
+}
+
+function begin() {
+	if (!selectedInvoice.value) return;
+	startReturn(selectedInvoice.value, returnItems.value);
 	close();
 }
 

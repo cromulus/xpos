@@ -269,6 +269,26 @@
 								</div>
 								<p class="text-[11px] font-medium truncate">{{ __("On Account") }}</p>
 							</button>
+							<!-- Mule City: a return's refund left on the account, or mailed as a check (MuleCity-rj2o). -->
+							<button
+								v-for="refund in accountRefunds"
+								:key="refund"
+								type="button"
+								data-testid="payment-method"
+								:data-mode="refund"
+								@click="selectAccountRefund(refund)"
+								class="flex-1 min-w-20 p-2.5 rounded-xl border-2 text-center transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-ring"
+								:class="
+									selectedMethod === refund
+										? 'border-primary bg-primary/5 text-primary shadow-sm'
+										: 'border-border bg-card text-muted-foreground hover:border-muted-foreground/30'
+								"
+							>
+								<div class="text-lg mb-0.5">
+									<component :is="refund === REFUND_MAIL_CHECK ? Mail : NotebookPen" class="w-5 h-5 mx-auto" />
+								</div>
+								<p class="text-[11px] font-medium truncate">{{ __(refund) }}</p>
+							</button>
 							<!-- Mule City: a payment toward what the customer already owes (Bill 2026-09-29,
 							     MuleCity-nfxn.3). Opens Receive on Account; this ticket stays in the cart. -->
 							<button
@@ -286,6 +306,26 @@
 						</div>
 					</div>
 
+					<p v-if="refundingToAccount" class="text-sm text-foreground" data-testid="refund-to-account-note">
+						{{
+							selectedMethod === REFUND_MAIL_CHECK
+								? __("Nothing is paid out now. {0} stays on {1}'s account until the accountant mails the check; the return is sent to them.", [formatWithSymbol(invoiceCurrency, Math.abs(cartStore.grandTotal)), cartStore.customerName])
+								: __("Nothing is paid out now. {0} is a credit on {1}'s account, used on their next tickets.", [formatWithSymbol(invoiceCurrency, Math.abs(cartStore.grandTotal)), cartStore.customerName])
+						}}
+					</p>
+					<div v-if="asksCheckNumber" class="space-y-1">
+						<label for="check-number" class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+							{{ cartStore.isReturnMode ? __("Number of the refund check") : __("Check number") }}
+						</label>
+						<Input
+							id="check-number"
+							v-model="checkNumber"
+							data-testid="check-number"
+							inputmode="numeric"
+							autocomplete="off"
+							:placeholder="cartStore.isReturnMode ? __('Required') : __('Optional')"
+						/>
+					</div>
 					<div>
 						<div class="flex items-center justify-between mb-1.5">
 							<label
@@ -871,7 +911,9 @@ import {
 	DollarSign,
 	NotebookPen,
 	HandCoins,
+	Mail,
 } from "lucide-vue-next";
+import { Input } from "@/components/ui/input";
 
 import {
 	convertToBase,
@@ -897,6 +939,15 @@ import {
 import type { InvoiceChangeLeg, InvoiceData, InvoicePayment, TenderLeg } from "@/types/pos.types";
 import { isOnline, extractErrorMessage, isTabConflictError, isTicketChangedError } from "@/utils";
 import { ON_ACCOUNT, canChargeToAccount } from "@/utils/onAccount";
+import {
+	ACCOUNT_REFUNDS,
+	REFUND_MAIL_CHECK,
+	REFUND_PAID_OUT,
+	canRefundToAccount,
+	isAccountRefund,
+	isCheckMode,
+	withCheckNumber,
+} from "@/utils/refundMethod";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
 import ManagerOverride from "@/components/dialogs/ManagerOverride.vue";
@@ -1000,6 +1051,28 @@ const { canReceive: canReceiveOnAccount, openReceiveOnAccount } = useCustomerAcc
 
 // "On Account": the whole ticket is charged, so nothing is tendered.
 const chargingToAccount = computed(() => selectedMethod.value === ON_ACCOUNT && !isSplitPayment.value);
+
+// A return's refund (MuleCity-rj2o): paid out (a check needs its number), or left on the account.
+const accountRefunds = computed<string[]>(() =>
+	canRefundToAccount({
+		isReturnMode: cartStore.isReturnMode,
+		online: isOnline(),
+		customer: cartStore.customer?.name,
+		defaultCustomer: posStore.defaultCustomer,
+	})
+		? [...ACCOUNT_REFUNDS]
+		: [],
+);
+const refundingToAccount = computed(
+	() => cartStore.isReturnMode && isAccountRefund(selectedMethod.value) && !isSplitPayment.value,
+);
+const checkNumber = ref("");
+const asksCheckNumber = computed(() =>
+	!refundingToAccount.value &&
+	(isSplitPayment.value
+		? splitPayments.value.some((leg) => isCheckMode(leg.mode_of_payment))
+		: isCheckMode(selectedMethod.value)),
+);
 const mixPayModes = [
 	{ value: "now" as const, label: __("Pay now") },
 	{ value: "pickup" as const, label: __("Pay at pickup") },
@@ -1020,7 +1093,7 @@ const showOnAccount = computed(() =>
 
 const activeLegs = computed<TenderLeg[]>(() => {
 	if (isSplitPayment.value) return splitPayments.value;
-	if (chargingToAccount.value) return [];
+	if (chargingToAccount.value || refundingToAccount.value) return [];
 	if (!selectedMethod.value || tenderedAmount.value <= 0) return [];
 	return [buildLeg(selectedMethod.value, tenderedAmount.value, "single")];
 });
@@ -1158,6 +1231,7 @@ const canSubmit = computed(() => {
 	if (cartStore.isEmpty) return false;
 	if (!cashierInitialsOk(posStore.requireCashierInitials, posStore.cashiers, cashierInitials.value)) return false;
 	if (selectedRateMissing.value) return false;
+	if (refundingToAccount.value) return true;
 	const total = roundCurrency(Math.abs(cartStore.grandTotal));
 	if (total <= 0) return true;
 	if (remainingAmount.value > 0) {
@@ -1396,10 +1470,17 @@ function focusSubmitBtn() {
 
 function selectMethod(method: string) {
 	// Back from "On Account": tender the whole ticket again.
-	if (selectedMethod.value === ON_ACCOUNT && tenderedAmount.value <= 0) {
+	if ((selectedMethod.value === ON_ACCOUNT || isAccountRefund(selectedMethod.value)) && tenderedAmount.value <= 0) {
 		tenderedAmount.value = roundCurrency(Math.abs(cartStore.grandTotal));
 	}
 	selectedMethod.value = method;
+}
+
+function selectAccountRefund(method: string) {
+	isSplitPayment.value = false;
+	selectedMethod.value = method;
+	tenderedAmount.value = 0;
+	nextTick(() => amountInput.value?.setValue(0));
 }
 
 function selectOnAccount() {
@@ -1521,6 +1602,10 @@ function validateForSubmission(): { valid: boolean; message?: string } {
 		if (cartStore.grandTotal >= 0) {
 			return { valid: false, message: __("Return total must be negative (refund amount)") };
 		}
+
+		if (asksCheckNumber.value && !checkNumber.value.trim()) {
+			return { valid: false, message: __("Write the number of the refund check before saving the return.") };
+		}
 	} else {
 		const invalidItems = cartStore.items.filter((item) => item.qty <= 0);
 		if (invalidItems.length > 0) {
@@ -1562,7 +1647,7 @@ function validateForSubmission(): { valid: boolean; message?: string } {
 }
 
 function buildSubmissionPayments(): InvoicePayment[] {
-	return toInvoicePayments(activeLegs.value, invoiceCurrency.value);
+	return withCheckNumber(toInvoicePayments(activeLegs.value, invoiceCurrency.value), checkNumber.value);
 }
 
 function buildInvoicePayload(): InvoiceData {
@@ -1581,6 +1666,9 @@ function buildInvoicePayload(): InvoiceData {
 
 	if (!cartStore.isReturnMode && remainingAmount.value > 0 && chargingToAccount.value && showOnAccount.value) {
 		invoiceData.is_credit_sale = true;
+	}
+	if (cartStore.isReturnMode) {
+		invoiceData.pos_refund_method = refundingToAccount.value ? selectedMethod.value : REFUND_PAID_OUT;
 	}
 
 	return invoiceData;

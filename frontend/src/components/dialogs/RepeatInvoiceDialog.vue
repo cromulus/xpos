@@ -41,6 +41,7 @@
 						<button
 							v-for="inv in invoices"
 							:key="inv.name"
+							data-testid="repeat-invoice"
 							@click="selectInvoice(inv)"
 							class="w-full flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-primary/5 transition-all text-start group"
 							:disabled="isLoading"
@@ -89,6 +90,14 @@
 			</DialogFooter>
 		</DialogContent>
 	</Dialog>
+	<ChoiceDialog
+		:open="repeat.asking.value"
+		:title="repeat.title.value"
+		:description="repeat.description.value"
+		:choices="repeat.choices.value"
+		@choose="repeat.choose"
+		@cancel="repeat.cancel"
+	/>
 </template>
 
 <script setup lang="ts">
@@ -110,6 +119,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, Repeat, FileText, Loader2 } from "lucide-vue-next";
 import __ from "@/lib/translate";
+import ChoiceDialog from "@/components/dialogs/ChoiceDialog.vue";
+import { useRepeatPurchase } from "@/composables/useRepeatPurchase";
 
 interface SearchInvoice {
 	name: string;
@@ -140,6 +151,7 @@ const emit = defineEmits<{ (e: "close"): void }>();
 
 const cartStore = useCartStore();
 const posStore = usePosStore();
+const repeat = useRepeatPurchase();
 const { money, qty } = useMoney();
 
 const searchInputRef = ref<InstanceType<typeof Input> | null>(null);
@@ -222,8 +234,6 @@ function loadMore() {
 }
 
 async function selectInvoice(inv: SearchInvoice) {
-	// Looking at history must not silently discard an in-progress sale.
-	if (cartStore.itemCount > 0 && !window.confirm(__("Replace the current cart with this purchase?"))) return;
 	isLoading.value = true;
 	try {
 		const result = await call<{
@@ -244,13 +254,8 @@ async function selectInvoice(inv: SearchInvoice) {
 			return;
 		}
 
-		cartStore.loadFromInvoice({
-			customer: result.customer,
-			customer_name: result.customer_name,
-			items: result.items,
-		});
-
-		close();
+		// With something in the cart the cashier picks Add or Replace (MuleCity-rj2o).
+		repeat.put({ customer: result.customer, customer_name: result.customer_name, items: result.items }, close);
 	} catch (error) {
 		console.error("Error loading invoice for repeat:", error);
 		showError("Failed to load invoice");

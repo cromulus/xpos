@@ -245,6 +245,42 @@ def _guard_stale_draft(doctype: str, invoice_name: str, client_modified) -> None
 		)
 
 
+REFUND_PAID_OUT = "Paid out"
+REFUND_ON_ACCOUNT = "Credit on account"
+REFUND_MAIL_CHECK = "Mail a check"
+REFUND_METHODS = (REFUND_PAID_OUT, REFUND_ON_ACCOUNT, REFUND_MAIL_CHECK)
+REFUND_METHOD_FIELD = "pos_refund_method"
+
+
+def is_check_mode(mode_of_payment: str | None) -> bool:
+	"""A paper check, by the Mode of Payment's name (as the till's tender icons tell)."""
+	name = (mode_of_payment or "").lower()
+	return "check" in name or "cheque" in name
+
+
+def apply_refund_method(invoice_doc, data: dict, tender_rows: list[dict]) -> None:
+	"""How a return gives the money back (Mule City, Bill 2026-11-12, MuleCity-rj2o).
+
+	- Paid out: cash, card or a check written at the counter. A check needs its number.
+	- Credit on account: nothing paid out; the return is a credit note the customer
+	  spends later (its outstanding stays negative, the native ERPNext credit).
+	- Mail a check: the same credit note, and the accountant is asked to mail the
+	  check (the Mule app assigns the return when it is submitted); the check's
+	  Payment Entry is made from the credit note when it is written.
+	"""
+	method = (data.get("pos_refund_method") or "").strip() or REFUND_PAID_OUT
+	if method not in REFUND_METHODS:
+		frappe.throw(_("Unknown refund method {0}.").format(method))
+	if method == REFUND_PAID_OUT:
+		for row in tender_rows:
+			if is_check_mode(row.get("mode_of_payment")) and not row.get("reference_no"):
+				frappe.throw(_("Write the number of the refund check before saving the return."))
+	elif tender_rows:
+		frappe.throw(_("{0} pays nothing out at the till. Take the payment rows off and try again.").format(_(method)))
+	if invoice_doc.meta.has_field(REFUND_METHOD_FIELD):
+		invoice_doc.set(REFUND_METHOD_FIELD, method)
+
+
 def _validate_unpaid_balance_permissions(invoice_doc, pos_profile_doc, data: dict):
 	"""Enforce POS Profile permissions before submitting an invoice with a balance due."""
 	if cint(getattr(invoice_doc, "is_return", 0)):
@@ -798,12 +834,15 @@ def _build_invoice_doc(data: dict, local_id: str | None = None, keep_zero_modes=
 		# A line billed from a Sales Order keeps the order's price (Mule City,
 		# MuleCity-jfdy): the customer was quoted it, and may have prepaid it.
 		order_line = None if is_return else _sales_order_line(item_data)
+		# A return row names the sold row it refunds (_validate_return_invoice) and
+		# takes that row's price; the price list never re-prices a refund.
+		source_row = is_return and (item_data.get("sales_invoice_item") or item_data.get("pos_invoice_item"))
 		if order_line:
 			# Drop the till's own price and discount for this line; the order's
 			# rates are set on the row below.
 			item_data = {**item_data, "discount_percentage": 0, "discount_amount": 0}
 
-		if not allow_rate_change and not is_free_item and not order_line:
+		if not allow_rate_change and not is_free_item and not order_line and not source_row:
 			price_list = pos.get("selling_price_list")
 			if price_list:
 				# The price this customer pays today in this UOM, as ERPNext chooses it.
@@ -857,7 +896,7 @@ def _build_invoice_doc(data: dict, local_id: str | None = None, keep_zero_modes=
 
 		max_discount = flt(pos.get("max_discount_percentage_allowed", 0))
 		# An order's own discount was agreed at the desk, not typed at the till.
-		if max_discount > 0 and disc_pct > max_discount and not is_free_item and not order_line:
+		if max_discount > 0 and disc_pct > max_discount and not is_free_item and not order_line and not source_row:
 			frappe.throw(
 				_("Item {0}: Discount {1}% exceeds maximum allowed {2}%").format(
 					item_data.get("item_code"), disc_pct, max_discount
@@ -885,6 +924,14 @@ def _build_invoice_doc(data: dict, local_id: str | None = None, keep_zero_modes=
 			item.rate = flt(order_line.rate, rate_precision)
 			if "mule_processing_instructions" in order_line:
 				item.mule_processing_instructions = order_line.get("mule_processing_instructions")
+		if source_row:
+			item.price_list_rate = flt(item_data.get("price_list_rate"), rate_precision)
+			item.discount_percentage = flt(item_data.get("discount_percentage"))
+			item.discount_amount = flt(item_data.get("discount_amount"), discount_precision)
+			item.rate = flt(item_data.get("rate"), rate_precision)
+			item.is_free_item = cint(item_data.get("is_free_item"))
+			if item_data.get("pricing_rules"):
+				item.pricing_rules = item_data["pricing_rules"]
 		if item_data.get("serial_no"):
 			item.serial_no = item_data.get("serial_no")
 		if item_data.get("batch_no"):
@@ -951,6 +998,8 @@ def _build_invoice_doc(data: dict, local_id: str | None = None, keep_zero_modes=
 	tender_rows, total_payment = build_tender_legs(payments, invoice_doc, rate_cache, keep_zero_modes)
 	for row in tender_rows:
 		invoice_doc.append("payments", row)
+	if is_return:
+		apply_refund_method(invoice_doc, data, tender_rows)
 
 	_ensure_pos_invoice_payment_row(invoice_doc, pos, bool(invoice_doc.is_pos and not invoice_doc.is_return))
 
@@ -1996,28 +2045,46 @@ def get_invoice_for_return(invoice_name: str, pos_profile: str = "", doctype: st
 	"""
 	doc = frappe.get_doc(doctype, invoice_name)
 
-	return_invoices = frappe.get_all(
-		doctype,
+	# What each sold row still has to give back, by the row the earlier returns
+	# named (link_field); a return made before rows were named counts against
+	# its item code, oldest row first (Mule City, MuleCity-rj2o).
+	link_field = "sales_invoice_item" if doctype == "Sales Invoice" else "pos_invoice_item"
+	child_doctype = doctype + " Item"
+	returned_by_row: dict[str, float] = {}
+	unlinked_by_key: dict[tuple, float] = {}
+	return_rows = frappe.get_all(
+		child_doctype,
 		filters={
-			"return_against": invoice_name,
-			"docstatus": 1,
-			"is_return": 1,
+			"parent": [
+				"in",
+				frappe.get_all(
+					doctype,
+					filters={"return_against": invoice_name, "docstatus": 1, "is_return": 1},
+					pluck="name",
+				)
+				or [""],
+			],
+			"parenttype": doctype,
 		},
-		pluck="name",
+		fields=["item_code", "qty", "batch_no", link_field],
 	)
-
-	returned_qty_map = {}
-	for ret_name in return_invoices:
-		ret_doc = frappe.get_doc(doctype, ret_name)
-		for item in ret_doc.items:
-			key = (item.item_code, getattr(item, "batch_no", None) or "")
-			returned_qty_map[key] = returned_qty_map.get(key, 0) + abs(item.qty)
+	for row in return_rows:
+		source = row.get(link_field)
+		if source:
+			returned_by_row[source] = returned_by_row.get(source, 0) + abs(flt(row.qty))
+		else:
+			key = (row.item_code, row.get("batch_no") or "")
+			unlinked_by_key[key] = unlinked_by_key.get(key, 0) + abs(flt(row.qty))
 
 	items = []
 	is_fully_returned = True
 	for item in doc.items:
 		key = (item.item_code, getattr(item, "batch_no", None) or "")
-		already_returned = returned_qty_map.get(key, 0)
+		already_returned = returned_by_row.get(item.name, 0)
+		room = flt(item.qty) - already_returned
+		taken = min(max(room, 0), unlinked_by_key.get(key, 0))
+		unlinked_by_key[key] = unlinked_by_key.get(key, 0) - taken
+		already_returned += taken
 		remaining_qty = flt(item.qty) - already_returned
 
 		if remaining_qty > 0:
@@ -2025,12 +2092,15 @@ def get_invoice_for_return(invoice_name: str, pos_profile: str = "", doctype: st
 
 		items.append(
 			{
+				"name": item.name,
 				"item_code": item.item_code,
 				"item_name": item.item_name,
 				"qty": item.qty,
 				"rate": item.rate,
 				"amount": item.amount,
 				"uom": item.uom,
+				"stock_uom": item.stock_uom,
+				"is_free_item": cint(item.get("is_free_item")),
 				"serial_no": getattr(item, "serial_no", None),
 				"batch_no": getattr(item, "batch_no", None),
 				"already_returned_qty": already_returned,
@@ -2202,7 +2272,11 @@ def _validate_return_invoice(return_against: str, customer: str, items: str | li
 			returned_qty_by_row.get(source_item.name, 0) for source_item in original_items_by_code[item_code]
 		)
 
-		for source_item in original_items_by_code[item_code]:
+		# The row the till named comes first (each sold row is its own return line);
+		# what is left over falls to the item's other rows in order.
+		named = item.get(link_field)
+		candidates = sorted(original_items_by_code[item_code], key=lambda row: row.name != named)
+		for source_item in candidates:
 			already_returned = returned_qty_by_row.get(source_item.name, 0)
 			already_allocated = allocated_qty_by_row.get(source_item.name, 0)
 			remaining_on_row = flt(source_item.qty) - already_returned - already_allocated
@@ -2214,6 +2288,11 @@ def _validate_return_invoice(return_against: str, customer: str, items: str | li
 			prepared_item = dict(item)
 			prepared_item["qty"] = -allocated_qty
 			prepared_item[link_field] = source_item.name
+			# A return refunds what this row charged, whatever the till sent: the
+			# same item can be on two rows at two prices (a custom mix's extra
+			# bags at $0 beside the paid bags), and the till merges a code into
+			# one cart line (Mule City, MuleCity-rj2o).
+			prepared_item.update(_source_pricing(source_item))
 			prepared_item["sales_order"] = source_item.get("sales_order")
 			prepared_item["delivery_note"] = source_item.get("delivery_note")
 			prepared_item["so_detail"] = source_item.get("so_detail")
@@ -2247,6 +2326,21 @@ def _validate_return_invoice(return_against: str, customer: str, items: str | li
 			)
 
 	return prepared_items
+
+
+RETURN_PRICING_FIELDS = (
+	"price_list_rate",
+	"discount_percentage",
+	"discount_amount",
+	"rate",
+	"is_free_item",
+	"pricing_rules",
+)
+
+
+def _source_pricing(source_item) -> dict:
+	"""The original row's price, for the return row that refunds it."""
+	return {field: source_item.get(field) for field in RETURN_PRICING_FIELDS}
 
 
 @frappe.whitelist()
