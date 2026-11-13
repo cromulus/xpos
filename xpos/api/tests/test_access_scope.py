@@ -337,6 +337,26 @@ class TestSyncedClosingIsBuiltOnTheServer(ClosingCase):
 			)
 
 
+class TestSyncedClosingKeepsTheTillsCloseTime(ClosingCase):
+	"""An offline till closes first and syncs later: the closing keeps its close time, within the shift."""
+
+	def test_the_tills_close_time_is_kept(self):
+		closed = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-5)
+		if closed < frappe.utils.get_datetime(self.opening.period_start_date):
+			closed = frappe.utils.get_datetime(self.opening.period_start_date)
+		result = shifts.create_closing_shift(
+			{"pos_opening_shift": self.opening.name, "period_end_date": closed}
+		)
+		end = frappe.db.get_value("POS Closing Shift", result["name"], "period_end_date")
+		self.assertEqual(frappe.utils.get_datetime(end).replace(microsecond=0), closed.replace(microsecond=0))
+
+	def test_a_time_outside_the_shift_is_clamped(self):
+		start = frappe.utils.get_datetime(self.opening.period_start_date)
+		self.assertEqual(shifts.closing_time(self.opening, "2000-01-01 00:00:00"), start)
+		future = shifts.closing_time(self.opening, "2999-01-01 00:00:00")
+		self.assertLessEqual(future, frappe.utils.now_datetime())
+
+
 class TestDeskClosingIsAClosingShift(ClosingCase):
 	"""submit_closing_shift saves only a server-built POS Closing Shift."""
 

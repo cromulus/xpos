@@ -488,7 +488,27 @@ def reconciliation_rows(
 	return rows
 
 
-def build_closing_shift(opening, counted: list[dict] | None, every_mode: bool, local_id: str | None = None):
+def closing_time(opening, claimed=None):
+	"""When a closing ended: the till's own close time, kept between the shift's start and now.
+
+	An offline till closes first and syncs later, so its closing keeps the time
+	it was closed; anything outside the shift (before it opened, or in the
+	future) falls back to the nearest bound.
+	"""
+	now = now_datetime()
+	if not claimed:
+		return now
+	try:
+		claimed = get_datetime(claimed)
+	except Exception:
+		return now
+	start = get_datetime(opening.period_start_date)
+	return min(max(claimed, start), now)
+
+
+def build_closing_shift(
+	opening, counted: list[dict] | None, every_mode: bool, local_id: str | None = None, closed_at=None
+):
 	"""An unsaved POS Closing Shift for ``opening``, built on the server.
 
 	The one builder for the till's Close Shift, the offline sync and the desk's
@@ -499,14 +519,15 @@ def build_closing_shift(opening, counted: list[dict] | None, every_mode: bool, l
 	"""
 	doctype = get_invoice_type()
 	invoices = get_shift_invoices(opening, doctype, CLOSING_INVOICE_FIELDS)
+	end = closing_time(opening, closed_at)
 
 	closing_shift = frappe.get_doc(
 		{
 			"doctype": "POS Closing Shift",
 			"period_start_date": opening.period_start_date,
-			"period_end_date": now_datetime(),
-			"posting_date": nowdate(),
-			"posting_time": now_datetime().strftime("%H:%M:%S"),
+			"period_end_date": end,
+			"posting_date": end.date(),
+			"posting_time": end.strftime("%H:%M:%S"),
 			"pos_profile": opening.pos_profile,
 			"user": frappe.session.user,
 			"company": opening.company,
@@ -867,7 +888,9 @@ def create_closing_shift(data: str | dict, local_id: str | None = None) -> dict:
 	# taxes, transactions and expected figures are the server's. Every mode is
 	# reconciled, so an uncounted one shows as a shortage instead of vanishing.
 	counted = data.get("payment_reconciliation") or data.get("closing_details") or []
-	closing_shift, _invoices = build_closing_shift(opening, counted, every_mode=True, local_id=local_id)
+	closing_shift, _invoices = build_closing_shift(
+		opening, counted, every_mode=True, local_id=local_id, closed_at=data.get("period_end_date")
+	)
 
 	closing_shift.insert(ignore_permissions=True)
 	closing_shift.submit()
