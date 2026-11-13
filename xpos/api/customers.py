@@ -980,6 +980,8 @@ def add_delivery_address(
 			_("Delivery needs a named customer, not {0}. Choose the customer first.").format(customer or _("no customer")),
 			frappe.ValidationError,
 		)
+	# Inside the till's POS Profile and the clerk's User Permissions, as make_address.
+	require_customer_access(customer)
 	return add(
 		customer=customer,
 		address_line1=address_line1,
@@ -1035,12 +1037,15 @@ def address_resolve(place_id: str, session_token: str | None = None) -> dict:
 
 
 @frappe.whitelist()
-def get_customer_credit(customer: str, company: str):
+def get_customer_credit(customer: str, company: str, pos_profile: str | None = None):
 	"""
 	Return all available credit (outstanding returns + unallocated advances) for a customer.
+
+	Only for a customer the till's POS Profile may see, as get_customer_info.
 	"""
 	if not customer or not company:
 		return []
+	require_customer_access(customer, pos_profile=pos_profile)
 
 	credits = []
 

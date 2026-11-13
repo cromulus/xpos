@@ -8,13 +8,15 @@ Run on a disposable test site::
     bench --site <site> run-tests --module xpos.api.tests.test_record_access
 """
 
+from unittest.mock import patch
+
 import frappe
 from erpnext.accounts.doctype.sales_invoice.test_sales_invoice import create_sales_invoice
 from erpnext.tests.utils import ERPNextTestSuite
 
 from xpos.api import customers as customers_api
 from xpos.api import invoices as invoices_api
-from xpos.api.tests.test_profile_settings_hardening import ensure, ensure_user, make_profile, setup_fixtures
+from xpos.api.tests.record_access_fixtures import ensure, ensure_user, make_profile, setup_fixtures
 
 CASHIER = "ra-cashier@example.com"
 OWN_PROFILE = "_Test RA Own Profile"
@@ -141,11 +143,9 @@ class TestCustomerScope(RecordAccessTestCase):
 		self.assertNotEqual(frappe.db.get_value("Customer", OUTSIDE, "mobile_no"), "03001112222")
 
 	def test_credit_lookup_is_scoped_too(self):
-		frappe.set_user("Administrator")
-		frappe.db.set_value("POS Profile", OWN_PROFILE, "use_customer_credit", 1)
-		frappe.set_user(CASHIER)
+		# The fork's get_customer_credit (customer, company); upstream moved credit to customer_credit.py.
 		with self.assertRaises(frappe.PermissionError):
-			customers_api.get_customer_credit(OUTSIDE, pos_profile=OWN_PROFILE)
+			customers_api.get_customer_credit(OUTSIDE, "_Test Company", pos_profile=OWN_PROFILE)
 
 	def test_search_only_lists_customers_in_the_profile_groups(self):
 		names = {row.name for row in customers_api.get_customers("_Test RA", pos_profile=OWN_PROFILE)}
@@ -418,3 +418,69 @@ class TestLegacyEndpointScope(RecordAccessTestCase):
 				)
 			)
 		self.assertFalse(frappe.db.exists("User", "forged@example.com"))
+
+
+class TestForkEndpointScope(RecordAccessTestCase):
+	"""Endpoints the Mule City fork added apply the same customer, shift and invoice checks (MuleCity-0bsc)."""
+
+	WALK_IN = "_Test RA Walk In"
+
+	def test_the_profiles_walk_in_is_inside_its_groups(self):
+		# Mule City keeps the walk-in account outside the sale groups; the till sells to it.
+		frappe.set_user("Administrator")
+		ensure_customer(self.WALK_IN, OTHER_GROUP)
+		frappe.db.set_value("POS Profile", OWN_PROFILE, "customer", self.WALK_IN)
+		frappe.clear_cache(doctype="POS Profile")
+		frappe.set_user(CASHIER)
+		self.assertEqual(
+			customers_api.get_customer_info(self.WALK_IN, pos_profile=OWN_PROFILE)["name"], self.WALK_IN
+		)
+		names = {row["name"] for row in customers_api.get_customers("_Test RA", pos_profile=OWN_PROFILE)}
+		self.assertIn(self.WALK_IN, names)
+		self.assertNotIn(OUTSIDE, names)
+		with self.assertRaises(frappe.PermissionError):
+			customers_api.get_customer_info(OUTSIDE, pos_profile=OWN_PROFILE)
+
+	def test_delivery_address_for_a_customer_outside_the_groups_is_refused(self):
+		added = []
+		with patch("xpos.api.customers._last_hook", return_value=lambda **kw: added.append(kw)):
+			with self.assertRaises(frappe.PermissionError):
+				customers_api.add_delivery_address(OUTSIDE, "1 Main St", "Benson", "NC", "27504")
+			customers_api.add_delivery_address(INSIDE, "1 Main St", "Benson", "NC", "27504")
+		self.assertEqual([row["customer"] for row in added], [INSIDE])
+
+	def test_delivery_quote_is_scoped_to_the_customer_and_its_own_address(self):
+		from xpos.api import delivery
+
+		frappe.set_user("Administrator")
+		outside_address = frappe.get_doc(
+			{
+				"doctype": "Address",
+				"address_title": "RA Outside Farm",
+				"address_line1": "2 Farm Rd",
+				"city": "Benson",
+				"country": "United States",
+				"links": [{"link_doctype": "Customer", "link_name": OUTSIDE}],
+			}
+		).insert(ignore_permissions=True)
+		frappe.set_user(CASHIER)
+		with patch("xpos.api.delivery._last_hook", return_value=lambda *a, **kw: {"quoted": True}):
+			with self.assertRaises(frappe.PermissionError):
+				delivery.quote_delivery(OUTSIDE, outside_address.name, [])
+			with self.assertRaises(frappe.PermissionError):
+				delivery.quote_delivery(INSIDE, outside_address.name, [])
+
+	def test_another_profiles_shift_summary_is_refused(self):
+		from xpos.api import shifts
+
+		opening = frappe._dict(name="RA-SHIFT", pos_profile=OTHER_PROFILE, user="Administrator")
+		with patch("xpos.api.shifts.frappe.get_doc", return_value=opening):
+			with self.assertRaises(frappe.PermissionError):
+				shifts.get_shift_summary("RA-SHIFT")
+
+	def test_print_count_needs_read_on_the_invoice(self):
+		from xpos.api import print_formats
+
+		frappe.set_user(NO_ROLES)
+		with self.assertRaises(frappe.PermissionError):
+			print_formats.mark_invoice_printed("Sales Invoice", self.other_draft.name)

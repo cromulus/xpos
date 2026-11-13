@@ -167,6 +167,15 @@ def quote_delivery(customer: str, address: str, items: str | list | None = None)
 	quote = _last_hook(QUOTE_HOOK)
 	if not quote:
 		frappe.throw(_("This site does not quote delivery"))
+	# The quote reads the customer's address and miles: the same access as the till's customer card.
+	from xpos.api.customers import require_customer_access
+
+	require_customer_access(customer)
+	if address and not frappe.db.exists(
+		"Dynamic Link",
+		{"parenttype": "Address", "parent": address, "link_doctype": "Customer", "link_name": customer},
+	):
+		frappe.throw(_("Address {0} is not one of {1}'s.").format(address, customer), frappe.PermissionError)
 	items = frappe.parse_json(items) if isinstance(items, str) else (items or [])
 	policy_of = _last_hook(POLICY_HOOK)
 	delivery_item = (policy_of() or {}).get("item_code") if policy_of else None
