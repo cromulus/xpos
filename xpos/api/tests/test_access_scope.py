@@ -24,6 +24,7 @@ from xpos.api.tests.test_record_access import (
 )
 from xpos.x_pos.api import offers as legacy_offers
 from xpos.x_pos.api import payments as legacy_payments
+from xpos.x_pos.api.invoice_processing import creation as legacy_creation
 from xpos.x_pos.api.invoice_processing import data as legacy_invoice_data
 
 
@@ -183,3 +184,50 @@ class TestLegacyCreditThroughTheCallersProfile(RecordAccessTestCase):
 		):
 			with self.subTest(customer=customer, **kwargs), self.assertRaises(frappe.PermissionError):
 				legacy_payments.get_available_credit(customer, **kwargs)
+
+
+class TestLegacyInvoiceStaysOnItsTill(RecordAccessTestCase):
+	"""update_invoice / submit_invoice may not move a saved invoice or scope a new one elsewhere."""
+
+	def update(self, **changes):
+		return legacy_creation.update_invoice(frappe.as_json({"name": self.own_draft.name, **changes}))
+
+	def assertDraftUnchanged(self):
+		frappe.set_user("Administrator")
+		saved = frappe.db.get_value(
+			"Sales Invoice", self.own_draft.name, ["pos_profile", "company", "customer"], as_dict=True
+		)
+		self.assertEqual(
+			(saved.pos_profile, saved.company, saved.customer),
+			(OWN_PROFILE, self.own_draft.company, self.own_draft.customer),
+		)
+
+	def test_a_saved_invoice_cannot_move_to_another_profile_or_company(self):
+		for changes in ({"pos_profile": OTHER_PROFILE}, {"company": OTHER_COMPANY}):
+			with self.subTest(**changes), self.assertRaises(frappe.PermissionError):
+				self.update(**changes)
+		with self.assertRaises(frappe.PermissionError):
+			legacy_creation.submit_invoice(
+				frappe.as_json({"name": self.own_draft.name, "pos_profile": OTHER_PROFILE}), "{}"
+			)
+		self.assertDraftUnchanged()
+
+	def test_a_saved_invoice_cannot_take_a_customer_outside_the_profile(self):
+		with self.assertRaises(frappe.PermissionError):
+			self.update(customer=OUTSIDE)
+		self.assertDraftUnchanged()
+
+	def test_server_fields_are_dropped_from_the_payload(self):
+		doc = frappe.get_doc("Sales Invoice", self.own_draft.name)
+		data = {"owner": "Administrator", "docstatus": 1, "creation": "2020-01-01", "modified_by": "x"}
+		legacy_creation._guard_saved_invoice(doc, data)
+		self.assertEqual(data, {})
+
+	def test_a_new_invoice_is_scoped_to_the_callers_profile(self):
+		for changes in (
+			{"pos_profile": OTHER_PROFILE},
+			{"pos_profile": OWN_PROFILE, "company": OTHER_COMPANY},
+			{"pos_profile": OWN_PROFILE, "customer": OUTSIDE},
+		):
+			with self.subTest(**changes), self.assertRaises(frappe.PermissionError):
+				legacy_creation.update_invoice(frappe.as_json({"items": [], **changes}))
