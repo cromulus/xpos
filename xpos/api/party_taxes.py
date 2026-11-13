@@ -63,7 +63,11 @@ def tax_context(customer: str | None = None, pos_profile: str | None = None, pos
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
 	if customer:
-		frappe.has_permission("Customer", "read", customer, throw=True)
+		# The same gate as the till's customer reads: the profile's groups (its
+		# walk-ins included) and the caller's User Permissions.
+		from xpos.api.customers import require_customer_access
+
+		require_customer_access(customer, "read", profile.name)
 	template, category = _party_template(profile, customer, posting_date)
 	return _context(template, category)
 

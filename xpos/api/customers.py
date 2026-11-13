@@ -77,10 +77,10 @@ def _customer_phone_fields(meta) -> list[str]:
 	return fields
 
 
-def _search_description(customer: dict, fields: list[str]) -> str:
+def _search_description(customer: dict, fields: list[str], shown: tuple[str, ...] | None = None) -> str:
 	"""The search-field values desk shows under a customer, in configured order."""
 	# Search configuration is broader than useful counter identification.
-	shown = _shown_on_row()
+	shown = shown if shown is not None else _shown_on_row()
 	seen = {str(customer.get(f) or "").casefold() for f in shown}
 	values = []
 	for field in fields:
@@ -313,8 +313,9 @@ def get_customers(
 				as_dict=True,
 			))
 	_enrich_picker_customers(customers, profile.company if pos_profile else None)
+	shown = _SHOWN_ON_ROW + ((site_fields["codes"],) if site_fields["codes"] else ())
 	for customer in customers:
-		customer["xpos_search_description"] = _search_description(customer, extra_fields)
+		customer["xpos_search_description"] = _search_description(customer, extra_fields, shown)
 
 	if cint(with_metadata):
 		return {"customers": customers, "complete": complete}
