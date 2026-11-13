@@ -70,7 +70,13 @@ Tests: `TestCustomerAccessJn61` in `test_access_guards`,
 `TestOpeningShiftOnTheCallersProfile` in `test_scope_guards`,
 `frontend/tests/offerStoreProfile.spec.ts`; the refusal cases fail on
 `795740d`. Still open (not in this bead): `offers.get_offers(pos_profile)` loads
-the named profile without checking the caller may use it.
+the named profile without checking the caller may use it (closed below, gk78).
+
+- `offers.get_offers` and the legacy `x_pos/api/offers.get_offers` load only a
+  POS Profile the caller may use (`resolve_pos_profile`, MuleCity-gk78); someone
+  else's is a PermissionError before any offer is read. The till asks with its
+  own profile, so a cashier sees no change. Test:
+  `TestOffersOnTheCallersProfile` in `test_access_guards` (fails on `d66dd0b`).
 
 ## mule-v2.10.1-mc63 (contains mc62)
 
