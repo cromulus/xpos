@@ -45,7 +45,7 @@ vi.mock("@/stores/posStore", () => ({
 	})),
 }));
 
-import { muleTaxTiming, useCartStore } from "@/stores/cartStore";
+import { buyerTaxTiming, useCartStore } from "@/stores/cartStore";
 
 const CONTEXT = { taxes: [{ account_head: "NC Sales Tax", rate: 6.75 }], tax_category: "", tax_exempt_reason: "" };
 
@@ -65,7 +65,7 @@ beforeEach(() => {
 	synced.clear();
 	online.value = true;
 	// A failed online lookup is asked once more (MuleCity-s9jt); no wait in tests.
-	muleTaxTiming.retryMs = 0;
+	buyerTaxTiming.retryMs = 0;
 });
 
 describe("the customer's tax context while offline", () => {
@@ -73,26 +73,26 @@ describe("the customer's tax context while offline", () => {
 		const cart = useCartStore();
 		call.mockResolvedValueOnce(CONTEXT);
 		await pick(cart, "Walk-In Customer");
-		expect(cart.muleTaxError).toBe("");
+		expect(cart.buyerTaxError).toBe("");
 
 		online.value = false;
 		call.mockRejectedValue(new Error("Failed to fetch"));
 		await pick(cart, "");
 		await pick(cart, "Walk-In Customer");
 
-		expect(cart.muleTaxError).toBe("");
-		expect(cart.muleTaxPending).toBe(false);
+		expect(cart.buyerTaxError).toBe("");
+		expect(cart.buyerTaxPending).toBe(false);
 	});
 
 	it("still stops payment when a lookup fails online, or offline with nothing kept", async () => {
 		const cart = useCartStore();
 		call.mockRejectedValue(new Error("Server error"));
 		await pick(cart, "Named Farm");
-		expect(cart.muleTaxError).toMatch(/Tax lookup failed/);
+		expect(cart.buyerTaxError).toMatch(/Tax lookup failed/);
 
 		online.value = false;
 		await pick(cart, "Never Seen Farm");
-		expect(cart.muleTaxError).toMatch(/No tax information for this customer on this till yet/);
+		expect(cart.buyerTaxError).toMatch(/No tax information for this customer on this till yet/);
 	});
 });
 
@@ -113,10 +113,10 @@ describe("a customer this till never looked up online (MuleCity-ispl)", () => {
 		call.mockRejectedValue(new Error("Failed to fetch"));
 		cart.customer = { name: "Sharp Farms", tax_category: "Mule City Exempt" } as never;
 		await flushPromises();
-		expect(cart.muleTaxError).toBe("");
-		expect(cart.muleTaxCategory).toBe("Mule City Exempt");
+		expect(cart.buyerTaxError).toBe("");
+		expect(cart.buyerTaxCategory).toBe("Mule City Exempt");
 		// The counter's exempt icon shows why, from the category's own reason.
-		expect(cart.muleTaxExemptReason).toBe("Farm");
+		expect(cart.buyerTaxExemptReason).toBe("Farm");
 	});
 
 	it("finds the category on the synced row when the cart's customer lacks it", async () => {
@@ -125,8 +125,8 @@ describe("a customer this till never looked up online (MuleCity-ispl)", () => {
 		call.mockRejectedValue(new Error("Failed to fetch"));
 		synced.set("Named Farm", { name: "Named Farm", tax_category: "Mule City Taxable" });
 		await pick(cart, "Named Farm");
-		expect(cart.muleTaxError).toBe("");
-		expect(cart.muleTaxCategory).toBe("Mule City Taxable");
+		expect(cart.buyerTaxError).toBe("");
+		expect(cart.buyerTaxCategory).toBe("Mule City Taxable");
 	});
 
 	it("uses the synced category over a stale per-customer context (Brandy moved them to Farm)", async () => {
@@ -138,8 +138,8 @@ describe("a customer this till never looked up online (MuleCity-ispl)", () => {
 		call.mockRejectedValue(new Error("Failed to fetch"));
 		cart.customer = { name: "Moved Farm", tax_category: "Mule City Exempt" } as never;
 		await flushPromises();
-		expect(cart.muleTaxError).toBe("");
-		expect(cart.muleTaxCategory).toBe("Mule City Exempt");
+		expect(cart.buyerTaxError).toBe("");
+		expect(cart.buyerTaxCategory).toBe("Mule City Exempt");
 	});
 
 	it("falls back to the per-customer context when the row predates synced categories", async () => {
@@ -148,9 +148,9 @@ describe("a customer this till never looked up online (MuleCity-ispl)", () => {
 		online.value = false;
 		call.mockRejectedValue(new Error("Failed to fetch"));
 		await pick(cart, "Old Row");
-		expect(cart.muleTaxError).toBe("");
-		expect(cart.muleTaxCategory).toBe("Mule City Exempt");
-		expect(cart.muleTaxExemptReason).toBe("Farm");
+		expect(cart.buyerTaxError).toBe("");
+		expect(cart.buyerTaxCategory).toBe("Mule City Exempt");
+		expect(cart.buyerTaxExemptReason).toBe("Farm");
 	});
 
 	it("still stops payment offline when neither a category nor a kept context exists", async () => {
@@ -160,6 +160,6 @@ describe("a customer this till never looked up online (MuleCity-ispl)", () => {
 		call.mockRejectedValue(new Error("Failed to fetch"));
 		cart.customer = { name: "Brand New", tax_category: "Mule City Taxable" } as never;
 		await flushPromises();
-		expect(cart.muleTaxError).toMatch(/No tax information for this customer on this till yet/);
+		expect(cart.buyerTaxError).toMatch(/No tax information for this customer on this till yet/);
 	});
 });

@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withPullCalculation } from '@/services/pullCalculation';
 import { call } from '@/services/api';
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 vi.mock('@/services/api', () => ({call: vi.fn()}));
 const api = vi.mocked(call);
 const status = 'mulecity_erpnext.mule_feed_formula.pull_jobs.status';

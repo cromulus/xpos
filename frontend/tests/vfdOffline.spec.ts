@@ -5,6 +5,10 @@ vi.mock('@/services/api', () => ({ call: vi.fn() }));
 vi.mock('@/services/dbBridge', () => ({ getOfflineMeta: vi.fn(), setOfflineMeta: vi.fn() }));
 import { cartIdentity, validateOfflineCoverage, queuedInvoiceMethod, type VfdSnapshot, type VfdContext } from '@/services/vfdOffline';
 import type { InvoiceData } from '@/types/pos.types';
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 const data = () => ({ local_id: 'ticket-1', pos_profile: 'Till', customer: 'Buyer', items: [
   { item_code: 'FEED', qty: 50, uom: 'Pound', conversion_factor: 1, sales_order: 'SO', so_detail: 'ROW', bom_no: 'BOM', mule_vfd: 'VFD' },
 ] } as unknown as InvoiceData);

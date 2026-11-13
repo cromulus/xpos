@@ -809,7 +809,7 @@ export interface ReceiptContext {
 }
 
 /**
- * Mule City's print look (mulecity_erpnext.printouts.print_brand, MuleCity-kht3.2). Unset
+ * The site's print look (xpos_site print_brand, MuleCity-kht3.2). Unset
  * values are empty strings. `logo_data_uri` is the logo fetched once online and kept as a
  * data URI so it prints after an offline cold start.
  */

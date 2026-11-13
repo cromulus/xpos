@@ -28,9 +28,9 @@ class TestCreateInvoice(unittest.TestCase):
 		self.stub("get_currency_precision", return_value=2)
 		# The caller's right to sell has its own tests below.
 		self.stub("resolve_pos_profile")
-		# The site tax adapter (Mule City) has its own tests; these unit tests
-		# use a mocked invoice, which the adapter cannot read.
-		patcher = patch("mulecity_erpnext.pos_workspace.apply_customer_taxes")
+		# Taxes (the site's xpos_apply_taxes, else ERPNext's party resolution) have
+		# their own tests; these unit tests use a mocked invoice, which they cannot read.
+		patcher = patch("xpos.api.site_hooks.apply_taxes")
 		patcher.start()
 		self.addCleanup(patcher.stop)
 
@@ -304,7 +304,10 @@ class TestCreateInvoice(unittest.TestCase):
 		source = {"price_list_rate": 20, "rate": 18, "discount_percentage": 10, "discount_amount": 2,
 			"mule_processing_instructions": "CRACK <<2X>>\n2 PALLETS"}
 		from frappe import _dict
-		with patch("xpos.api.invoices._sales_order_line", return_value=_dict(source)), patch(
+		# The site names the order-line field the order is the authority for (xpos_order_line_server_fields).
+		with patch("xpos.api.site_hooks.order_line_server_fields", return_value=("mule_processing_instructions",)), patch(
+			"xpos.api.site_hooks.order_line_fields", return_value=("mule_processing_instructions",)), patch(
+			"xpos.api.invoices._sales_order_line", return_value=_dict(source)), patch(
 			"xpos.api.invoices.selling_price", return_value=50
 		) as current, patch("xpos.api.auth.user_has_pos_permission", return_value=False), patch(
 			"xpos.api.invoices.pricing_rule_rates", return_value=[18]

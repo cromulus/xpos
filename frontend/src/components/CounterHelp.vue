@@ -1,9 +1,9 @@
 <template>
-	<!-- "?" in the till header (Mule City, MuleCity-vz28.17.20): the counter's procedures from the
-	     manual, as the desk's "How do I…?" lists them (mulecity_erpnext.in_app_help.get_help, screen
-	     "xpos", docs/erpnext/runbook/help-map.yml). Each opens /manual/<page>#<heading> in a new tab;
-	     the till keeps its basket. No entries: the manual's counter page. A site without the help
-	     (no Mule app or Wiki yet, or offline) says so, never a dead link. -->
+	<!-- "?" in the till header: the site's counter procedures, as its desk help lists them
+	     (a site feature: xpos_site `help` names the method, called with screen "xpos";
+	     `help_manual` the manual page to open with no entries). Each entry opens in a new
+	     tab; the till keeps its basket. Shown only on a site with help (Navbar). A site whose
+	     help cannot answer (offline) says so, never a dead link. -->
 	<Popover v-model:open="open">
 		<PopoverTrigger as-child>
 			<Button
@@ -49,10 +49,11 @@ import { CircleHelp } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContentStyled, PopoverTrigger } from "@/components/ui/popover";
 import { call } from "@/services/api";
+import { requireSiteMethod, siteValue } from "@/services/siteExtensions";
 import { __ } from "@/lib/translate";
 
 type Entry = { id: string; title: string; use_when: string; url: string };
-const MANUAL = "/manual/counter";
+const MANUAL = String(siteValue("help_manual") || "/manual/counter");
 const open = ref(false);
 const entries = ref<Entry[]>([]);
 const unavailable = ref(false);
@@ -61,7 +62,7 @@ async function load() {
 	if (entries.value.length) return;
 	unavailable.value = false;
 	try {
-		const help = await call<{ entries: Entry[] }>("mulecity_erpnext.in_app_help.get_help", { screen: "xpos" });
+		const help = await call<{ entries: Entry[] }>(requireSiteMethod("help"), { screen: "xpos" });
 		const seen = new Set<string>();
 		entries.value = (help?.entries || []).filter((e) => !seen.has(e.id) && seen.add(e.id));
 	} catch {

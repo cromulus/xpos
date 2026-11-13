@@ -83,8 +83,8 @@ class TestCashierInitialsAtPay(unittest.TestCase):
 		self.stub("check_expected_total")
 		self.stub("_validate_unpaid_balance_permissions")
 		for target, kwargs in (
-			# The Mule City tax adapter and FBR fiscalization have their own tests.
-			("mulecity_erpnext.pos_workspace.apply_customer_taxes", {}),
+			# Taxes (site_hooks.apply_taxes) and FBR fiscalization have their own tests.
+			("xpos.api.site_hooks.apply_taxes", {}),
 			("xpos.x_pos.integrations.fbr.prepare_fiscalization", {"return_value": MagicMock(status="disabled")}),
 		):
 			patcher = patch(target, **kwargs)

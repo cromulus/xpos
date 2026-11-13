@@ -73,6 +73,10 @@ import ItemCard from "@/components/items/ItemCard.vue";
 import ItemListRow from "@/components/items/ItemListRow.vue";
 import { mixCheckStatus } from "@/utils/mixCheck";
 import type { POSItem } from "@/types/pos.types";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const mockedCall = vi.mocked(call);
 

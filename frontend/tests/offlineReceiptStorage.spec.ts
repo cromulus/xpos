@@ -51,6 +51,10 @@ vi.mock("@/stores/customerStore", () => ({
 
 import { useOfflineStore } from "@/stores/offlineStore";
 import { usePosStore } from "@/stores/posStore";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const invoiceData = { customer: "Walk-in Customer", items: [] } as unknown as InvoiceData;
 const receipt = { name: "", grand_total: 10, items: [] } as unknown as ReceiptSnapshot;

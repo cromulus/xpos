@@ -22,6 +22,10 @@ vi.mock("@/services/dbBridge", async (orig) => ({
 
 import { useOfflineStore } from "@/stores/offlineStore";
 import { useCacheStatus } from "@/stores/cacheStatus";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const CONTEXTS = {
 	"": { tax_category: null, taxes: [{ rate: 6.75 }] },

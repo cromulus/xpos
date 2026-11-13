@@ -1,7 +1,8 @@
 /**
- * Orders in flight, fetched and kept for offline (Mule City, MuleCity-zstm.23, mxwy.10).
+ * Orders in flight, fetched and kept for offline: a site feature (xpos_site
+ * `find_orders` and `pickup_invoice`). Without it the till shows sales history only.
  *
- * Online, `load` asks the Mule app's `find_orders` and keeps every unsearched
+ * Online, `load` asks the site's `find_orders` and keeps every unsearched
  * list in the till's offline storage (the same sync-meta store as the tax
  * contexts), one per customer plus the everyone list. Offline (or when the
  * request cannot reach the server) it returns that last known list, searched
@@ -11,6 +12,7 @@
 import { defineStore } from "pinia";
 import { reactive } from "vue";
 import { call, isNetworkError } from "@/services/api";
+import { siteMethod } from "@/services/siteExtensions";
 import { getSyncMeta, setSyncMeta } from "@/services/dbBridge";
 import { usePosStore } from "@/stores/posStore";
 import { useOfflineStore } from "@/stores/offlineStore";
@@ -23,7 +25,10 @@ import {
 	type OrdersResult,
 } from "@/utils/openOrders";
 
-const FIND_ORDERS = "mulecity_erpnext.pos_workspace.find_orders";
+/** Whether this site lists orders in flight at the till (xpos_site find_orders). */
+export function ordersInFlightEnabled(): boolean {
+	return !!siteMethod("find_orders");
+}
 
 export function openOrdersCacheKey(profile: string, scope: string): string {
 	return `open_orders::${profile}::${scope || "*"}`;
@@ -78,7 +83,8 @@ export const useOpenOrdersStore = defineStore("openOrders", () => {
 
 	async function fetchOrders(customer?: string | null, search = ""): Promise<OrdersResult | null> {
 		const profile = usePosStore().profileName;
-		if (!profile) return null;
+		const method = siteMethod("find_orders");
+		if (!profile || !method) return null;
 		const scope = scopeOf(customer);
 		const term = (search || "").trim();
 		if (!useOfflineStore().isOnline) {
@@ -88,7 +94,7 @@ export const useOpenOrdersStore = defineStore("openOrders", () => {
 		}
 		try {
 			const rows =
-				(await call<OpenOrder[]>(FIND_ORDERS, {
+				(await call<OpenOrder[]>(method, {
 					pos_profile: profile,
 					customer: scope || null,
 					search: term,
@@ -115,6 +121,7 @@ export const useOpenOrdersStore = defineStore("openOrders", () => {
 
 	/** Keep the everyone list for offline (the till's background sync). Never throws. */
 	async function prefetchAll(): Promise<void> {
+		if (!ordersInFlightEnabled()) return;
 		try {
 			await load(null, "");
 		} catch (error) {

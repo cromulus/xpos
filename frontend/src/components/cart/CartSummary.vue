@@ -365,7 +365,7 @@
 					? 'bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-amber-500/25 text-white'
 					: 'bg-linear-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 shadow-primary/25'
 			"
-			:disabled="receivesOnAccount ? false : cartStore.isEmpty || !cartStore.customer || cartStore.muleTaxPending || !!cartStore.muleTaxError || cartStore.serverPreviewPending || cartStore.mixPriceChecking"
+			:disabled="receivesOnAccount ? false : cartStore.isEmpty || !cartStore.customer || cartStore.buyerTaxPending || !!cartStore.buyerTaxError || cartStore.serverPreviewPending || cartStore.mixPriceChecking"
 			@click="handleCheckout()"
 		>
 			<Wallet class="w-5 h-5" />

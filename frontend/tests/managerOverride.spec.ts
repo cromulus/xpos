@@ -20,6 +20,10 @@ import { captureError, clearErrors, entries } from "@/services/errorLog";
 import ManagerOverride from "@/components/dialogs/ManagerOverride.vue";
 import { isChargeRefusal, isOverrideAnswer, payWithOverride } from "@/services/chargeOverride";
 import type { InvoiceData } from "@/types/pos.types";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const mockedCall = vi.mocked(call);
 const MESSAGE =

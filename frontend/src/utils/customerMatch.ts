@@ -8,6 +8,7 @@
  * and ranking and the "via Jane Sharp" line shown online and offline, mirroring
  * xpos.api.customers.get_customers.
  */
+import { siteValue } from "@/services/siteExtensions";
 import type { Customer } from "@/types/pos.types";
 
 /** 0 exact name/code, 1 the customer's own fields, 2 found only through a contact. */
@@ -25,8 +26,17 @@ export const MIN_PHONE_DIGITS = 4;
 const digitsOf = (value: unknown) => String(value ?? "").replace(/\D/g, "");
 const text = (value: unknown) => (typeof value === "string" ? value : value == null ? "" : String(value));
 
+/**
+ * The customer's other codes as one string: the site's codes field (xpos_site
+ * `customer_codes_field`, server xpos_customer_fields "codes"), or "".
+ */
+export function customerCodes(customer: Record<string, unknown>): string {
+	const field = siteValue("customer_codes_field");
+	return typeof field === "string" && field ? text(customer[field]) : "";
+}
+
 function aliasCodes(customer: Customer): string[] {
-	return text(customer.mule_filepro_alias_codes)
+	return customerCodes(customer as unknown as Record<string, unknown>)
 		.split(/[,;\s]+/)
 		.map((code) => code.trim())
 		.filter(Boolean);
@@ -43,7 +53,7 @@ export function matchCustomer(customer: Customer, rawTerm: string): CustomerMatc
 	const exact = [customer.name, customer.customer_name, ...codes].some((v) => text(v).toLowerCase() === term);
 	const ownName =
 		exact ||
-		[customer.name, customer.customer_name, customer.mule_filepro_alias_codes, customer.xpos_search_description, customer.tax_id].some(has);
+		[customer.name, customer.customer_name, customerCodes(customer as unknown as Record<string, unknown>), customer.xpos_search_description, customer.tax_id].some(has);
 	const contacts = customer.xpos_contacts || [];
 
 	// A matching number is named, with the contact it belongs to, so the cashier sees which one.

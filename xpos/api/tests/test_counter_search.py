@@ -91,10 +91,11 @@ class TestCustomerAddress(unittest.TestCase):
 
 
 class TestNewCustomerTaxExemptReason(unittest.TestCase):
-	"""Cashier story (Mule City): a new farm or reseller customer is exempt from
-	the first ticket. The counter sends why; the Customer's own validation (in
-	mulecity_erpnext) turns the reason into the Tax Category. Sites without the
-	field keep working and never accept a reason."""
+	"""Cashier story: a new farm or reseller customer is exempt from the first
+	ticket. The counter sends why; the Customer's own validation (in the site's
+	app, which names the field through xpos_customer_fields) turns the reason
+	into the Tax Category. Sites without the field keep working and never accept
+	a reason."""
 
 	REASONS = ["Farm", "Reseller (resale certificate)"]
 
@@ -102,10 +103,10 @@ class TestNewCustomerTaxExemptReason(unittest.TestCase):
 		from xpos.api.customers import create_customer
 		with patch("xpos.api.customers.frappe") as api, patch(
 			"xpos.api.customers.customer_tax_exempt_reasons", return_value=self.REASONS
-		):
-			create_customer("Test Farmer", mule_tax_exempt_reason="Farm")
+		), patch("xpos.api.customers.tax_exempt_reason_field", return_value="site_tax_exempt_reason"):
+			create_customer("Test Farmer", tax_exempt_reason="Farm")
 			doc = api.get_doc.return_value
-			doc.set.assert_any_call("mule_tax_exempt_reason", "Farm")
+			doc.set.assert_any_call("site_tax_exempt_reason", "Farm")
 			# XPOS sets no Tax Category itself: the Customer's validate does.
 			self.assertNotIn("tax_category", api.get_doc.call_args.args[0])
 			doc.insert.assert_called_once_with(ignore_permissions=True)
@@ -116,8 +117,8 @@ class TestNewCustomerTaxExemptReason(unittest.TestCase):
 			"xpos.api.customers.customer_tax_exempt_reasons", return_value=self.REASONS
 		):
 			create_customer("Test Buyer")
-			self.assertNotIn(
-				"mule_tax_exempt_reason", [c.args[0] for c in api.get_doc.return_value.set.call_args_list]
+			self.assertFalse(
+				[c for c in api.get_doc.return_value.set.call_args_list if "exempt" in str(c.args[0])]
 			)
 
 	def test_negative_an_unknown_reason_is_refused(self):
@@ -127,7 +128,7 @@ class TestNewCustomerTaxExemptReason(unittest.TestCase):
 		):
 			api.throw.side_effect = ValueError("bad reason")
 			with self.assertRaises(ValueError):
-				create_customer("Test Buyer", mule_tax_exempt_reason="Tax free")
+				create_customer("Test Buyer", tax_exempt_reason="Tax free")
 			api.get_doc.assert_not_called()
 
 	def test_negative_a_site_without_the_field_refuses_a_reason(self):
@@ -137,7 +138,7 @@ class TestNewCustomerTaxExemptReason(unittest.TestCase):
 		):
 			api.throw.side_effect = ValueError("no field")
 			with self.assertRaises(ValueError):
-				create_customer("Test Farmer", mule_tax_exempt_reason="Farm")
+				create_customer("Test Farmer", tax_exempt_reason="Farm")
 			api.get_doc.assert_not_called()
 
 	def test_the_old_classification_arguments_are_gone(self):
@@ -159,6 +160,11 @@ class TestTaxExemptReasonOptions(unittest.TestCase):
 	def field(self, permlevel=1):
 		return MagicMock(fieldtype="Select", options="\nFarm\nReseller (resale certificate)", permlevel=permlevel)
 
+	def setUp(self):
+		patcher = patch("xpos.api.customers.tax_exempt_reason_field", return_value="site_tax_exempt_reason")
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	def test_options_come_from_the_field(self):
 		from xpos.api.customers import customer_tax_exempt_reasons
 		with patch("xpos.api.customers.frappe") as api:
@@ -169,6 +175,13 @@ class TestTaxExemptReasonOptions(unittest.TestCase):
 		from xpos.api.customers import customer_tax_exempt_reasons
 		with patch("xpos.api.customers.frappe") as api:
 			api.get_meta.return_value = self.meta(None)
+			self.assertEqual(customer_tax_exempt_reasons(), [])
+
+	def test_negative_a_site_that_names_no_field_gets_no_options(self):
+		from xpos.api.customers import customer_tax_exempt_reasons
+		with patch("xpos.api.customers.tax_exempt_reason_field", return_value=None), \
+			patch("xpos.api.customers.frappe") as api:
+			api.get_meta.return_value = self.meta(self.field())
 			self.assertEqual(customer_tax_exempt_reasons(), [])
 
 	def test_negative_a_user_who_may_not_set_it_gets_no_options(self):

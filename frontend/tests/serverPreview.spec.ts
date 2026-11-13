@@ -24,6 +24,10 @@ vi.mock("@/stores/posStore", () => ({
 
 import { call } from "@/services/api";
 import { useCartStore } from "@/stores/cartStore";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const PREVIEW = {
 	items: [
@@ -197,21 +201,21 @@ describe("Pay while the buyer's tax is loading", () => {
 
 	it("opens once the tax settles", async () => {
 		const cart = await depositorCart();
-		cart.muleTaxPending = true;
+		cart.buyerTaxPending = true;
 		const opening = cart.openPaymentDialog();
 		await nextTick();
 		expect(cart.showPaymentDialog).toBe(false);
-		cart.muleTaxPending = false;
+		cart.buyerTaxPending = false;
 		await opening;
 		expect(cart.showPaymentDialog).toBe(true);
 	});
 
 	it("stays closed when the tax lookup failed", async () => {
 		const cart = await depositorCart();
-		cart.muleTaxPending = true;
+		cart.buyerTaxPending = true;
 		const opening = cart.openPaymentDialog();
-		cart.muleTaxError = "Tax lookup failed.";
-		cart.muleTaxPending = false;
+		cart.buyerTaxError = "Tax lookup failed.";
+		cart.buyerTaxPending = false;
 		await opening;
 		expect(cart.showPaymentDialog).toBe(false);
 	});

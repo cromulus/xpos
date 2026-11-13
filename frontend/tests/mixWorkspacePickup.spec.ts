@@ -9,7 +9,11 @@ import { mount, flushPromises } from "@vue/test-utils";
 const toast = vi.hoisted(() => ({ showInfo: vi.fn() }));
 vi.mock("@/services/api", () => toast);
 
-import MuleWorkspace from "@/components/MuleWorkspace.vue";
+import MixWorkspace from "@/components/MixWorkspace.vue";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const order = { name: "SAL-ORD-1", customer_name: "ALBERT ADKINS", delivery_date: "2026-09-30", status: "To Deliver and Bill" };
 
@@ -21,7 +25,7 @@ async function loadOrder(doc: Record<string, unknown>) {
 	HTMLDialogElement.prototype.showModal ??= function () {};
 	HTMLDialogElement.prototype.close ??= function () {};
 	const request = vi.fn((method: string) => Promise.resolve(method.endsWith("find_orders") ? [order] : doc));
-	const wrapper = mount(MuleWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request }, attachTo: document.body });
+	const wrapper = mount(MixWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request }, attachTo: document.body });
 	mounted = wrapper;
 	// Still reachable through the exposed open('orders'); the till's Orders view is the usual way in.
 	await (wrapper.vm as unknown as { open: (mode: string) => Promise<void> }).open("orders");
@@ -34,7 +38,7 @@ async function loadOrder(doc: Record<string, unknown>) {
 describe("Picking up a delivery order at the counter", () => {
 	it("tells the clerk the delivery was switched to pickup, then loads the ticket", async () => {
 		const notice = "Switched to pickup: the delivery charge was removed.";
-		const wrapper = await loadOrder({ name: "ACC-SINV-1", mule_notice: notice });
+		const wrapper = await loadOrder({ name: "ACC-SINV-1", xpos_notice: notice });
 		expect(toast.showInfo).toHaveBeenCalledWith(notice);
 		expect(wrapper.emitted("pickup")?.[0]?.[0]).toMatchObject({ name: "ACC-SINV-1" });
 	});

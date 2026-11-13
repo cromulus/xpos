@@ -2,6 +2,7 @@ import { attachOfflineCoverage, queuedInvoiceMethod, refreshVfdContext } from "@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { call, showSuccess, showError, showInfo } from "@/services/api";
+import { siteMethod } from "@/services/siteExtensions";
 import { usePosStore } from "@/stores/posStore";
 import {
 	addPendingInvoice,
@@ -517,16 +518,18 @@ export const useOfflineStore = defineStore("offline", () => {
 	}
 
 	/**
-	 * Keep every tax category's taxes for offline use (Mule City's tax_contexts,
-	 * MuleCity-ispl), so a customer this till never looked up online is taxed by
-	 * the category on their synced row. The cart already asks Mule City's
-	 * tax_context online; a site without that endpoint just records a failure.
+	 * Keep every tax category's taxes for offline use (the site's `tax_contexts`,
+	 * xpos_site; XPOS's own `xpos.api.party_taxes.tax_contexts` by default), so a
+	 * customer this till never looked up online is taxed by the category on their
+	 * synced row. A site that turns the key off (empty string) skips this.
 	 */
 	async function cacheTaxContextsForOffline(profile: string): Promise<void> {
+		const method = siteMethod("tax_contexts");
+		if (!method) return;
 		const status = useCacheStatus();
 		if (!status.begin("Taxes", profile)) return;
 		try {
-			const contexts = await call<Record<string, unknown>>("mulecity_erpnext.pos_workspace.tax_contexts", {
+			const contexts = await call<Record<string, unknown>>(method, {
 				pos_profile: profile,
 			});
 			await cacheTaxContexts(profile, contexts || {});

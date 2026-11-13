@@ -20,7 +20,11 @@ vi.mock("@/components/ui/popover", async () => {
 	return { Popover: Pass, PopoverTrigger: Pass, PopoverContentStyled: Pass };
 });
 
-import CounterHelp from "@/components/mule/CounterHelp.vue";
+import CounterHelp from "@/components/CounterHelp.vue";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const ENTRY = { id: "C-2", title: "Ring a sale", use_when: "A customer is buying", url: "/manual/counter#c-2" };
 

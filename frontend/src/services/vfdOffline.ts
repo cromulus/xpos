@@ -1,11 +1,22 @@
-/** Prepared native pickups reuse the existing queue; a cached clock is not proof of sale time. */
+/**
+ * Offline sale of a regulated (prescription-feed) pickup: a site feature.
+ *
+ * On only when the site's `xpos_site.vfd` map names its methods (`context`,
+ * `prepare`, `replay`); with none, nothing here calls the server, no sale is
+ * checked and every queued sale replays through `create_invoice`.
+ * Prepared native pickups reuse the existing queue; a cached clock is not proof of sale time.
+ */
 import { useAuthStore } from '@/stores/authStore';
+import { siteFeature, siteMethod } from '@/services/siteExtensions';
 import { getApiBaseUrlSync } from '@/services/electronBridge';
 import { call } from '@/services/api';
 import { getOfflineMeta, setOfflineMeta } from '@/services/dbBridge';
 import type { InvoiceData } from '@/types/pos.types';
 
-const endpoint = 'mulecity_erpnext.vfd_offline';
+/** Whether this site checks regulated pickups offline (xpos_site.vfd). */
+export function vfdEnabled(): boolean {
+  return siteFeature('vfd') && !!siteMethod('vfd.context');
+}
 const fields = ['item_code', 'qty', 'uom', 'conversion_factor', 'sales_order', 'so_detail', 'bom_no', 'mule_vfd'];
 export interface VfdContext {
   profile: string; company: string; cached_at: string; timezone: string;
@@ -39,17 +50,21 @@ function cacheKey(key: string): string {
   return `${getApiBaseUrlSync() || window.location.origin}::${useAuthStore().userName}::${key}`;
 }
 export async function refreshVfdContext(profile: string): Promise<void> {
-  const context = await call<VfdContext>(`${endpoint}.context`, { pos_profile: profile });
+  const method = siteMethod('vfd.context');
+  if (!vfdEnabled() || !method) return;
+  const context = await call<VfdContext>(method, { pos_profile: profile });
   if (!context?.items || context.profile !== profile) throw new Error('VFD offline context is unavailable.');
   // A failed refresh leaves prior pending tickets and their evidence intact.
   await setOfflineMeta(cacheKey(`vfd_context::${profile}`), context);
 }
 export async function prepareVfdPickup(data: InvoiceData): Promise<void> {
+  const method = siteMethod('vfd.prepare');
+  if (!vfdEnabled() || !method) return;
   if (!data.items.some(row => (row as any).mule_vfd || (row as any).so_detail)) return;
   const key = cacheKey(`vfd_pickup::${data.local_id}`);
   try {
     await setOfflineMeta(key, null);
-    const snapshot = await call<VfdSnapshot | null>(`${endpoint}.prepare`, { data: JSON.stringify(data) });
+    const snapshot = await call<VfdSnapshot | null>(method, { data: JSON.stringify(data) });
     if (snapshot) await setOfflineMeta(key, snapshot);
   } catch (error) {
     // Optional offline preparation never blocks an otherwise valid online sale.
@@ -82,12 +97,15 @@ export function validateOfflineCoverage(data: InvoiceData, context: VfdContext |
   return true;
 }
 export async function attachOfflineCoverage(data: InvoiceData): Promise<void> {
+  if (!vfdEnabled()) return;
   const context = await getOfflineMeta(cacheKey(`vfd_context::${data.pos_profile}`)) as VfdContext | null;
   const snapshot = await getOfflineMeta(cacheKey(`vfd_pickup::${data.local_id}`)) as VfdSnapshot | null;
   if (validateOfflineCoverage(data, context, snapshot)) {
-    (data as any).mule_vfd_offline = { snapshot, sold_at: new Date().toISOString() };
+    // The replay method rides with the sale for the desktop app's sync, which has no boot.
+    (data as any).mule_vfd_offline = { snapshot, sold_at: new Date().toISOString(), replay_method: siteMethod('vfd.replay') };
   }
 }
 export function queuedInvoiceMethod(data: unknown): string {
-  return (data as any)?.mule_vfd_offline ? `${endpoint}.replay` : 'xpos.api.invoices.create_invoice';
+  const replay = siteMethod('vfd.replay') || (data as any)?.mule_vfd_offline?.replay_method;
+  return (data as any)?.mule_vfd_offline && replay ? replay : 'xpos.api.invoices.create_invoice';
 }

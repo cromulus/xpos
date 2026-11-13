@@ -1,3 +1,4 @@
+import { requireSiteMethod } from "@/services/siteExtensions";
 import { call } from "@/services/api";
 import { isValidationRefusal } from "@/utils/refusals";
 import __ from "@/lib/translate";
@@ -28,7 +29,7 @@ export async function withPullCalculation<T>(
 			const keys = result.pending_jobs;
 			while (true) {
 				ensureCurrent();
-				const state = await call<Record<string, string>>("mulecity_erpnext.mule_feed_formula.pull_jobs.status", { keys });
+				const state = await call<Record<string, string>>(requireSiteMethod("mix.job_status"), { keys });
 				ensureCurrent();
 				if (keys.some(key => !state?.[key] || ["failed", "expired"].includes(state[key]))) {
 					throw new Error(__("The pull calculation could not finish. Please retry."));

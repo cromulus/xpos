@@ -36,6 +36,10 @@ vi.mock("@/utils", async (importOriginal) => ({
 import PaymentDialog from "@/components/dialogs/PaymentDialog.vue";
 import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const CHECK = "mulecity_erpnext.counter_mix_orders.counter_check";
 

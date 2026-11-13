@@ -128,7 +128,7 @@
 		</TooltipWrapper>
 
 		<!-- The counter's procedures from the Mule City manual (MuleCity-vz28.17.20). -->
-		<CounterHelp />
+		<CounterHelp v-if="siteHelp" />
 
 		<!-- One status control: connection, pending sales and the offline cache (MuleCity-qajl.1). -->
 		<CacheSyncStatus @open-pending="showOfflinePanel = true" />
@@ -258,7 +258,10 @@ import {
 	LayoutDashboard,
 } from "lucide-vue-next";
 import OfflinePendingPanel from "@/components/offline/OfflinePendingPanel.vue";
-import CounterHelp from "@/components/mule/CounterHelp.vue";
+import CounterHelp from "@/components/CounterHelp.vue";
+import { siteFeature } from "@/services/siteExtensions";
+// The site's counter help (xpos_site help); the "?" is hidden without it.
+const siteHelp = siteFeature("help");
 import AboutDialog from "@/components/dialogs/AboutDialog.vue";
 import KeyboardShortcutsDialog from "@/components/dialogs/KeyboardShortcutsDialog.vue";
 

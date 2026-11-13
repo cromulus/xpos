@@ -2,7 +2,7 @@
 	<!-- Top-bar "Orders" (Bill 2026-09-30/10-01, MuleCity-zstm.23): Sales Orders in flight first;
 	     past sales (and reprint) one tab away. -->
 	<div class="h-full min-h-0 flex flex-col">
-		<div class="shrink-0 flex items-center gap-1 px-3 sm:px-4 pt-3" role="tablist">
+		<div v-if="ordersOn" class="shrink-0 flex items-center gap-1 px-3 sm:px-4 pt-3" role="tablist">
 			<Button
 				role="tab"
 				size="sm"
@@ -41,10 +41,13 @@ import { Button } from "@/components/ui/button";
 import OpenOrdersPanel from "@/components/orders/OpenOrdersPanel.vue";
 import OrdersView from "@/views/OrdersView.vue";
 import __ from "@/lib/translate";
+import { ordersInFlightEnabled } from "@/stores/openOrdersStore";
 
 const route = useRoute();
 const router = useRouter();
-const tab = computed(() => (route.query.tab === "history" ? "history" : "open"));
+// Orders in flight are a site feature (xpos_site find_orders); without it, sales history only.
+const ordersOn = ordersInFlightEnabled();
+const tab = computed(() => (!ordersOn || route.query.tab === "history" ? "history" : "open"));
 
 function setTab(next: "open" | "history") {
 	const query = { ...route.query };

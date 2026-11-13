@@ -1,7 +1,7 @@
 <template>
-	<!-- A practice (staging) till says so, in red, lower left (Bill 2026-10-01, MuleCity-qajl.1).
-	     The flag comes from the Mule app's site_role.py in boot; absent or false (production,
-	     erp.mulecity.com, MuleCity-nfxn.1) = no banner. It never takes a click. -->
+	<!-- A practice (staging) till says so, in red, lower left. The flag is the site's
+	     (xpos_site `practice_site`, from a site-role app); absent or false (production) =
+	     no banner. It never takes a click. -->
 	<div
 		v-if="practiceSite"
 		role="status"
@@ -14,7 +14,7 @@
 
 <script setup lang="ts">
 import __ from "@/lib/translate";
+import { siteFeature } from "@/services/siteExtensions";
 
-const practiceSite = !!(window as unknown as { xpos?: { boot?: { mule_practice_site?: unknown } } }).xpos?.boot
-	?.mule_practice_site;
+const practiceSite = siteFeature("practice_site");
 </script>

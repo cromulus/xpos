@@ -1,7 +1,11 @@
 /** Counter stories: Customer Mixes says which of a customer's mixes is current, and shows its recipe. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
-import MuleWorkspace from "@/components/MuleWorkspace.vue";
+import MixWorkspace from "@/components/MixWorkspace.vue";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 // Shaped like mulecity_erpnext.pos_workspace.find_mixes: item_name is the product's own
 // (generated) title; display_name and owner_name are what the server prepared for people.
@@ -21,10 +25,10 @@ async function openMixes(addMix?: (...args: any[]) => Promise<void>) {
 	HTMLDialogElement.prototype.close = function () {};
 	HTMLDialogElement.prototype.showModal ??= function () {};
 	const request = vi.fn((method: string) => Promise.resolve(method.endsWith("find_mixes") ? { rows, has_more: false } : recipe));
-	const wrapper = mount(MuleWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request, addMix }, attachTo: document.body });
+	const wrapper = mount(MixWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request, addMix }, attachTo: document.body });
 	mounted = wrapper;
 	// The customer card's "Mixes" sends this event (the Mule City row is gone, MuleCity-qajl.1).
-	window.dispatchEvent(new CustomEvent("xpos:open-mule-workspace", { detail: { mode: "mixes" } }));
+	window.dispatchEvent(new CustomEvent("xpos:open-mix-workspace", { detail: { mode: "mixes" } }));
 	await flushPromises();
 	return { wrapper, request };
 }
@@ -59,7 +63,7 @@ describe("Customer Mixes", () => {
 	// Before: "ALBERT ADKINS Formula A846D90316" / "ALBERT ADKINS / 4112". After: the prepared name and owner.
 	it("names each mix by what is in it and whose recipe it is, not by its generated code", async () => {
 		await openMixes();
-		const titles = [...document.body.querySelectorAll(".mule-results article > div > strong")].map(t => t.textContent);
+		const titles = [...document.body.querySelectorAll(".mix-results article > div > strong")].map(t => t.textContent);
 		expect(titles).toEqual(["CORN, OATS, SOYBEAN MEAL", "CORN, BARLEY", "Custom mix — recipe not recorded"]);
 		const text = document.body.textContent || "";
 		expect(text).toContain("Recipe of ALBERT ADKINS");
@@ -102,7 +106,7 @@ describe("Customer Mixes", () => {
 		const view = [...document.body.querySelectorAll("button")].find(b => b.textContent === "Detailed view")!;
 		view.click();
 		await flushPromises();
-		expect(document.body.querySelector(".mule-recipe")?.textContent).toContain("CORN");
+		expect(document.body.querySelector(".mix-recipe")?.textContent).toContain("CORN");
 		expect(scroll).toHaveBeenCalled();
 	});
 });

@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { matchCustomer, rankCustomerMatches } from "@/utils/customerMatch";
 import { isCalculation } from "@/utils/commandSearch";
 import type { Customer } from "@/types/pos.types";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const sharp: Customer = {
 	name: "MC-CUST-1001",

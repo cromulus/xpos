@@ -44,7 +44,11 @@ vi.mock("@/services/dbBridge", async (orig) => ({
 vi.mock("@/utils", async (orig) => ({ ...(await orig<Record<string, unknown>>()), isOnline: () => online.value }));
 vi.mock("@/stores/posStore", () => ({ usePosStore: vi.fn(() => pos) }));
 
-import { muleTaxTiming, useCartStore } from "@/stores/cartStore";
+import { buyerTaxTiming, useCartStore } from "@/stores/cartStore";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const PROFILE = "Mule City Retail";
 const TAXABLE = { taxes: [{ account_head: "NC Sales Tax Payable - MCSF", rate: 6.75 }], tax_category: "Mule City Taxable", taxes_and_charges: "Mule City NC Sales Tax 6.75% - MCSF", tax_exempt_reason: null };
@@ -78,7 +82,7 @@ beforeEach(() => {
 	categories.clear();
 	online.value = true;
 	pos.taxes = [];
-	muleTaxTiming.retryMs = 0;
+	buyerTaxTiming.retryMs = 0;
 });
 
 describe("a cart with no customer (MuleCity-s9jt)", () => {
@@ -89,7 +93,7 @@ describe("a cart with no customer (MuleCity-s9jt)", () => {
 		call.mockResolvedValue(TAXABLE);
 		await pick(cart, null);
 		expect(taxContextCalls().at(-1)).toEqual(["mulecity_erpnext.pos_workspace.tax_context", { customer: null, pos_profile: PROFILE }]);
-		expect(cart.muleTaxError).toBe("");
+		expect(cart.buyerTaxError).toBe("");
 		expect(rates()).toEqual([6.75]);
 	});
 
@@ -98,10 +102,10 @@ describe("a cart with no customer (MuleCity-s9jt)", () => {
 		call.mockImplementation(async (_m: string, args: { customer: string | null }) => (args.customer === "Sharp Farms" ? EXEMPT : TAXABLE));
 		await pick(cart, "Sharp Farms");
 		expect(rates()).toEqual([]);
-		expect(cart.muleTaxCategory).toBe("Mule City Exempt");
+		expect(cart.buyerTaxCategory).toBe("Mule City Exempt");
 		await pick(cart, null);
 		expect(rates()).toEqual([6.75]);
-		expect(cart.muleTaxCategory).toBe("Mule City Taxable");
+		expect(cart.buyerTaxCategory).toBe("Mule City Taxable");
 	});
 
 	it("offline with nothing kept: no error, the walk-in is taxed when it is put on", async () => {
@@ -109,7 +113,7 @@ describe("a cart with no customer (MuleCity-s9jt)", () => {
 		online.value = false;
 		call.mockRejectedValue(new Error("Failed to fetch"));
 		await pick(cart, null);
-		expect(cart.muleTaxError).toBe("");
+		expect(cart.buyerTaxError).toBe("");
 	});
 });
 
@@ -125,8 +129,8 @@ describe("the server is down for a moment (a deploy's maintenance window)", () =
 		pos.taxes = [];
 		call.mockRejectedValue(httpError(503, "Service Unavailable"));
 		await pick(cart, "Walk-In Customer");
-		expect(cart.muleTaxError).toBe("");
-		expect(cart.muleTaxPending).toBe(false);
+		expect(cart.buyerTaxError).toBe("");
+		expect(cart.buyerTaxPending).toBe(false);
 		expect(rates()).toEqual([6.75]);
 	});
 
@@ -136,8 +140,8 @@ describe("the server is down for a moment (a deploy's maintenance window)", () =
 		call.mockRejectedValue(httpError(502));
 		cart.customer = { name: "Sharp Farms", tax_category: "Mule City Exempt" } as never;
 		await settle();
-		expect(cart.muleTaxError).toBe("");
-		expect(cart.muleTaxCategory).toBe("Mule City Exempt");
+		expect(cart.buyerTaxError).toBe("");
+		expect(cart.buyerTaxCategory).toBe("Mule City Exempt");
 	});
 
 	it("nothing kept: asks once more and takes the answer", async () => {
@@ -145,8 +149,8 @@ describe("the server is down for a moment (a deploy's maintenance window)", () =
 		call.mockRejectedValueOnce(httpError(503)).mockResolvedValueOnce(EXEMPT);
 		await pick(cart, "Sharp Farms");
 		expect(taxContextCalls()).toHaveLength(2);
-		expect(cart.muleTaxError).toBe("");
-		expect(cart.muleTaxCategory).toBe("Mule City Exempt");
+		expect(cart.buyerTaxError).toBe("");
+		expect(cart.buyerTaxCategory).toBe("Mule City Exempt");
 	});
 });
 
@@ -156,8 +160,8 @@ describe("a named customer whose lookup really fails", () => {
 		call.mockRejectedValue(httpError(500));
 		await pick(cart, "Sharp Farms");
 		expect(taxContextCalls()).toHaveLength(2);
-		expect(cart.muleTaxError).toMatch(/Tax lookup failed/);
-		expect(cart.muleTaxError).toMatch(/Retry/);
+		expect(cart.buyerTaxError).toMatch(/Tax lookup failed/);
+		expect(cart.buyerTaxError).toMatch(/Retry/);
 		expect(rates()).toEqual([]);
 	});
 
@@ -165,14 +169,14 @@ describe("a named customer whose lookup really fails", () => {
 		const cart = useCartStore();
 		call.mockRejectedValue(httpError(500));
 		await pick(cart, "Sharp Farms");
-		expect(cart.muleTaxError).toMatch(/Tax lookup failed/);
+		expect(cart.buyerTaxError).toMatch(/Tax lookup failed/);
 
 		call.mockReset();
 		call.mockResolvedValue(EXEMPT);
 		cart.retryTaxLookup();
 		await settle();
 		expect(taxContextCalls()).toHaveLength(1);
-		expect(cart.muleTaxError).toBe("");
-		expect(cart.muleTaxCategory).toBe("Mule City Exempt");
+		expect(cart.buyerTaxError).toBe("");
+		expect(cart.buyerTaxCategory).toBe("Mule City Exempt");
 	});
 });

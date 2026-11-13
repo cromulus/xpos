@@ -59,6 +59,10 @@ import { call } from "@/services/api";
 import { useCartStore } from "@/stores/cartStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { POSItem } from "@/types/pos.types";
+import { SITE_FIXTURE, useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const mockedCall = vi.mocked(call);
 const POUND_PRICE = 0.291628665;
@@ -95,6 +99,7 @@ async function bootTill(currencyPrecision?: Record<string, unknown>) {
 			selling_settings: { selling_price_list: "Standard Selling" },
 			sysdefaults: { float_precision: "3", currency_precision: "2" },
 			...(currencyPrecision ? { currency_precision: currencyPrecision } : {}),
+			xpos_site: SITE_FIXTURE,
 		},
 	};
 	await useSettingsStore().fetchSettings();
@@ -204,5 +209,32 @@ describe("once the site checked the mix, the cart shows what the order bills", (
 		]);
 		cart.mixPayMode = "now";
 		expect(cart.summarySubtotal + cart.summaryTaxes[0].amount).toBeCloseTo(cart.grandTotal, 2);
+	});
+});
+
+describe("a site without customer mixes (no xpos_site mix)", () => {
+	it("negative: a made-to-order item is an ordinary line: no order, no check, the cart's own sum", async () => {
+		vi.useFakeTimers();
+		await bootTill({ currency_precision: "2", float_precision: "3", item_rate_precision: 9 });
+		delete (window as any).xpos.boot.xpos_site;
+		const cart = hundredPounds();
+		cart.pickupDate = "2026-10-05";
+		await vi.advanceTimersByTimeAsync(700);
+		const uid = cart.items[0].uid;
+		expect(cart.isOrderLine(uid)).toBe(false);
+		expect(cart.hasOrderLines).toBe(false);
+		expect(cart.lineChecking(uid)).toBe(false);
+		expect(mockedCall.mock.calls.map(([method]) => method)).not.toContain(CHECK);
+	});
+
+	it("taxes the buyer through XPOS's own tax_context (ERPNext's party resolution)", async () => {
+		vi.useFakeTimers();
+		await bootTill();
+		delete (window as any).xpos.boot.xpos_site;
+		mockedCall.mockImplementation(async () => ({ tax_category: "", taxes: [], taxes_and_charges: null }));
+		const cart = useCartStore();
+		cart.customer = { name: "C1", customer_name: "C1" };
+		await vi.advanceTimersByTimeAsync(10);
+		expect(mockedCall.mock.calls.map(([method]) => method)).toContain("xpos.api.party_taxes.tax_context");
 	});
 });

@@ -67,6 +67,10 @@ import {
 } from "@/services/delivery";
 import { useCartStore } from "@/stores/cartStore";
 import AddDelivery from "@/components/cart/AddDelivery.vue";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const policy: DeliveryPolicy = {
 	...vectors.policy,

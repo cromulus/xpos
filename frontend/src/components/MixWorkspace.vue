@@ -1,35 +1,36 @@
 <template>
-  <!-- The Mule City row is gone (Bill 2026-10-01, MuleCity-qajl.1): Customer Mixes opens from the
+  <!-- The site's customer mixes and orders dialog (xpos_site "mix"; mounted only on a site with it).
+       The old workspace row is gone (Bill 2026-10-01, MuleCity-qajl.1): Customer Mixes opens from the
        customer card's "Mixes", open orders from the top-bar Orders view (MuleCity-zstm.23). The dialog
        stays; open('mixes') / open('orders') are exposed and answer the window event
-       "xpos:open-mule-workspace" ({detail: {mode}}). No desk shortcuts (new order, account payment,
+       "xpos:open-mix-workspace" ({detail: {mode}}). No desk shortcuts (new order, account payment,
        formula editor): the register's shared login only sells (Bill, 2026-09-29, MuleCity-fb00).
        "Practice site" is the red banner in DefaultLayout now (PracticeSiteBanner.vue). -->
   <Teleport to="body">
-    <dialog ref="dialog" class="mule-workspace" @close="mode = ''">
+    <dialog ref="dialog" class="mix-workspace" @close="mode = ''">
       <header><div><h2>{{ mode === 'mixes' ? 'Customer mixes' : 'Orders for pickup' }}</h2>
         <p>Buyer: <strong :title="customer || undefined">{{ customerName || customer || 'Choose a customer at the register' }}</strong></p></div>
         <button type="button" aria-label="Close customer work" @click="dialog.close()">Close</button></header>
-      <form class="mule-search" @submit.prevent="search(0)">
+      <form class="mix-search" @submit.prevent="search(0)">
         <input v-model="term" :placeholder="mode === 'mixes' ? 'Recipe, owner name or account code' : 'Customer name or order number'" aria-label="Search customer work" />
         <button type="submit" :disabled="busy">Search</button>
         <label v-if="mode === 'mixes'"><input v-model="mine" :disabled="!customer" type="checkbox" @change="search(0)" /> Buyer's own recipes</label>
       </form>
-      <p v-if="error" role="alert" class="mule-error">{{ error }}</p>
+      <p v-if="error" role="alert" class="mix-error">{{ error }}</p>
       <p v-if="busy" role="status">Loading…</p>
       <p v-if="!busy && !error && !rows.length">{{ mode === 'mixes' ? 'No matching mixes. Try another name; new recipes are set up at a desk computer, not the register.' : 'No matching open orders.' }}</p>
-      <div class="mule-results">
+      <div class="mix-results">
         <article v-for="row in rows" :key="row.name">
           <template v-if="mode === 'mixes'">
             <!-- Readable name the server prepared; the product's own name stays on hover and in search. -->
             <div><strong :title="row.item_name">{{ row.display_name || row.item_name }}</strong>
               <p>{{ row.owner_name ? 'Recipe of ' + row.owner_name : 'Owner not recorded' }}</p>
               <p v-if="row.mule_animal_search">For {{ row.mule_animal_search }}</p>
-              <p v-if="row.composition?.length" class="mule-composition">{{ compositionText(row) }}</p>
+              <p v-if="row.composition?.length" class="mix-composition">{{ compositionText(row) }}</p>
               <p v-if="row.order_default"><strong>{{ sizeText(row.order_default) }}</strong> · {{ row.order_default.source }}<span v-if="row.order_default.bag_lbs"> · {{ number(row.order_default.bag_lbs) }} lb per bag</span></p>
               <p v-if="row.last_purchase">{{ boughtText(row.last_purchase) }}</p>
               <p v-if="orderedText(row)">{{ orderedText(row) }}</p></div>
-            <div class="mule-actions">
+            <div class="mix-actions">
               <button v-if="addMix && row.order_default && row.bom" type="button" :disabled="busy || !customer" @click="add(row)">Add {{ sizeText(row.order_default) }}</button>
               <p v-else-if="addMix">{{ row.bom ? 'Order size needs review' : 'Recipe needs review' }}</p>
               <button type="button" :disabled="busy" @click="preview(row)">Detailed view</button>
@@ -43,8 +44,8 @@
         </article>
       </div>
       <p v-if="mode === 'orders'">Review production readiness before release. Loading checks finished stock; the requested pickup date alone does not mean ready.</p>
-      <p v-if="mode === 'orders' && cartHasItems" class="mule-error">Finish or park the current basket before loading an order.</p>
-      <section v-if="details && mode === 'mixes'" ref="recipe" class="mule-recipe">
+      <p v-if="mode === 'orders' && cartHasItems" class="mix-error">Finish or park the current basket before loading an order.</p>
+      <section v-if="details && mode === 'mixes'" ref="recipe" class="mix-recipe">
         <h3 :title="chosen.item_name">{{ chosen.display_name || chosen.item_name }}</h3>
         <p v-if="details.bom">Recipe batch: {{ details.quantity }} {{ details.uom }}. Finished stock: {{ details.available }} {{ details.stock_uom }}.</p>
         <p v-if="details.message">{{ details.message }}</p>
@@ -60,6 +61,7 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import FeedDetails from '@/components/FeedDetails.vue';
 import { formatCurrency, showInfo } from '@/services/api';
+import { requireSiteMethod } from '@/services/siteExtensions';
 // Both hosts supply their authenticated RPC client; this component owns no pricing.
 // customer is the Customer ID (used in every call); customerName is what people read.
 const props = defineProps({customer: String, customerName: String, profile: String, request: Function, cartHasItems: Boolean, addMix: Function});
@@ -68,7 +70,9 @@ const dialog = ref(null), mode = ref(''), term = ref(''), mine = ref(true);
 const rows = ref([]), busy = ref(false), error = ref(''), more = ref(false), start = ref(0);
 const recipe = ref(null), details = ref(null), chosen = ref(null);
 let generation = 0;
-const api = (name, args) => props.request('mulecity_erpnext.pos_workspace.' + name, {pos_profile: props.profile, ...args});
+// The site's methods (xpos_site): mixes under "mix", orders in flight at the top level.
+const METHODS = {find_mixes: 'mix.find_mixes', mix_details: 'mix.mix_details', find_orders: 'find_orders', pickup_invoice: 'pickup_invoice'};
+const api = (name, args) => props.request(requireSiteMethod(METHODS[name]), {pos_profile: props.profile, ...args});
 // Mixes come newest first; these lines say which one the customer is on now.
 // Both are sales evidence, never manufacture: the recall index counts orders and
 // sales (mule_feed_formula.recall), last_purchase is the latest submitted invoice.
@@ -126,7 +130,7 @@ async function pickup(row) {
   try {
     const doc = await api('pickup_invoice', {sales_order: row.name});
     // The server says when it turned a delivery order into a pickup (and dropped its delivery charge).
-    if (doc?.mule_notice) showInfo(doc.mule_notice);
+    if (doc?.xpos_notice) showInfo(doc.xpos_notice);
     emit('pickup', doc); dialog.value.close();
   }
   catch(e) { fail(e); } finally { busy.value = false; }
@@ -134,24 +138,24 @@ async function pickup(row) {
 watch(() => props.customer, () => { if (mode.value) search(0); });
 // The customer card's "Mixes" (and anything else) opens the dialog by event.
 function onOpenEvent(event) { const next = event?.detail?.mode; if (next === 'mixes' || next === 'orders') open(next); }
-onMounted(() => window.addEventListener('xpos:open-mule-workspace', onOpenEvent));
-onUnmounted(() => window.removeEventListener('xpos:open-mule-workspace', onOpenEvent));
+onMounted(() => window.addEventListener('xpos:open-mix-workspace', onOpenEvent));
+onUnmounted(() => window.removeEventListener('xpos:open-mix-workspace', onOpenEvent));
 defineExpose({ open });
 </script>
 
 <style scoped>
 /* A compact counter toolbar and readable recipe sheet, using host typography. */
-.mule-workspace button { border:1px solid hsl(var(--border)); border-radius:5px; padding:7px 12px; background:hsl(var(--card)); color:hsl(var(--foreground)); cursor:pointer; font:inherit; }
+.mix-workspace button { border:1px solid hsl(var(--border)); border-radius:5px; padding:7px 12px; background:hsl(var(--card)); color:hsl(var(--foreground)); cursor:pointer; font:inherit; }
 button:disabled { opacity:.5; cursor:not-allowed; } button:focus-visible, a:focus-visible, input:focus-visible { outline:3px solid hsl(var(--ring)); outline-offset:2px; }
-.mule-workspace a { color:hsl(var(--primary)); text-decoration:underline; }
-.mule-workspace { margin:auto; width:min(950px,94vw); max-height:88vh; padding:22px; border:1px solid hsl(var(--border)); border-radius:8px; background:hsl(var(--card)); color:hsl(var(--foreground)); overflow:auto; font-size:16px; line-height:1.45; font-family:inherit; }
-.mule-workspace::backdrop { background:rgba(0,0,0,.4); }
-.mule-workspace header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
-.mule-workspace h2 { font-size:24px; font-weight:700; margin:0; } .mule-workspace h3 { font-size:20px; font-weight:650; }
-.mule-workspace p { margin:6px 0 12px; } .mule-workspace input:not([type=checkbox]) { border:1px solid hsl(var(--input)); padding:8px; border-radius:4px; background:hsl(var(--card)); color:hsl(var(--foreground)); }
-.mule-search { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; align-items:center; } .mule-search>input { flex:1; min-width:220px; }
-.mule-results article { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid hsl(var(--border)); } .mule-results article>div { flex:1; } .mule-results article>.mule-actions { flex:0 0 auto; display:flex; flex-direction:column; gap:8px; }
-@media (max-width:600px) { .mule-results article { flex-direction:column; align-items:stretch; } } .mule-results p { font-size:14px; margin:4px 0; }
-.mule-recipe { border-top:3px solid hsl(var(--ring)); margin-top:20px; padding-top:16px; } .mule-recipe table { width:100%; border-collapse:collapse; margin:12px 0; } th,td { padding:7px; text-align:left; border-bottom:1px solid hsl(var(--border)); }
-.mule-error { color:hsl(var(--destructive)); } .mule-workspace footer { display:flex; gap:12px; margin-top:16px; align-items:center; }
+.mix-workspace a { color:hsl(var(--primary)); text-decoration:underline; }
+.mix-workspace { margin:auto; width:min(950px,94vw); max-height:88vh; padding:22px; border:1px solid hsl(var(--border)); border-radius:8px; background:hsl(var(--card)); color:hsl(var(--foreground)); overflow:auto; font-size:16px; line-height:1.45; font-family:inherit; }
+.mix-workspace::backdrop { background:rgba(0,0,0,.4); }
+.mix-workspace header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
+.mix-workspace h2 { font-size:24px; font-weight:700; margin:0; } .mix-workspace h3 { font-size:20px; font-weight:650; }
+.mix-workspace p { margin:6px 0 12px; } .mix-workspace input:not([type=checkbox]) { border:1px solid hsl(var(--input)); padding:8px; border-radius:4px; background:hsl(var(--card)); color:hsl(var(--foreground)); }
+.mix-search { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; align-items:center; } .mix-search>input { flex:1; min-width:220px; }
+.mix-results article { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid hsl(var(--border)); } .mix-results article>div { flex:1; } .mix-results article>.mix-actions { flex:0 0 auto; display:flex; flex-direction:column; gap:8px; }
+@media (max-width:600px) { .mix-results article { flex-direction:column; align-items:stretch; } } .mix-results p { font-size:14px; margin:4px 0; }
+.mix-recipe { border-top:3px solid hsl(var(--ring)); margin-top:20px; padding-top:16px; } .mix-recipe table { width:100%; border-collapse:collapse; margin:12px 0; } th,td { padding:7px; text-align:left; border-bottom:1px solid hsl(var(--border)); }
+.mix-error { color:hsl(var(--destructive)); } .mix-workspace footer { display:flex; gap:12px; margin-top:16px; align-items:center; }
 </style>

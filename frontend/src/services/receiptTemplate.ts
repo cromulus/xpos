@@ -2,7 +2,7 @@
  * XPOS's own receipt: what prints for a sale saved on this device (printReceiptOffline in the
  * browser, printInvoiceLocal in the desktop app), when ERPNext's print view cannot be reached.
  *
- * Mule City (MuleCity-mon6): it mirrors the online Mule City Ticket (mulecity_erpnext
+ * Mule City (MuleCity-mon6): it mirrors the online Mule City Ticket (the site app's
  * print format, restyled in MuleCity-kht3): the compact letterhead, then Customer, Delivery,
  * Notes, Items and "Totals & payment", and "Thank you for your business!". One copy, the
  * customer's, laid out as the top half of a Letter sheet like the Ticket's copies.
@@ -31,7 +31,7 @@ function esc(value: unknown): string {
 
 /**
  * The Ticket's CSS (mule_city_ticket.json's <style>) and the compact letterhead's rules from
- * mulecity_erpnext's print_style.css (MuleCity-kht3), plus the few rules the offline receipt
+ * the site app's print_style.css (MuleCity-kht3), plus the few rules the offline receipt
  * needs that the Ticket does not (payment and change lines, a foreign tender's rate). Inline:
  * no stylesheet, no web font, nothing fetched.
  */
@@ -85,7 +85,7 @@ function receiptLocale(ctx: ReceiptContext): SiteLocale | null {
 }
 
 /**
- * The delivery's miles as the Mule City Ticket prints them (mulecity_erpnext
+ * The delivery's miles as the Mule City Ticket prints them (the site app's
  * print_delivery.miles_label): "12 mi", "12 mi, typed" when the clerk typed them,
  * or "miles not known".
  */

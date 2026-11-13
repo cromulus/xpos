@@ -1,5 +1,5 @@
 /**
- * Pay by Card on a card reader (Mule City, MuleCity-bjjv.3).
+ * Pay by Card on a card reader (MuleCity-bjjv.3).
  *
  * The till saves the cart as a draft (xpos.api.card_terminal.save_card_draft),
  * then the payments app's terminal framework collects the card balance on a
@@ -15,7 +15,13 @@
 import { call } from "@/services/api";
 import { __ } from "@/lib/translate";
 
-const TERMINAL = "payments.transactions.service";
+/**
+ * The payments app's terminal service module (its whitelisted start/status/cancel).
+ * The server names it in the card config (`service`: the site's
+ * xpos_payment_terminal_app, e.g. pay_ng); this default is for a status check
+ * made before the config arrives.
+ */
+let TERMINAL = "payments.transactions.service";
 const TILL = "xpos.api.card_terminal";
 
 export interface CardTerminalConfig {
@@ -24,6 +30,8 @@ export interface CardTerminalConfig {
 	card_modes: string[];
 	mode_of_payment: string | null;
 	terminals: { name: string; label: string; mode_of_payment?: string | null }[];
+	/** The payments app's terminal service module, e.g. "pay_ng.transactions.service". */
+	service?: string | null;
 }
 
 export const CARD_OFF: CardTerminalConfig = {
@@ -70,8 +78,10 @@ export interface AvailableTerminals {
 
 export type { PendingCardPayment } from "@/utils/cardPending";
 
-export function fetchCardTerminalConfig(posProfile: string): Promise<CardTerminalConfig> {
-	return call<CardTerminalConfig>(`${TILL}.get_card_terminal_config`, { pos_profile: posProfile });
+export async function fetchCardTerminalConfig(posProfile: string): Promise<CardTerminalConfig> {
+	const config = await call<CardTerminalConfig>(`${TILL}.get_card_terminal_config`, { pos_profile: posProfile });
+	if (config?.service) TERMINAL = config.service;
+	return config;
 }
 
 export function saveCardDraft(data: Record<string, unknown>): Promise<CardDraft> {

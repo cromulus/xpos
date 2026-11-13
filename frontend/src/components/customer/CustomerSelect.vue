@@ -86,7 +86,7 @@
 								</p>
 								<div class="flex items-center gap-2 text-[11px] text-muted-foreground">
 									<!-- The customer ID and search fields (Customize Form), as desk's dropdown shows them. -->
-									<span v-if="cust.name !== cust.customer_name" class="shrink-0">{{ cust.mule_filepro_alias_codes || cust.name }}</span>
+									<span v-if="cust.name !== cust.customer_name" class="shrink-0">{{ customerCodes(cust) || cust.name }}</span>
 									<span v-if="cust.name !== cust.customer_name && cust.xpos_search_description">&bull;</span>
 									<span v-if="cust.xpos_search_description" class="truncate">{{ cust.xpos_search_description }}</span>
 
@@ -266,7 +266,7 @@ import { Search, ChevronRight, Users, UserPlus, ArrowLeft, Loader2 } from "lucid
 import CustomerStatusIcons from "@/components/customer/CustomerStatusIcons.vue";
 import __ from "@/lib/translate";
 import type { Customer } from "@/types/pos.types";
-import { matchCustomer } from "@/utils/customerMatch";
+import { customerCodes, matchCustomer } from "@/utils/customerMatch";
 import DateTimeInput from "../ui/date-time-input/DateTimeInput.vue";
 
 const cartStore = useCartStore();

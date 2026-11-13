@@ -262,7 +262,7 @@ import { useCartStore } from "@/stores/cartStore";
 import { useCustomerStore } from "@/stores/customerStore";
 import { usePaymentStore } from "@/stores/paymentStore";
 import type { Customer, POSItem } from "@/types/pos.types";
-import { matchCustomer } from "@/utils/customerMatch";
+import { customerCodes, matchCustomer } from "@/utils/customerMatch";
 import { isCalculation } from "@/utils/commandSearch";
 import __ from "@/lib/translate";
 
@@ -769,7 +769,7 @@ async function fetchCustomers(term: string) {
 		if (searchTerm.value.trim() !== term) return;
 		const customerResults: CommandResult[] = found.slice(0, CUSTOMER_RESULTS).map((customer) => {
 			const via = matchCustomer(customer, term)?.via;
-			const code = customer.mule_filepro_alias_codes || (customer.name !== customer.customer_name ? customer.name : "");
+			const code = customerCodes(customer as unknown as Record<string, unknown>) || (customer.name !== customer.customer_name ? customer.name : "");
 			return {
 				id: `customer-${customer.name}`,
 				type: "customer" as const,

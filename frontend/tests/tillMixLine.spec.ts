@@ -12,8 +12,12 @@ import { createPinia, setActivePinia } from "pinia";
 vi.mock("@/services/api", () => ({ call: vi.fn(), default: { call: vi.fn() } }));
 
 import { call } from "@/services/api";
-import { muleOrderFields } from "@/services/muleOrderFields";
+import { orderLineFields } from "@/services/orderLineFields";
 import { pullSummary, qtyForSize } from "@/utils/mixPull";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 describe("the mix line's pull list", () => {
 	it("says asked, pulled and loads", () => {
@@ -31,9 +35,9 @@ describe("the mix line's pull list", () => {
 	it("sends the line's choices with the sale", () => {
 		const row = { item_code: "MIX", mule_stored_grain_use: "Up to", mule_stored_grain_use_lbs: 300, mule_bulk_no_bags: 1,
 			mule_pull_remedy_json: '{"kind":"loads"}', qty: 2 };
-		expect(muleOrderFields(row)).toEqual({ mule_stored_grain_use: "Up to", mule_stored_grain_use_lbs: 300,
+		expect(orderLineFields(row)).toEqual({ mule_stored_grain_use: "Up to", mule_stored_grain_use_lbs: 300,
 			mule_bulk_no_bags: 1, mule_pull_remedy_json: '{"kind":"loads"}' });
-		expect(muleOrderFields({ item_code: "MIX", mule_bulk_no_bags: null })).toEqual({});
+		expect(orderLineFields({ item_code: "MIX", mule_bulk_no_bags: null })).toEqual({});
 	});
 });
 

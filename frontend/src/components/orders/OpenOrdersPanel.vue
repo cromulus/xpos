@@ -177,6 +177,7 @@ import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
 import { useOfflineStore } from "@/stores/offlineStore";
 import { useOpenOrdersStore } from "@/stores/openOrdersStore";
+import { requireSiteMethod } from "@/services/siteExtensions";
 import { useMoney } from "@/composables/useMoney";
 import { call, showInfo } from "@/services/api";
 import ChoiceDialog from "@/components/dialogs/ChoiceDialog.vue";
@@ -237,7 +238,7 @@ function showCustomer() {
 	router.replace({ query: { ...route.query, customer: cartScope.value || scope.value } });
 }
 
-/** The same steps as the Mule City dialog: the server maps the order (pickup, advances), the cart loads it. */
+/** The site's pickup (xpos_site pickup_invoice): the server maps the order (pickup, advances), the cart loads it. */
 async function pickup(row: OpenOrder) {
 	if (pickupBlockedReason(row)) return;
 	if (!cartStore.isEmpty) {
@@ -247,12 +248,12 @@ async function pickup(row: OpenOrder) {
 	busy.value = true;
 	error.value = "";
 	try {
-		const doc = await call<Record<string, unknown>>("mulecity_erpnext.pos_workspace.pickup_invoice", {
+		const doc = await call<Record<string, unknown>>(requireSiteMethod("pickup_invoice"), {
 			pos_profile: posStore.profileName,
 			sales_order: row.name,
 		});
 		// The server says when it turned a delivery order into a pickup (and dropped its delivery charge).
-		if (doc?.mule_notice) showInfo(String(doc.mule_notice));
+		if (doc?.xpos_notice) showInfo(String(doc.xpos_notice));
 		cartStore.loadFromInvoice(doc as never);
 		await router.push("/pos");
 	} catch (e) {

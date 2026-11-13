@@ -9,7 +9,7 @@
 		]"
 	>
 		<SplashScreen :show="showSplash" />
-		<PullCalculationDialog :open="cartStore.mixCalculationPending" />
+		<PullCalculationDialog v-if="mixesOn" :open="cartStore.mixCalculationPending" />
 
 		<template v-if="isAuthPage || isFullScreen">
 			<router-view v-slot="{ Component }">
@@ -170,6 +170,9 @@ import DefaultLayout from "@/layouts/DefaultLayout.vue";
 import OpeningDialog from "@/components/dialogs/OpeningDialog.vue";
 import ClosingDialog from "@/components/dialogs/ClosingDialog.vue";
 import PullCalculationDialog from "@/components/dialogs/PullCalculationDialog.vue";
+import { siteFeature } from "@/services/siteExtensions";
+// The pull-list calculation runs only for a site's customer mixes (xpos_site "mix").
+const mixesOn = siteFeature("mix");
 import PaymentDialog from "@/components/dialogs/PaymentDialog.vue";
 import CardPaymentDialog from "@/components/dialogs/CardPaymentDialog.vue";
 import { useCardPaymentStore } from "@/stores/cardPaymentStore";

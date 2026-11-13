@@ -1,22 +1,22 @@
 /**
- * Mule City's print brand for the offline receipt (MuleCity-mon6).
+ * The site's print brand for the offline receipt (a site feature: xpos_site ``print_brand``).
  *
- * Each online start asks mulecity_erpnext.printouts.print_brand (MuleCity-kht3.2) for the
- * look the Mule City Ticket prints with: name, address line, phone, website, and the
+ * Each online start asks the site's print_brand method for the look its printed
+ * ticket uses: name, address line, phone, website, and the
  * optional logo, footer and accent colour (empty strings when unset), and the site URL the
  * receipt's scan code starts with (scan_base_url, MuleCity-dykb). When a logo is set it
  * is fetched once and kept as a data URI with the cached receipt context, so a receipt
  * printed after an offline cold start still shows it; no service-worker precache, because
  * the logo is a site setting, not a build asset, and the desktop app has no service worker.
  *
- * A site without print_brand (an older mulecity_erpnext) answers with an error: nothing is
- * logged and the receipt prints the company name in type, from the receipt context. A
+ * A site without print_brand (no key, or an older site app that answers with an error):
+ * nothing is logged and the receipt prints the company name in type, from the receipt context. A
  * failed refresh keeps the brand cached last time.
  */
 import { call } from "@/services/api";
+import { siteMethod } from "@/services/siteExtensions";
 import type { PrintBrand } from "@/types/pos.types";
 
-export const PRINT_BRAND_METHOD = "mulecity_erpnext.printouts.print_brand";
 /** A logo bigger than this is not cached (a print logo is a few KB). */
 export const MAX_LOGO_BYTES = 512 * 1024;
 
@@ -72,9 +72,11 @@ export async function fetchLogoDataUri(url: string): Promise<string> {
  */
 export async function refreshPrintBrand(previous?: PrintBrand | null): Promise<PrintBrand | null> {
 	let brand: PrintBrand | null;
+	const method = siteMethod("print_brand");
+	if (!method) return previous || null;
 	try {
 		// Best-effort: any answer (including "no such method" on an older app) is handled here.
-		brand = normalize(await call<unknown>(PRINT_BRAND_METHOD, {}, undefined, { answers: () => true }));
+		brand = normalize(await call<unknown>(method, {}, undefined, { answers: () => true }));
 	} catch {
 		return previous || null;
 	}

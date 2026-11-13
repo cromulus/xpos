@@ -1,10 +1,10 @@
 <template>
 	<div class="flex flex-col h-full overflow-hidden">
-    <MuleWorkspace :customer="cartStore.customer?.name" :customer-name="cartStore.customerName" :profile="posStore.profileName" :request="call"
+    <MixWorkspace v-if="mixesOn" :customer="cartStore.customer?.name" :customer-name="cartStore.customerName" :profile="posStore.profileName" :request="call"
       :cart-has-items="!cartStore.isEmpty" :add-mix="addCustomerMix" @pickup="cartStore.loadFromInvoice" />
-    <p v-if="cartStore.muleTaxError" role="alert" class="p-2 text-red-700 flex items-center gap-2">
-      <span>{{ cartStore.muleTaxError }}</span>
-      <button type="button" data-testid="retry-tax-lookup" class="underline font-semibold" :disabled="cartStore.muleTaxPending"
+    <p v-if="cartStore.buyerTaxError" role="alert" class="p-2 text-red-700 flex items-center gap-2">
+      <span>{{ cartStore.buyerTaxError }}</span>
+      <button type="button" data-testid="retry-tax-lookup" class="underline font-semibold" :disabled="cartStore.buyerTaxPending"
         @click="cartStore.retryTaxLookup()">{{ __("Retry") }}</button>
     </p>
 		<div
@@ -192,7 +192,10 @@
 
 <script setup lang="ts">
 import { customerMixItem, type CustomerMixChoice } from "@/services/customerMixCart";
-import MuleWorkspace from "@/components/MuleWorkspace.vue";
+import MixWorkspace from "@/components/MixWorkspace.vue";
+import { siteFeature } from "@/services/siteExtensions";
+// Customer mixes are a site feature (xpos_site "mix"): the dialog mounts only with it.
+const mixesOn = siteFeature("mix");
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
@@ -580,7 +583,7 @@ async function fetchAndApplyItemTax(item: POSItem) {
 		}>("xpos.api.taxes.get_item_tax_template", {
 			item_code: item.item_code,
 			company: posStore.companyName,
-			tax_category: cartStore.muleTaxCategory,
+			tax_category: cartStore.buyerTaxCategory,
 		});
 		if (taxData && taxData.item_tax_template) {
 			cartStore.setItemTax(item.item_code, taxData.item_tax_template, taxData.item_tax_map || {});
@@ -594,7 +597,7 @@ async function fetchAndApplyItemTax(item: POSItem) {
 		if (isNetworkError(e)) {
 			try {
 				const cached = await getCachedItemTax(item.item_code, posStore.companyName);
-				if (cached && cached.item_tax_template && !cartStore.muleTaxCategory) {
+				if (cached && cached.item_tax_template && !cartStore.buyerTaxCategory) {
 					cartStore.setItemTax(item.item_code, cached.item_tax_template, cached.item_tax_map || {});
 					return;
 				}

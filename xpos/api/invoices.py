@@ -10,6 +10,7 @@ from frappe.permissions import has_user_permission
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 from frappe.utils.background_jobs import enqueue
 
+from xpos.api import site_hooks
 from xpos.api.delivery import note_typed_miles, refuse_walk_in_delivery, resolve_new_shipping_address
 from xpos.api.exchange import get_currency_precision
 from xpos.api.items import selling_price
@@ -295,7 +296,7 @@ def apply_refund_method(invoice_doc, data: dict, tender_rows: list[dict]) -> Non
 	- Credit on account: nothing paid out; the return is a credit note the customer
 	  spends later (its outstanding stays negative, the native ERPNext credit).
 	- Mail a check: the same credit note, and the accountant is asked to mail the
-	  check (the Mule app assigns the return when it is submitted); the check's
+	  check (a site app may assign the return when it is submitted); the check's
 	  Payment Entry is made from the credit note when it is written.
 	"""
 	method = (data.get("pos_refund_method") or "").strip() or REFUND_PAID_OUT
@@ -402,9 +403,9 @@ def _sales_order_line(row):
 	if not so_detail:
 		return None
 	fields = ["parent", "item_code", "rate", "price_list_rate", "discount_percentage", "discount_amount", "docstatus"]
-	# Mule's native order row is also the authority for the mill's instructions.
-	if frappe.get_meta("Sales Order Item").has_field("mule_processing_instructions"):
-		fields.append("mule_processing_instructions")
+	# A site's order-line fields the order row is the authority for (xpos_order_line_server_fields).
+	meta = frappe.get_meta("Sales Order Item")
+	fields += [field for field in site_hooks.order_line_server_fields() if meta.has_field(field)]
 	line = frappe.db.get_value(
 		"Sales Order Item",
 		so_detail,
@@ -426,8 +427,8 @@ def _set_order_advances(invoice_doc) -> None:
 	allocates advances to a POS invoice by itself (``allocate_advances_automatically``
 	is skipped for ``is_pos``). So the order's own advances are set here, capped
 	at this ticket's total the native way (``set_advances``), and the register
-	collects only the rest. The Mule app links them to the ticket on submit
-	(``counter_mix_orders.reconcile_pos_advances``). Unallocated payments that
+	collects only the rest. A site app may link them to the ticket on submit.
+	Unallocated payments that
 	aren't for these orders are left alone.
 	"""
 	company_currency = frappe.get_cached_value("Company", invoice_doc.company, "default_currency")
@@ -438,9 +439,14 @@ def _set_order_advances(invoice_doc) -> None:
 	invoice_doc.set_advances()
 
 
-def _mule_order_fields(row):
-	"""Carry native source links; the sales document validates the exact BOM."""
-	return {field: row.get(field) for field in ("sales_order", "so_detail", "bom_no", "mule_vfd", "mule_processing_instructions") if row.get(field) is not None}
+ORDER_LINE_FIELDS = ("sales_order", "so_detail", "bom_no")
+
+
+def _order_line_fields(row):
+	"""Carry native source links, plus the site's order-line fields (xpos_order_line_fields);
+	the sales document validates the exact BOM."""
+	fields = ORDER_LINE_FIELDS + site_hooks.order_line_fields()
+	return {field: row.get(field) for field in fields if row.get(field) is not None}
 
 
 class TicketChangedError(frappe.ValidationError):
@@ -898,7 +904,7 @@ def _build_invoice_doc(data: dict, local_id: str | None = None, keep_zero_modes=
 		item.qty = item_qty
 		item.uom = item_data.get("uom") or item_data.get("stock_uom")
 		item.warehouse = item_data.get("warehouse") or pos.warehouse
-		item.update(_mule_order_fields(item_data))
+		item.update(_order_line_fields(item_data))
 		# A line's own description, e.g. the delivery quote's "42 mi, band 3 (2,500 lb)".
 		if item_data.get("description"):
 			item.description = item_data["description"]
@@ -952,8 +958,9 @@ def _build_invoice_doc(data: dict, local_id: str | None = None, keep_zero_modes=
 			item.discount_percentage = flt(order_line.discount_percentage)
 			item.discount_amount = flt(order_line.discount_amount, discount_precision)
 			item.rate = flt(order_line.rate, rate_precision)
-			if "mule_processing_instructions" in order_line:
-				item.mule_processing_instructions = order_line.get("mule_processing_instructions")
+			for field in site_hooks.order_line_server_fields():
+				if field in order_line:
+					setattr(item, field, order_line.get(field))
 		if source_row:
 			item.price_list_rate = flt(item_data.get("price_list_rate"), rate_precision)
 			item.discount_percentage = flt(item_data.get("discount_percentage"))
@@ -1013,8 +1020,8 @@ def _build_invoice_doc(data: dict, local_id: str | None = None, keep_zero_modes=
 				invoice_doc,
 			)
 
-	from mulecity_erpnext.pos_workspace import apply_customer_taxes
-	apply_customer_taxes(invoice_doc)
+	# The site's tax rule (xpos_apply_taxes), else ERPNext's party resolution.
+	site_hooks.apply_taxes(invoice_doc)
 	_apply_invoice_delivery_charge_fields(invoice_doc, data)
 	if not is_return and any(row.get("so_detail") for row in invoice_doc.items):
 		_set_order_advances(invoice_doc)
@@ -1237,14 +1244,13 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 def preview_invoice(data: str | dict):
 	"""The lines and totals saving this cart would post, without saving anything.
 
-	Server rules can change a cart after the register priced it: the Mule adapter
-	moves a grain depositor's own grain onto a $0 line (MuleCity-9f4). The register
+	Server rules can change a cart after the register priced it (a site's
+	save-time hook may move a line onto a $0 line, or retax it). The register
 	shows and charges this preview instead of its own sum, so a card is never
 	overcharged. The doc is built by the same code as ``create_invoice``; the
-	adapter runs its save-time rules and rolls them back.
+	preview (``site_hooks.preview_cart``: the site's ``xpos_preview_cart``, else
+	XPOS's own) runs the save-time rules and rolls them back.
 	"""
-	from mulecity_erpnext.pos_workspace import preview_cart
-
 	data = dict(json.loads(data) if isinstance(data, str) else data)
 	# Only someone who may sell at this register may price a sale here.
 	check_may_sell(data.get("pos_profile"))
@@ -1253,7 +1259,7 @@ def preview_invoice(data: str | dict):
 	for key in ("local_id", "payments", "pos_change_legs", "change_amount"):
 		data.pop(key, None)
 	invoice_doc = _build_invoice_doc(data)[0]
-	return preview_cart(invoice_doc)
+	return site_hooks.preview_cart(invoice_doc)
 
 
 def _submit_invoice_job(invoice_name: str, doctype: str = "Sales Invoice"):
@@ -1422,7 +1428,7 @@ def save_draft_invoice(data: str | dict):
 		item.qty = flt(item_data.get("qty", 1))
 		item.uom = item_data.get("uom") or item_data.get("stock_uom")
 		item.warehouse = item_data.get("warehouse") or pos.warehouse
-		item.update(_mule_order_fields(item_data))
+		item.update(_order_line_fields(item_data))
 		if item_data.get("description"):
 			item.description = item_data["description"]
 
@@ -1449,8 +1455,7 @@ def save_draft_invoice(data: str | dict):
 	if pos.taxes_and_charges:
 		invoice_doc.taxes_and_charges = pos.taxes_and_charges
 
-	from mulecity_erpnext.pos_workspace import apply_customer_taxes
-	apply_customer_taxes(invoice_doc)
+	site_hooks.apply_taxes(invoice_doc)
 	payments = data.get("payments", [])
 	if payments:
 		invoice_doc.set("payments", [])
@@ -1873,7 +1878,7 @@ def get_invoice_details(invoice_name: str, doctype: str = ""):
 		),
 		"items": [
 			{
-				**_mule_order_fields(i),
+				**_order_line_fields(i),
 				"conversion_factor": i.conversion_factor,
 				"warehouse": i.warehouse,
 				"item_code": i.item_code,
@@ -2462,9 +2467,9 @@ def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: st
 	Quantities and units come from the invoice; prices are today's, chosen the
 	way ERPNext chooses them for this customer, date and UOM (``selling_price``),
 	never an old rate or the first Item Price row found. Pricing Rules are
-	applied by the cart afterwards, so discounts start at zero. A site adapter
-	(Mule City: a past custom mix becomes its one mix Item) may replace the
-	lines through ``_mule_repeat_lines``.
+	applied by the cart afterwards, so discounts start at zero. A site may
+	replace the lines through its ``xpos_repeat_lines`` hook (e.g. a past
+	made-to-order sale repeats as its one made-to-order Item).
 	"""
 	ensure_invoice_doctype(doctype)
 	if not frappe.db.exists(doctype, invoice_name):
@@ -2481,7 +2486,7 @@ def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: st
 	if pos_profile:
 		price_list = frappe.db.get_value("POS Profile", pos_profile, "selling_price_list")
 
-	lines = _mule_repeat_lines(doc, price_list) or [
+	lines = site_hooks.repeat_lines(doc, price_list) or [
 		{
 			"item_code": item.item_code,
 			"item_name": item.item_name,
@@ -2530,10 +2535,3 @@ def get_invoice_for_repeat(invoice_name: str, pos_profile: str = "", doctype: st
 		"items": items,
 	}
 
-
-def _mule_repeat_lines(doc, price_list):
-	"""Mule City: a past custom-mix ticket repeats as its one mix Item line (plus
-	non-mix lines), resolved by the Mule adapter; None for any other ticket."""
-	from mulecity_erpnext.pos_workspace import repeat_mix_lines
-
-	return repeat_mix_lines(doc, price_list)

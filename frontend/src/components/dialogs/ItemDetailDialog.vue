@@ -238,6 +238,7 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, Check, Plus, AlertCircle } from "lucide-vue-next";
 import FeedDetails from "@/components/FeedDetails.vue";
+import { siteMethod } from "@/services/siteExtensions";
 import type { FeedDetails as FeedDetailsData } from "@/types/feedDetails";
 import __ from "@/lib/translate";
 
@@ -276,10 +277,12 @@ watch([() => itemForDetail.value?.item_code, () => posStore.profileName, () => c
 		feedDetails.value = null;
 		feedError.value = "";
 		feedLoading.value = false;
-		if (!code || !profile) return;
+		// The site's item details (xpos_site item_details); none: the panel stays hidden.
+		const method = siteMethod("item_details");
+		if (!code || !profile || !method) return;
 		feedLoading.value = true;
 		try {
-			const result = await call<FeedDetailsData>("mulecity_erpnext.pos_product_context.product_details", {
+			const result = await call<FeedDetailsData>(method, {
 				item_code: code, pos_profile: profile, customer: customer || undefined,
 			});
 			if (current) feedDetails.value = result;

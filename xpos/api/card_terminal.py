@@ -1,11 +1,17 @@
 # Copyright (c) 2026, Ali Raza and contributors
 # For license information, please see license.txt
 
-"""Pay by Card on a card terminal, through the ``payments`` app's terminal framework.
+"""Pay by Card on a card terminal, through a payments app's terminal framework.
+
+The app is the site's ``xpos_payment_terminal_app`` hook (an app name, e.g.
+``pay_ng`` or ``payments``), else whichever of those is installed
+(``site_hooks.payment_terminal_app``). It must provide ``<app>.transactions``
+(``service``, ``drivers``) and ``<app>.integrations.erpnext``; "the payments
+app" below means that app.
 
 The register saves the sale as a draft carrying a 0.00 row for the terminal's
 Mode of Payment, then asks the payments app to collect the card balance on a
-paired reader (``payments.transactions.service.start_terminal_payment``). Once
+paired reader (``<app>.transactions.service.start_terminal_payment``). Once
 the processor confirms the capture, the payments app fills in the card row and
 submits this same draft: the register never submits a card sale itself, so a
 card sale is never queued for ``create_invoice`` and never posted twice.
@@ -22,6 +28,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt
 
+from xpos.api import site_hooks
 from xpos.api.delivery import note_typed_miles, resolve_new_shipping_address
 from xpos.api.exchange import get_currency_precision
 from xpos.api.invoices import (
@@ -41,10 +48,26 @@ LEDGER = "Payment Transaction Capture"
 ORDER_LINE_FIELDS = ("sales_order", "so_detail")
 
 
+def _provider(module: str):
+	"""``<payments app>.<module>``, imported (ImportError when there is no app)."""
+	import importlib
+
+	app = site_hooks.payment_terminal_app()
+	if not app:
+		raise ImportError("No payment terminal app is installed")
+	return importlib.import_module(f"{app}.{module}")
+
+
+def terminal_service_method_prefix() -> str | None:
+	"""The dotted module whose whitelisted methods the register calls for a card (or None)."""
+	app = site_hooks.payment_terminal_app()
+	return f"{app}.transactions.service" if app else None
+
+
 def payments_ready() -> bool:
 	"""Whether the payments app's terminal framework is installed on this site."""
 	return (
-		"payments" in frappe.get_installed_apps()
+		bool(site_hooks.payment_terminal_app())
 		and bool(frappe.db.exists("DocType", LEDGER))
 		and bool(frappe.db.exists("DocType", "Payment Terminal"))
 	)
@@ -55,8 +78,8 @@ def card_modes(company: str | None) -> list[str]:
 	if not company or not payments_ready():
 		return []
 	try:
-		from payments.integrations.erpnext import configured_terminal_modes
-	except ImportError:
+		configured_terminal_modes = _provider("integrations.erpnext").configured_terminal_modes
+	except (ImportError, AttributeError):
 		return []
 	return list(configured_terminal_modes(company))
 
@@ -95,9 +118,7 @@ def collecting_controller(payment_gateway: str | None):
 	if not payment_gateway:
 		return None
 	try:
-		from payments.transactions.drivers import controller_for
-
-		controller = controller_for(payment_gateway)
+		controller = _provider("transactions.drivers").controller_for(payment_gateway)
 	except Exception:
 		return None
 	if not getattr(controller, "supports_payment_terminal", False) or controller.get("disabled"):
@@ -128,7 +149,7 @@ def get_card_terminal_config(pos_profile: str) -> dict:
 	only ever filled in by the payments app, so the register never offers them
 	as an ordinary tender button.
 	"""
-	off = {"enabled": False, "card_modes": [], "mode_of_payment": None, "terminals": []}
+	off = {"enabled": False, "card_modes": [], "mode_of_payment": None, "terminals": [], "service": None}
 	if not pos_profile or not payments_ready():
 		return off
 	check_may_sell(pos_profile)
@@ -145,6 +166,8 @@ def get_card_terminal_config(pos_profile: str) -> dict:
 		"card_modes": modes,
 		"mode_of_payment": reader_modes[0] if reader_modes else modes[0],
 		"terminals": terminals,
+		# The module the register calls for the card itself (start, status, cancel).
+		"service": terminal_service_method_prefix(),
 	}
 
 

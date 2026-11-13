@@ -30,6 +30,10 @@ vi.mock("@/services/dbBridge", () => ({ getCachedReceiptContext: vi.fn() }));
 vi.mock("@/stores/posStore", () => ({ usePosStore: () => posStore }));
 
 import { usePrintInvoice } from "@/composables/usePrintInvoice";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const PRINTER = "Mule City Ricoh";
 
@@ -64,7 +68,7 @@ beforeEach(() => {
 	open = vi.fn(() => ({}) as Window);
 	window.open = open as unknown as typeof window.open;
 	setOnline(true);
-	setBoot({ mule_default_network_printer: PRINTER });
+	setBoot({ xpos_site: { default_network_printer: PRINTER } });
 });
 
 afterEach(() => {
@@ -98,7 +102,7 @@ describe("printing a saved sale", () => {
 	});
 
 	it("uses the POS Invoice doctype and an explicit format when asked", async () => {
-		setBoot({ mule_default_network_printer: PRINTER, pos_settings: { invoice_type: "POS Invoice" } });
+		setBoot({ xpos_site: { default_network_printer: PRINTER }, pos_settings: { invoice_type: "POS Invoice" } });
 		const { printInvoice } = usePrintInvoice();
 		await printInvoice("POS-0009", { format: "Mule City Order" });
 

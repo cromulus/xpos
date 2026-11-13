@@ -2,6 +2,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { shallowMount } from "@vue/test-utils";
 import CustomerSelect from "@/components/customer/CustomerSelect.vue";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const customers = [
 	{ name: "MC-CUST-2980", customer_name: "Southern Woods", mule_filepro_alias_codes: "2980",

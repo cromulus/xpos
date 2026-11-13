@@ -433,8 +433,11 @@ async function pushTable(config: SyncTableConfig): Promise<{ synced: number; fai
 			}
 
 			const serverResult = await apiCall<{ name?: string }>(
-				(config.pushMethod === "xpos.api.invoices.create_invoice" && data.mule_vfd_offline)
-					? "mulecity_erpnext.vfd_offline.replay" : config.pushMethod,
+				// A sale the site checked for offline (a regulated pickup) replays through the
+				// site's method it was prepared with (xpos_site vfd.replay, carried on the sale).
+				(config.pushMethod === "xpos.api.invoices.create_invoice"
+					&& typeof (data.mule_vfd_offline as { replay_method?: unknown } | undefined)?.replay_method === "string")
+					? (data.mule_vfd_offline as { replay_method: string }).replay_method : config.pushMethod,
 				{
 					data: JSON.stringify(data),
 					local_id: recordLocalId,

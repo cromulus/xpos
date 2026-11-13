@@ -18,6 +18,7 @@ from xpos.api.delivery import (
 	point_args,
 	walk_in_customers,
 )
+from xpos.api import site_hooks
 from xpos.api.profiles import resolve_pos_profile
 from xpos.utils import row_value
 
@@ -39,7 +40,13 @@ _CUSTOMER_LIST_COLUMNS = (
 	"tax_category",
 )
 # Shown on the picker row already, so left out of the description.
-_SHOWN_ON_ROW = ("name", "customer_name", "mobile_no", "email_id", "mule_filepro_alias_codes")
+_SHOWN_ON_ROW = ("name", "customer_name", "mobile_no", "email_id")
+
+
+def _shown_on_row() -> tuple[str, ...]:
+	"""The row's own columns, plus the site's customer codes field (xpos_customer_fields)."""
+	codes = site_hooks.customer_fields()["codes"]
+	return _SHOWN_ON_ROW + ((codes,) if codes else ())
 _SEARCHABLE_TYPES = ("Data", "Link", "Select", "Small Text", "Phone", "Read Only")
 
 
@@ -73,11 +80,12 @@ def _customer_phone_fields(meta) -> list[str]:
 def _search_description(customer: dict, fields: list[str]) -> str:
 	"""The search-field values desk shows under a customer, in configured order."""
 	# Search configuration is broader than useful counter identification.
-	seen = {str(customer.get(f) or "").casefold() for f in _SHOWN_ON_ROW}
+	shown = _shown_on_row()
+	seen = {str(customer.get(f) or "").casefold() for f in shown}
 	values = []
 	for field in fields:
 		value = str(customer.get(field) or "").strip()
-		if field in (*_SHOWN_ON_ROW, "customer_group", "territory", "primary_address") or not value or value.casefold() in seen:
+		if field in (*shown, "customer_group", "territory", "primary_address") or not value or value.casefold() in seen:
 			continue
 		seen.add(value.casefold())
 		values.append(value)
@@ -160,9 +168,9 @@ def get_customers(
 	"""
 	extra_fields = _customer_search_fields()
 	meta = frappe.get_meta("Customer")
-	# Mule's business classification is independent of ERPNext Company/Individual.
-	if meta.has_field("mule_customer_kind") and "mule_customer_kind" not in extra_fields:
-		extra_fields.append("mule_customer_kind")
+	site_fields = site_hooks.customer_fields()
+	# The site's own customer fields (xpos_customer_fields "search"), e.g. a business kind.
+	extra_fields += [field for field in site_fields["search"] if field not in extra_fields]
 	conditions = "c.disabled = 0"
 	values = {"limit": max(1, min(cint(limit), 100000))}
 	order_by = "c.customer_name ASC, c.name ASC"
@@ -260,9 +268,9 @@ def get_customers(
 		values["exact"] = search_term
 
 	extra_columns = "".join(f", c.`{f}`" for f in extra_fields if f not in _CUSTOMER_LIST_COLUMNS)
-	# Preserve the historical relationship date; ERP import creation is not tenure.
-	if meta.has_field("mule_customer_since"):
-		extra_columns += ", c.mule_customer_since AS xpos_customer_since"
+	# The site's "customer since" date (xpos_customer_fields "since"); creation is not tenure.
+	if site_fields["since"]:
+		extra_columns += f", c.`{site_fields['since']}` AS xpos_customer_since"
 	selected_limit = values["limit"]
 	if cint(with_metadata) and limit_sql:
 		values["limit"] += 1  # One extra row distinguishes a full selection from a capped one.
@@ -593,20 +601,26 @@ def get_customer_info(customer: str, pos_profile: str | None = None):
 	}
 
 
-# Mule City (mulecity_erpnext): why a customer is tax-exempt. Picking it sets
-# the customer's Tax Category in that app's Customer validate. Sites without the
-# field never see or accept it.
-TAX_EXEMPT_REASON_FIELD = "mule_tax_exempt_reason"
+def tax_exempt_reason_field() -> str | None:
+	"""The site's Customer field for why a customer is tax-exempt (xpos_customer_fields), or None.
+
+	Picking a reason is expected to set the customer's Tax Category in the
+	site's own Customer validate. Sites without the field never see or accept it.
+	"""
+	return site_hooks.customer_fields()["tax_exempt_reason"]
 
 
 def customer_tax_exempt_reasons() -> list[str]:
-	"""The reasons this user may give a new customer, from the Customer field.
+	"""The reasons this user may give a new customer, from the site's Customer field.
 
 	Empty when the site has no such field, or when the field's permission level
 	is one this user may not write (the desk form would drop their value too).
 	"""
+	fieldname = tax_exempt_reason_field()
+	if not fieldname:
+		return []
 	meta = frappe.get_meta("Customer")
-	df = meta.get_field(TAX_EXEMPT_REASON_FIELD)
+	df = meta.get_field(fieldname)
 	if not df or df.fieldtype != "Select" or df.permlevel not in meta.get_permlevel_access("write"):
 		return []
 	return [option for option in (df.options or "").split("\n") if option.strip()]
@@ -632,7 +646,7 @@ def create_customer(
 	address_line2: str = None,
 	state: str = None,
 	pincode: str = None,
-	mule_tax_exempt_reason: str = None,
+	tax_exempt_reason: str = None,
 ):
 	"""
 	Create a new customer with optional address.
@@ -646,8 +660,8 @@ def create_customer(
 	):
 		frappe.throw(_("Street address and city are required to save an address"))
 
-	if mule_tax_exempt_reason and mule_tax_exempt_reason not in customer_tax_exempt_reasons():
-		frappe.throw(_("{0} is not a tax exemption reason you can set here").format(mule_tax_exempt_reason))
+	if tax_exempt_reason and tax_exempt_reason not in customer_tax_exempt_reasons():
+		frappe.throw(_("{0} is not a tax exemption reason you can set here").format(tax_exempt_reason))
 
 	if not customer_group:
 		customer_group = (
@@ -671,8 +685,8 @@ def create_customer(
 
 	# The insert below runs the Customer's normal validation, which sets the
 	# Tax Category from the reason.
-	if mule_tax_exempt_reason:
-		customer.set(TAX_EXEMPT_REASON_FIELD, mule_tax_exempt_reason)
+	if tax_exempt_reason:
+		customer.set(tax_exempt_reason_field(), tax_exempt_reason)
 
 	if tax_id:
 		customer.tax_id = tax_id

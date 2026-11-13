@@ -1,11 +1,12 @@
 import { withPullCalculation } from "@/services/pullCalculation";
 import { prepareVfdPickup } from "@/services/vfdOffline";
 import { newInvoiceId } from "@/services/invoiceSubmission";
-import { muleOrderFields } from "@/services/muleOrderFields";
+import { orderLineFields } from "@/services/orderLineFields";
 import type { MixPull, PullFix } from "@/utils/mixPull";
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { call } from "@/services/api";
+import { requireSiteMethod, siteFeature, siteMethod } from "@/services/siteExtensions";
 import { isValidationRefusal } from "@/utils/refusals";
 import { usePosStore } from "./posStore";
 import { useSettingsStore } from "./settingsStore";
@@ -188,7 +189,7 @@ async function offlineTaxContext(profile: string, buyer: string, row: { tax_cate
 }
 
 /** How long the till waits before asking the server again (tests shorten it). */
-export const muleTaxTiming = { retryMs: 1500 };
+export const buyerTaxTiming = { retryMs: 1500 };
 
 /** The server is up but not answering: a deploy's maintenance window or a worker restart. */
 function serverUnavailable(error: unknown): boolean {
@@ -212,11 +213,15 @@ function serverUnavailable(error: unknown): boolean {
  * No buyer (empty string) is taxed like a customer with no tax category: the
  * server answers with the walk-in's taxes, and offline the "" category's.
  */
-async function muleTaxContext(profile: string, buyer: string, row: { tax_category?: string | null } | null,
+async function buyerTaxContext(profile: string, buyer: string, row: { tax_category?: string | null } | null,
 	stale: () => boolean): Promise<any | null> {
 	const kept = () => buyer ? offlineTaxContext(profile, buyer, row) : getCachedCategoryTaxContext(profile, "");
+	// The site's tax_context (xpos_site), else XPOS's own (ERPNext's party resolution).
+	const method = siteMethod("tax_context");
+	// A site that turned the lookup off taxes by the POS Profile's template, as upstream XPOS does.
+	if (!method) return null;
 	const ask = async () => {
-		const context = await call<any>("mulecity_erpnext.pos_workspace.tax_context", {customer: buyer || null, pos_profile: profile});
+		const context = await call<any>(method, {customer: buyer || null, pos_profile: profile});
 		if (buyer) cacheTaxContext(profile, buyer, context).catch(() => {});
 		return context;
 	};
@@ -230,7 +235,7 @@ async function muleTaxContext(profile: string, buyer: string, row: { tax_categor
 			// No buyer offline and nothing kept: the walk-in is put on next, and taxed then.
 			if (offline) { if (!buyer) return null; throw new OfflineTaxMissing(); }
 		}
-		await new Promise((resolve) => setTimeout(resolve, muleTaxTiming.retryMs));
+		await new Promise((resolve) => setTimeout(resolve, buyerTaxTiming.retryMs));
 		if (stale()) return null;
 		return await ask();
 	}
@@ -261,48 +266,48 @@ export const useCartStore = defineStore("cart", () => {
 	const discountPercentage = ref(0);
 	const discountAmount = ref(0);
 	const showPaymentDialog = ref(false);
-  const muleTaxPending = ref(false);
-  const muleTaxError = ref("");
-  const muleTaxCategory = ref("");
+  const buyerTaxPending = ref(false);
+  const buyerTaxError = ref("");
+  const buyerTaxCategory = ref("");
   // Why the buyer is tax-exempt (Mule City), for the counter's customer bar.
-  const muleTaxExemptReason = ref("");
-  let muleTaxRequest = 0;
+  const buyerTaxExemptReason = ref("");
+  let buyerTaxRequest = 0;
   // Bumped by retryTaxLookup(): the watch below looks the buyer's taxes up again.
-  const muleTaxRetry = ref(0);
+  const buyerTaxRetry = ref(0);
   /** Look the buyer's taxes up again (the Retry next to a failed lookup). */
-  function retryTaxLookup(): void { muleTaxRetry.value++; }
-  watch(() => [customer.value?.name, posStore.profileName, muleTaxRetry.value] as const, async ([buyer, profile]) => {
+  function retryTaxLookup(): void { buyerTaxRetry.value++; }
+  watch(() => [customer.value?.name, posStore.profileName, buyerTaxRetry.value] as const, async ([buyer, profile]) => {
     if (!profile) return;
-    const request = ++muleTaxRequest;
-    muleTaxPending.value = true;
-    muleTaxError.value = "";
-    muleTaxExemptReason.value = "";
+    const request = ++buyerTaxRequest;
+    buyerTaxPending.value = true;
+    buyerTaxError.value = "";
+    buyerTaxExemptReason.value = "";
     showPaymentDialog.value = false;
     try {
       // No buyer is taxed at the default rate (the walk-in's, MuleCity-s9jt),
       // never left with the last customer's taxes or none.
-      const context = await muleTaxContext(String(profile), buyer ? String(buyer) : "", customer.value,
-        () => request !== muleTaxRequest);
+      const context = await buyerTaxContext(String(profile), buyer ? String(buyer) : "", customer.value,
+        () => request !== buyerTaxRequest);
       const offlineContext = !isOnline();
-      if (request !== muleTaxRequest || !context) return;
+      if (request !== buyerTaxRequest || !context) return;
       posStore.taxes = context.taxes;
-      muleTaxCategory.value = context.tax_category || "";
-      muleTaxExemptReason.value = context.tax_exempt_reason || "";
+      buyerTaxCategory.value = context.tax_category || "";
+      buyerTaxExemptReason.value = context.tax_exempt_reason || "";
       // A customer's item overrides must not survive a buyer change.
       // Offline, the items keep the templates they were added with.
       for (const item of offlineContext ? [] : items.value) {
-        const tax = await call<any>("xpos.api.taxes.get_item_tax_template", {item_code: item.item_code, company: posStore.companyName, tax_category: muleTaxCategory.value});
-        if (request !== muleTaxRequest) return;
+        const tax = await call<any>("xpos.api.taxes.get_item_tax_template", {item_code: item.item_code, company: posStore.companyName, tax_category: buyerTaxCategory.value});
+        if (request !== buyerTaxRequest) return;
         item.item_tax_template = tax.item_tax_template || undefined;
         item.item_tax_map = tax.item_tax_map || {};
       }
     } catch (error) {
-      if (request === muleTaxRequest) {
-        muleTaxError.value = error instanceof OfflineTaxMissing
+      if (request === buyerTaxRequest) {
+        buyerTaxError.value = error instanceof OfflineTaxMissing
           ? "No tax information for this customer on this till yet. Go online once, or ring them up at the desk."
           : "Tax lookup failed for this customer. Press Retry before taking payment.";
       }
-    } finally { if (request === muleTaxRequest) muleTaxPending.value = false; }
+    } finally { if (request === buyerTaxRequest) buyerTaxPending.value = false; }
   });
 
 	// Server-priced ticket (MuleCity-9f4). Save-time rules can change a cart after the
@@ -759,10 +764,12 @@ export const useCartStore = defineStore("cart", () => {
 	 * than the made bags on hand. Pay turns the rest into an order (the server
 	 * decides the exact split, leaving out bags reserved for other orders).
 	 */
+	// Made-to-order lines are a site feature (xpos_site "mix": its quote, check and checkout).
+	const mixesOn = siteFeature("mix");
 	const orderLineUids = computed(
 		() =>
 			new Set(
-				items.value
+				(mixesOn ? items.value : [])
 					.filter(
 						(item: CartItem) =>
 							Number(item.is_made_to_order) === 1 &&
@@ -919,7 +926,7 @@ export const useCartStore = defineStore("cart", () => {
 			existing.qty += isReturnMode.value ? -qty : qty;
 		} else {
 			items.value.push({
-                ...muleOrderFields(item),
+                ...orderLineFields(item),
 				uid: nextRowId(),
 				item_code: item.item_code,
 				item_name: item.item_name,
@@ -1760,10 +1767,10 @@ export const useCartStore = defineStore("cart", () => {
 
 	/** Resolves once the buyer's tax context has settled (or after `ms`). */
 	function taxSettled(ms = 20000): Promise<void> {
-		if (!muleTaxPending.value) return Promise.resolve();
+		if (!buyerTaxPending.value) return Promise.resolve();
 		return new Promise((resolve) => {
 			const timer = setTimeout(done, ms);
-			const stop = watch(muleTaxPending, (pending) => { if (!pending) done(); });
+			const stop = watch(buyerTaxPending, (pending) => { if (!pending) done(); });
 			function done() { clearTimeout(timer); stop(); resolve(); }
 		});
 	}
@@ -1771,8 +1778,8 @@ export const useCartStore = defineStore("cart", () => {
 	async function openPaymentDialog(): Promise<void> {
 		// Pay pressed (key or event) while the buyer's tax is still loading, e.g. just after
 		// choosing them offline: wait for it rather than drop the press (mc33 offline-reload).
-		if (muleTaxPending.value) await taxSettled();
-		if (muleTaxPending.value || muleTaxError.value || serverPreviewPending.value) return;
+		if (buyerTaxPending.value) await taxSettled();
+		if (buyerTaxPending.value || buyerTaxError.value || serverPreviewPending.value) return;
 		if (hasOrderLines.value) {
 			await openMixOrderPayment();
 			return;
@@ -1790,7 +1797,7 @@ export const useCartStore = defineStore("cart", () => {
 				await prepareVfdPickup(getInvoiceData(posStore.profileName, posStore.posOpeningShift?.name || ""));
 				serverPreview.value = { ...result, key };
 				// The cart or buyer changed while the server was pricing it: press Pay again.
-				if (key !== previewKey.value || muleTaxPending.value || muleTaxError.value) return;
+				if (key !== previewKey.value || buyerTaxPending.value || buyerTaxError.value) return;
 			} catch (error) {
 				serverPreview.value = null;
 				serverPreviewError.value = extractErrorMessage(error);
@@ -1872,7 +1879,7 @@ export const useCartStore = defineStore("cart", () => {
 
 	/**
 	 * A mix line's own choices (MuleCity-erqg.17): stored grain, bulk to truck, the
-	 * pull-list fix. They travel with the line (muleOrderFields), so the cart key
+	 * pull-list fix. They travel with the line (orderLineFields), so the cart key
 	 * changes and the site checks and prices the cart again.
 	 */
 	function setMixLineFields(uid: string, fields: Record<string, unknown>): void {
@@ -1890,7 +1897,7 @@ export const useCartStore = defineStore("cart", () => {
 	const deskUsers = ref<{ user: string; name: string }[]>([]);
 	async function loadDeskUsers(): Promise<{ user: string; name: string }[]> {
 		if (!deskUsers.value.length) {
-			deskUsers.value = await call<{ user: string; name: string }[]>("mulecity_erpnext.counter_mix_orders.counter_desk_users");
+			deskUsers.value = await call<{ user: string; name: string }[]>(requireSiteMethod("mix.desk_users"));
 		}
 		return deskUsers.value;
 	}
@@ -1907,7 +1914,7 @@ export const useCartStore = defineStore("cart", () => {
 		const index = items.value.findIndex((item) => item.uid === uid);
 		if (index < 0) return;
 		const result = await call<{ sales_order: string; assigned_to: string }>(
-			"mulecity_erpnext.counter_mix_orders.counter_send_to_desk",
+			requireSiteMethod("mix.send_to_desk"),
 			{ data: JSON.stringify(previewPayload()), line_index: index, assign_to: assignTo, note },
 			undefined,
 			{ answers: isValidationRefusal },
@@ -1981,7 +1988,7 @@ export const useCartStore = defineStore("cart", () => {
 		mixCheckPending.value = true;
 		try {
 			const result = await withPullCalculation<Omit<CounterQuote, "key">>(
-				"mulecity_erpnext.counter_mix_orders.counter_check", JSON.stringify(previewPayload()),
+				requireSiteMethod("mix.check"), JSON.stringify(previewPayload()),
 				() => request === mixCheckRequest && key === previewKey.value,
 				value => { mixCalculationPending.value = value; },
 			);
@@ -2004,7 +2011,7 @@ export const useCartStore = defineStore("cart", () => {
 		if (!quoteCurrent.value || !quote?.pull_job_keys?.length || mixCalculationPending.value || showPaymentDialog.value || !isOnline()) return;
 		try {
 			const states = await call<Record<string, {current: boolean; acceptable: boolean | null}>>(
-				"mulecity_erpnext.mule_feed_formula.pull_jobs.validate_jobs", {keys: quote.pull_job_keys},
+				requireSiteMethod("mix.validate_jobs"), {keys: quote.pull_job_keys},
 			);
 			if (counterQuote.value !== quote || !quoteCurrent.value) return;
 			if (quote.pull_job_keys.some(key => !states[key]?.current || states[key]?.acceptable === false)) {
@@ -2057,7 +2064,7 @@ export const useCartStore = defineStore("cart", () => {
 		serverPreviewPending.value = true;
 		try {
 			const result = await withPullCalculation<Omit<CounterQuote, "key">>(
-				"mulecity_erpnext.counter_mix_orders.counter_quote", JSON.stringify(previewPayload()),
+				requireSiteMethod("mix.quote"), JSON.stringify(previewPayload()),
 				() => key === previewKey.value,
 				value => { mixCalculationPending.value = value; },
 			);
@@ -2145,7 +2152,7 @@ export const useCartStore = defineStore("cart", () => {
 					}
 
 					items.value.push({
-                        ...muleOrderFields(item),
+                        ...orderLineFields(item),
 						uid: nextRowId(),
 						item_code: item.item_code,
 						item_name: item.item_name,
@@ -2239,7 +2246,7 @@ export const useCartStore = defineStore("cart", () => {
 	function pushInvoiceLines(lines: InvoiceLine[]): void {
 		for (const item of lines) {
 			items.value.push({
-                ...muleOrderFields(item),
+                ...orderLineFields(item),
 				uid: nextRowId(),
 				item_code: item.item_code,
 				item_name: item.item_name,
@@ -2338,7 +2345,7 @@ export const useCartStore = defineStore("cart", () => {
 			customer: customer.value?.name || "",
 			items: items.value.map(
 				(item: CartItem): InvoiceItem => ({
-                    ...muleOrderFields(item),
+                    ...orderLineFields(item),
 					item_code: item.item_code,
 					item_name: item.item_name,
 					local_item_name: item.local_item_name,
@@ -2763,7 +2770,7 @@ export const useCartStore = defineStore("cart", () => {
 		customer,
 		discountPercentage,
 		discountAmount,
-		muleTaxPending, muleTaxError, muleTaxCategory, muleTaxExemptReason, retryTaxLookup,
+		buyerTaxPending, buyerTaxError, buyerTaxCategory, buyerTaxExemptReason, retryTaxLookup,
 		serverPreview, serverPreviewPending, serverPreviewError, serverLinesDiffer,
 		previewExpectedTotal, ticketChanged,
 		showPaymentDialog,

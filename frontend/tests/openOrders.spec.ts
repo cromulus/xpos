@@ -36,6 +36,10 @@ import { useCartStore } from "@/stores/cartStore";
 import CustomerOrdersBadge from "@/components/cart/CustomerOrdersBadge.vue";
 import OpenOrdersPanel from "@/components/orders/OpenOrdersPanel.vue";
 import { ORDERS_LIMIT, orderScope, searchOrders, summarizeOrders, customerRowsFromAll } from "@/utils/openOrders";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const albertReady = { name: "SAL-ORD-1", customer: "MC-4112", customer_name: "ALBERT ADKINS", readiness: "ready", progress: "Production complete — check collection" };
 const albertWaiting = { name: "SAL-ORD-2", customer: "MC-4112", customer_name: "ALBERT ADKINS", readiness: "open" };
@@ -254,7 +258,7 @@ describe("the Orders view", () => {
 
 	it("Load for payment maps the order on the server, says when a delivery became a pickup, and loads the till", async () => {
 		const notice = "Switched to pickup: the delivery charge was removed.";
-		const doc = { name: "ACC-SINV-1", customer: "MC-0007", customer_name: "BETTY BROWN", items: [], mule_notice: notice };
+		const doc = { name: "ACC-SINV-1", customer: "MC-0007", customer_name: "BETTY BROWN", items: [], xpos_notice: notice };
 		api.call.mockImplementation(async (method: string) => (method.endsWith("find_orders") ? [bettyMill] : doc));
 		const cart = useCartStore();
 		const loaded = vi.spyOn(cart, "loadFromInvoice").mockImplementation(() => {});

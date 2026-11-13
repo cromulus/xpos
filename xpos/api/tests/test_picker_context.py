@@ -17,11 +17,20 @@ class TestPickerContext(unittest.TestCase):
 		self.addCleanup(contacts.stop)
 
 	def test_description_keeps_distinguishing_fields_without_generic_clutter(self):
+		# The site's codes field (xpos_customer_fields "codes") is on the row already.
+		site = {"search": ["site_customer_kind"], "codes": "site_codes", "since": None, "tax_exempt_reason": None}
 		row = {"name": "MC-CUST-2980", "customer_name": "Southern Woods",
-			"mule_filepro_alias_codes": "2980", "alias": "2980",
+			"site_codes": "2980", "alias": "2980",
 			"customer_group": "Mule City Customers", "territory": "United States",
-			"mule_customer_kind": "Reseller"}
-		self.assertEqual(customers._search_description(row, list(row)), "Reseller")
+			"site_customer_kind": "Reseller"}
+		with patch.object(customers.site_hooks, "customer_fields", return_value=site):
+			self.assertEqual(customers._search_description(row, list(row)), "Reseller")
+
+	def test_negative_without_a_site_codes_field_the_codes_are_described(self):
+		site = {"search": [], "codes": None, "since": None, "tax_exempt_reason": None}
+		row = {"name": "C-1", "customer_name": "Southern Woods", "site_codes": "2980"}
+		with patch.object(customers.site_hooks, "customer_fields", return_value=site):
+			self.assertEqual(customers._search_description(row, list(row)), "2980")
 
 	def test_linked_phone_and_company_scoped_sales_are_batched(self):
 		rows = [{"name": "C1", "mobile_no": ""}, {"name": "C2", "mobile_no": "222"}]

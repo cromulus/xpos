@@ -1,3 +1,4 @@
+import { siteValue } from "@/services/siteExtensions";
 import { usePosStore } from "@/stores/posStore";
 import { call, showError, showInfo } from "@/services/api";
 import { getCachedReceiptContext } from "@/services/dbBridge";
@@ -54,11 +55,12 @@ export function usePrintInvoice() {
 
 	/**
 	 * The network printer ERPNext prints to (a "Network Printer Settings" name), or "" when
-	 * the site has none. Mule City's boot_session puts it in boot as
-	 * `mule_default_network_printer`; XPOS boot is Frappe's session boot, so it arrives here.
+	 * the site has none. A site's print app names it in the boot's site map
+	 * (xpos_site `default_network_printer`).
 	 */
 	function networkPrinter(): string {
-		return xpos.boot?.mule_default_network_printer || "";
+		const printer = siteValue("default_network_printer");
+		return typeof printer === "string" ? printer : "";
 	}
 
 	/** Count this print, so later prints of the same receipt show as reprints. Best-effort. */
@@ -136,10 +138,9 @@ export function usePrintInvoice() {
 	/**
 	 * Print a server-side invoice (Save & Print, backup receipts, Order History reprints).
 	 *
-	 * Mule City routing (MuleCity-g100). Bill 2026-09-29: "xpos should only launch local
-	 * print if: print server is down, and ERPNext can't communicate with it, OR xpos
-	 * itself is offline." So when the site has a network printer (boot key
-	 * `mule_default_network_printer`):
+	 * Routing: print here only when the print server is down and ERPNext can't reach
+	 * it, or XPOS itself is offline. So when the site has a network printer
+	 * (xpos_site `default_network_printer`):
 	 * - XPOS offline, or ERPNext never answers → print here through the browser.
 	 * - ERPNext answers that the print server is unreachable → notice, then print here.
 	 * - ERPNext prints it → nothing opens here.

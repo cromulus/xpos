@@ -60,7 +60,7 @@
 					<Lock v-if="cartStore.isReturnMode" class="ms-auto w-3.5 h-3.5 shrink-0 text-muted-foreground/50" />
 					<ChevronDown v-else class="ms-auto w-3.5 h-3.5 shrink-0 text-muted-foreground/50" />
 				</button>
-				<CustomerOrdersBadge v-if="cartStore.customer && !cartStore.isReturnMode" />
+				<CustomerOrdersBadge v-if="ordersOn && cartStore.customer && !cartStore.isReturnMode" />
 				<Button
 					v-if="cartStore.customer && !cartStore.isReturnMode"
 					variant="ghost"
@@ -72,9 +72,9 @@
 				>
 					<Pencil class="w-4 h-4" />
 				</Button>
-				<!-- Customer Mixes, now the Mule City row is gone (MuleCity-qajl.1, qajl.2). -->
+				<!-- Customer Mixes: a site feature (xpos_site "mix"). -->
 				<Button
-					v-if="cartStore.customer && !cartStore.isReturnMode"
+					v-if="mixesOn && cartStore.customer && !cartStore.isReturnMode"
 					variant="ghost"
 					size="sm"
 					class="shrink-0 h-7 px-2 gap-1 text-xs"
@@ -107,7 +107,7 @@
 				data-testid="customer-account-row"
 			>
 				<!-- Can take a delivery, contact on file, tax exempt: at a glance (Bill 2026-09-29). -->
-				<CustomerStatusIcons :customer="cartStore.customer" :tax-exempt-reason="cartStore.muleTaxExemptReason" editable-email @edit-email="handleEditCustomer('email')" />
+				<CustomerStatusIcons :customer="cartStore.customer" :tax-exempt-reason="cartStore.buyerTaxExemptReason" editable-email @edit-email="handleEditCustomer('email')" />
 				<span v-if="cartStore.customer.mobile_no" class="inline-flex items-center gap-1 truncate">
 					<Phone class="w-3 h-3 shrink-0" />{{ cartStore.customer.mobile_no }}
 				</span>
@@ -282,6 +282,12 @@ import PayBalanceButton from "@/components/cart/PayBalanceButton.vue";
 import PayBalanceLine from "@/components/cart/PayBalanceLine.vue";
 import ClearCustomer from "@/components/cart/ClearCustomer.vue";
 import CustomerOrdersBadge from "@/components/cart/CustomerOrdersBadge.vue";
+import { ordersInFlightEnabled } from "@/stores/openOrdersStore";
+import { siteFeature } from "@/services/siteExtensions";
+// Orders in flight are a site feature (xpos_site find_orders).
+const ordersOn = ordersInFlightEnabled();
+// Customer mixes are a site feature (xpos_site "mix").
+const mixesOn = siteFeature("mix");
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { showsCreditInfo } from "@/utils/creditPanel";
 import { mixCheckStatus } from "@/utils/mixCheck";
@@ -388,7 +394,7 @@ function handleCustomerClick() {
 }
 
 function openMixes() {
-	window.dispatchEvent(new CustomEvent("xpos:open-mule-workspace", { detail: { mode: "mixes" } }));
+	window.dispatchEvent(new CustomEvent("xpos:open-mix-workspace", { detail: { mode: "mixes" } }));
 }
 
 function handleEditCustomer(focus: "name" | "email" = "name") {

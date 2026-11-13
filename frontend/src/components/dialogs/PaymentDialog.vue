@@ -777,8 +777,9 @@
 				</div>
 			</div>
 
-			<!-- Mule City: a charge refused over the credit limit or past due, and the manager override (MuleCity-zstm.13). -->
-			<div v-if="chargeRefusal" class="shrink-0 border-t border-border px-5 py-3">
+			<!-- A charge the site refused (credit limit, past due) and its manager override: only when
+			     the site provides one (xpos_site charge_override). -->
+			<div v-if="chargeRefusal && chargeOverrideOn" class="shrink-0 border-t border-border px-5 py-3">
 				<ManagerOverride
 					:message="chargeRefusal.message"
 					:busy="isSubmitting"
@@ -951,6 +952,9 @@ import {
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
 import ManagerOverride from "@/components/dialogs/ManagerOverride.vue";
+import { requireSiteMethod, siteFeature } from "@/services/siteExtensions";
+// The site's manager override for a refused charge (xpos_site charge_override); off without one.
+const chargeOverrideOn = siteFeature("charge_override");
 import { isChargeRefusal, isOverrideAnswer, payWithOverride } from "@/services/chargeOverride";
 import { applyCashier, cashierInitialsOk, normalizeInitials } from "@/utils/cashierInitials";
 import { nowDate } from "@/utils/datetime";
@@ -1774,7 +1778,7 @@ async function submitPayment(withPrint: boolean = true) {
 		);
 		await finishSale(result, withPrint);
 	} catch (error: unknown) {
-		if (isChargeRefusal(error)) {
+		if (chargeOverrideOn && isChargeRefusal(error)) {
 			// Not an error toast: the message, and a manager override (MuleCity-zstm.13).
 			const mix = cartStore.hasOrderLines;
 			chargeRefusal.value = {
@@ -1893,7 +1897,7 @@ async function submitMixOrder(invoiceData: InvoiceData, withPrint: boolean) {
 	}
 	mixRefusal.value = "";
 	const result = await call<CounterCheckoutResult>(
-		"mulecity_erpnext.counter_mix_orders.counter_checkout",
+		requireSiteMethod("mix.checkout"),
 		{ data: JSON.stringify({ ...invoiceData, pay_mode: cartStore.mixPayMode }) },
 		undefined,
 		{ answers: isOverrideAnswer },

@@ -6,7 +6,7 @@
  * site's policy and each customer's standing charge and addresses' miles.
  *
  * What: `deliveryLine` / `deliveryCharge` mirror the site's pure functions
- * (mulecity_erpnext/pricing/delivery_charge.py): since MuleCity-bi3t the line is
+ * (the site app's delivery charge module): since MuleCity-bi3t the line is
  * sold by the mile, unit "Mile", at the band's rate a mile; since MuleCity-qgvv
  * (Bill 2026-11-05: "lets not round deliveries, or, round to pennies. if it's
  * 1.5 miles, it's $7.50.") qty = the miles to the tenth and the charge is

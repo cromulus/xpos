@@ -1,16 +1,17 @@
 /**
- * Manager override for a refused charge (Mule City, MuleCity-zstm.13).
+ * Manager override for a refused charge: a site feature (xpos_site ``charge_override``:
+ * ``{approvers, sale}`` method names). Off without it.
  *
  * The site refuses a charge sale over the customer's credit limit or past due
- * with ``CreditHoldValidationError`` (mulecity_erpnext.credit_override). The Pay
- * dialog shows its message and a "Manager override": Ben or Matt pick their
- * name and type their PIN, and the same cart is paid again through
- * ``till_sale_with_override``, which checks the PIN and posts the sale under
+ * with ``CreditHoldValidationError``. The Pay dialog shows its message and a
+ * "Manager override": a manager picks their name and types their PIN, and the
+ * same cart is paid again through the site's ``sale`` method, which checks the PIN and posts the sale under
  * their approval. The PIN goes in that one request only, as ``override_pwd``
  * (the site's and this till's error logs mask any "pwd" argument); it is never
  * part of the cart, so it is never queued or stored on this register.
  */
 import { call } from "@/services/api";
+import { requireSiteMethod } from "@/services/siteExtensions";
 import type { RefusalInfo } from "@/utils/refusals";
 import type { InvoiceData } from "@/types/pos.types";
 
@@ -34,7 +35,7 @@ export function isOverrideAnswer(refusal: RefusalInfo): boolean {
 }
 
 export function listApprovers(): Promise<OverrideApprover[]> {
-	return call<OverrideApprover[]>("mulecity_erpnext.credit_override.override_approvers");
+	return call<OverrideApprover[]>(requireSiteMethod("charge_override.approvers"));
 }
 
 /** Pay this cart again with a manager's PIN; ``mix`` for a cart holding custom mixes. */
@@ -45,7 +46,7 @@ export function payWithOverride<T>(
 	mix = false,
 ): Promise<T> {
 	return call<T>(
-		"mulecity_erpnext.credit_override.till_sale_with_override",
+		requireSiteMethod("charge_override.sale"),
 		{ data: JSON.stringify(invoiceData), approver, override_pwd: pin, mix: mix ? 1 : 0 },
 		undefined,
 		{ answers: isOverrideAnswer },

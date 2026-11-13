@@ -65,6 +65,10 @@ vi.mock("@/services/pricingService", () => ({
 import { call } from "@/services/api";
 import { useCartStore } from "@/stores/cartStore";
 import type { POSItem } from "@/types/pos.types";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const mockedCall = vi.mocked(call);
 

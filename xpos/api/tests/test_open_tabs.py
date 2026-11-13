@@ -144,9 +144,9 @@ class TestSaveDraftInvoiceConcurrency(unittest.TestCase):
 		patcher = patch("xpos.api.invoices.resolve_pos_profile")
 		patcher.start()
 		self.addCleanup(patcher.stop)
-		# The site tax adapter (Mule City) has its own tests; a mocked draft
-		# cannot be read by it.
-		patcher = patch("mulecity_erpnext.pos_workspace.apply_customer_taxes")
+		# Taxes (site_hooks.apply_taxes) have their own tests; a mocked draft
+		# cannot be read by them.
+		patcher = patch("xpos.api.site_hooks.apply_taxes")
 		patcher.start()
 		self.addCleanup(patcher.stop)
 

@@ -42,6 +42,10 @@ import {
 	RECONNECT_REFRESH_DELAY_MS,
 	isCacheFresh,
 } from "@/utils/cacheFreshness";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 
 const flush = async () => {
 	for (let i = 0; i < 10; i++) await Promise.resolve();

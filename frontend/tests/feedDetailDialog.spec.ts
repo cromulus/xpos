@@ -9,6 +9,10 @@ vi.mock("@/services/api", () => ({ call: mocks.call, showError: vi.fn() }));
 vi.mock("@/services/userRights", () => ({ hasPermission: () => false }));
 vi.mock("@/composables/useMoney", () => ({ useMoney: () => ({ moneyRate: String, ratePrecision: 9, qty: String }) }));
 import ItemDetailDialog from "@/components/dialogs/ItemDetailDialog.vue";
+import { useSiteExtension } from "./helpers/siteExtension";
+
+// A site with the till extensions (boot xpos_site).
+useSiteExtension();
 const slot = defineComponent({ template: "<div><slot /></div>" });
 function view() {
 	return mount(ItemDetailDialog, { global: { stubs: { Dialog: slot, DialogContent: slot, DialogHeader: slot, DialogTitle: slot, DialogDescription: slot, DialogFooter: slot, Button: defineComponent({ template: "<button><slot /></button>" }) } } });
