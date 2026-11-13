@@ -52,6 +52,7 @@ import {
 	cardPayBlockReason,
 	describeCardStatus,
 	reasonText,
+	resetCardTerminalService,
 	type CardPayContext,
 	type CardPaymentStatus,
 } from "@/services/cardTerminal";
@@ -119,6 +120,9 @@ beforeEach(() => {
 	online.value = true;
 	window.localStorage.clear();
 	vi.useRealTimers();
+	// No config yet: the reader module is asked of the server (this site: payments).
+	resetCardTerminalService();
+	answer(`${TILL}.get_card_terminal_service`, SERVICE);
 });
 
 describe("when Pay by Card is offered", () => {
@@ -355,6 +359,36 @@ describe("Pay by Card, end to end against a mocked site", () => {
 		expect(store.pending?.attempt).toBe("pta-9");
 		expect(store.view?.phase).toBe("waiting");
 		expect(calls.filter((c) => c.method === `${SERVICE}.start_terminal_payment`)).toHaveLength(1);
+		store.reset();
+	});
+
+	it("a reload on a pay_ng site asks for the reader module before its config, never assuming payments", async () => {
+		window.localStorage.setItem(
+			"xpos:card-payment",
+			JSON.stringify({ profile: "P", doctype: "Sales Invoice", invoice: "ACC-SINV-1", attempt: "pta-1", startedAt: "x" }),
+		);
+		answer(`${TILL}.get_card_terminal_service`, "pay_ng.transactions.service");
+		answer("pay_ng.transactions.service.get_terminal_payment_status", status({ paid: true, received: true, accounting_state: "Posted", collection_state: "Captured" }));
+		const store = useCardPaymentStore();
+		const t = till();
+		store.bindTill(t);
+		expect(await store.resume("P")).toBe(true);
+		expect(t.complete).toHaveBeenCalledWith("ACC-SINV-1", false);
+		expect(calls.some((c) => c.method.startsWith(SERVICE))).toBe(false);
+	});
+
+	it("negative: with no card reader app the status check calls no payments module", async () => {
+		window.localStorage.setItem(
+			"xpos:card-payment",
+			JSON.stringify({ profile: "P", doctype: "Sales Invoice", invoice: "ACC-SINV-1", attempt: "pta-1", startedAt: "x" }),
+		);
+		answer(`${TILL}.get_card_terminal_service`, null);
+		vi.useFakeTimers();
+		const store = useCardPaymentStore();
+		store.bindTill(till());
+		await store.resume("P");
+		expect(store.error).toContain("no card reader app");
+		expect(calls.some((c) => c.method.includes(".transactions.service."))).toBe(false);
 		store.reset();
 	});
 

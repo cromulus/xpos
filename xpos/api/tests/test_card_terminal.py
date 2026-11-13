@@ -195,6 +195,18 @@ class TestTheTerminalAppIsTheSites(unittest.TestCase):
 		self.assertEqual(self.app(["pay_ng"], ["frappe", "payments"]), (None, None))
 		self.assertEqual(self.app([], ["frappe"]), (None, None))
 
+	def test_a_reload_asks_for_the_module_alone(self):
+		"""A register resuming a payment before its config gets the same module, or None."""
+		self.assertIn(card_terminal.get_card_terminal_service, frappe.whitelisted)
+		for hooked, installed, expected in (
+			(["pay_ng"], ["frappe", "pay_ng"], "pay_ng.transactions.service"),
+			([], ["frappe"], None),
+		):
+			with patch("xpos.api.site_hooks.frappe.get_hooks", return_value=hooked), patch(
+				"xpos.api.site_hooks.frappe.get_installed_apps", return_value=installed
+			):
+				self.assertEqual(card_terminal.get_card_terminal_service(), expected)
+
 
 class TestEndpoints(unittest.TestCase):
 	def test_draft_save_is_post_only_and_whitelisted(self):

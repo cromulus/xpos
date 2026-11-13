@@ -18,10 +18,10 @@ import { __ } from "@/lib/translate";
 /**
  * The payments app's terminal service module (its whitelisted start/status/cancel).
  * The server names it in the card config (`service`: the site's
- * xpos_payment_terminal_app, e.g. pay_ng); this default is for a status check
- * made before the config arrives.
+ * xpos_payment_terminal_app, e.g. pay_ng). A call made before the config arrives
+ * (a reload resuming a payment) asks the server for it first; no app is assumed.
  */
-let TERMINAL = "payments.transactions.service";
+let TERMINAL: string | null = null;
 const TILL = "xpos.api.card_terminal";
 
 export interface CardTerminalConfig {
@@ -84,24 +84,40 @@ export async function fetchCardTerminalConfig(posProfile: string): Promise<CardT
 	return config;
 }
 
+/** The terminal service module; asks the server when no config has named it yet. */
+async function terminalService(): Promise<string> {
+	if (!TERMINAL) {
+		const service = await call<string | null>(`${TILL}.get_card_terminal_service`);
+		// A refusal (excType), not a dropped connection: the cashier sees it, nothing retries.
+		if (!service) throw Object.assign(new Error(__("This site has no card reader app.")), { excType: "ValidationError" });
+		TERMINAL = service;
+	}
+	return TERMINAL;
+}
+
+/** For tests: forget the module a config named. */
+export function resetCardTerminalService(): void {
+	TERMINAL = null;
+}
+
 export function saveCardDraft(data: Record<string, unknown>): Promise<CardDraft> {
 	return call<CardDraft>(`${TILL}.save_card_draft`, { data: JSON.stringify(data) });
 }
 
-export function availableTerminals(doctype: string, name: string): Promise<AvailableTerminals> {
-	return call<AvailableTerminals>(`${TERMINAL}.get_available_terminals`, {
+export async function availableTerminals(doctype: string, name: string): Promise<AvailableTerminals> {
+	return call<AvailableTerminals>(`${await terminalService()}.get_available_terminals`, {
 		reference_doctype: doctype,
 		reference_docname: name,
 	});
 }
 
-export function startCardPayment(
+export async function startCardPayment(
 	doctype: string,
 	name: string,
 	terminal: string,
 	confirmCash: boolean,
 ): Promise<CardPaymentStatus> {
-	return call<CardPaymentStatus>(`${TERMINAL}.start_terminal_payment`, {
+	return call<CardPaymentStatus>(`${await terminalService()}.start_terminal_payment`, {
 		reference_doctype: doctype,
 		reference_docname: name,
 		terminal,
@@ -109,12 +125,12 @@ export function startCardPayment(
 	});
 }
 
-export function cardPaymentStatus(attempt: string): Promise<CardPaymentStatus> {
-	return call<CardPaymentStatus>(`${TERMINAL}.get_terminal_payment_status`, { attempt });
+export async function cardPaymentStatus(attempt: string): Promise<CardPaymentStatus> {
+	return call<CardPaymentStatus>(`${await terminalService()}.get_terminal_payment_status`, { attempt });
 }
 
-export function cancelCardPayment(attempt: string): Promise<CardPaymentStatus> {
-	return call<CardPaymentStatus>(`${TERMINAL}.cancel_terminal_payment`, { attempt });
+export async function cancelCardPayment(attempt: string): Promise<CardPaymentStatus> {
+	return call<CardPaymentStatus>(`${await terminalService()}.cancel_terminal_payment`, { attempt });
 }
 
 // ------------------------------------------------------------------ eligibility

@@ -113,6 +113,8 @@ beforeEach(() => {
 	mocks.online.value = true;
 	window.localStorage.clear();
 	mocks.call.mockImplementation(async (method: string) => {
+		// The config is set directly here, so the reader module is asked of the server.
+		if (method.endsWith("get_card_terminal_service")) return "payments.transactions.service";
 		if (method.endsWith("save_card_draft"))
 			return { name: "ACC-SINV-1", doctype: "Sales Invoice", modified: "m", grand_total: 20.74, card_amount: 20.74 };
 		if (method.endsWith("get_available_terminals"))

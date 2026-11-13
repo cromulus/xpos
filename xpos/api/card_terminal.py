@@ -64,6 +64,14 @@ def terminal_service_method_prefix() -> str | None:
 	return f"{app}.transactions.service" if app else None
 
 
+@frappe.whitelist()
+def get_card_terminal_service() -> str | None:
+	"""The terminal service module alone, for a register resuming a card payment
+	before it has its config (a reload); None when no card reader app is installed.
+	Names a module only (signed-in users; whitelisted without allow_guest)."""
+	return terminal_service_method_prefix()
+
+
 def payments_ready() -> bool:
 	"""Whether the payments app's terminal framework is installed on this site."""
 	return (
