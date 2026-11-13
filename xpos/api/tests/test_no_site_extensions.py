@@ -52,8 +52,7 @@ class TestNoSiteAppIsNamed(IntegrationTestCase):
 
 	def test_the_site_map_is_not_a_dispatcher(self):
 		"""The map only names methods: nothing in site_hooks is callable over HTTP."""
-		whitelisted = {f"{fn.__module__}.{fn.__name__}" for fn in frappe.whitelisted}
-		self.assertFalse([name for name in whitelisted if name.startswith("xpos.api.site_hooks.")])
+		self.assertFalse([fn for fn in frappe.whitelisted if getattr(fn, "__module__", "") == site_hooks.__name__])
 
 
 class TestBootWithoutExtensions(NoExtensions):

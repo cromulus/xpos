@@ -169,8 +169,11 @@ def get_customers(
 	extra_fields = _customer_search_fields()
 	meta = frappe.get_meta("Customer")
 	site_fields = site_hooks.customer_fields()
-	# The site's own customer fields (xpos_customer_fields "search"), e.g. a business kind.
-	extra_fields += [field for field in site_fields["search"] if field not in extra_fields]
+	# The site's own customer fields (xpos_customer_fields): "search" (e.g. a business
+	# kind) and the codes field the picker row shows.
+	for field in (*site_fields["search"], site_fields["codes"]):
+		if field and field not in extra_fields:
+			extra_fields.append(field)
 	conditions = "c.disabled = 0"
 	values = {"limit": max(1, min(cint(limit), 100000))}
 	order_by = "c.customer_name ASC, c.name ASC"
