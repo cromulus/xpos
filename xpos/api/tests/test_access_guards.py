@@ -165,3 +165,82 @@ class TestInvoiceAccess(unittest.TestCase):
 	def test_negative_a_missing_invoice_is_refused_like_a_forbidden_one(self, _get_value):
 		with self.assertRaises(frappe.PermissionError):
 			invoices.get_pos_invoice("Sales Invoice", "ACC-SINV-NONE")
+
+
+class TestCustomerAccessMc63(CustomerCase):
+	"""The four gaps mc62 left open on customer endpoints (mc63, MuleCity-0bsc)."""
+
+	def test_negative_a_delivery_address_is_checked_through_the_tills_profile(self):
+		with (
+			patch.object(customers, "_last_hook", return_value=lambda **kw: kw),
+			patch.object(customers, "require_customer_access", return_value=PROFILE) as access,
+		):
+			customers.add_delivery_address(
+				"Greenview", "1 Main St", "Benson", "NC", "27504", pos_profile="Mule City Feed Room"
+			)
+		access.assert_called_once_with("Greenview", "read", "Mule City Feed Room")
+
+	def test_negative_a_reader_cannot_make_a_delivery_address_the_primary_shipping_one(self):
+		self.has_permission.return_value = False
+		with patch.object(customers, "_last_hook", return_value=lambda **kw: kw):
+			added = customers.add_delivery_address(
+				"Greenview", "1 Main St", "Benson", "NC", "27504", make_primary_shipping=1
+			)
+		self.assertEqual(added["make_primary_shipping"], 0)
+
+	def test_a_customer_writer_may_make_a_delivery_address_the_primary_shipping_one(self):
+		with patch.object(customers, "_last_hook", return_value=lambda **kw: kw):
+			added = customers.add_delivery_address(
+				"Greenview", "1 Main St", "Benson", "NC", "27504", make_primary_shipping=1
+			)
+		self.assertEqual(added["make_primary_shipping"], 1)
+
+	def test_negative_credit_of_another_company_is_refused(self):
+		with patch("frappe.db.sql", return_value=[]) as sql:
+			with self.assertRaises(frappe.PermissionError):
+				customers.get_customer_credit("Greenview", "Other Co", pos_profile=PROFILE.name)
+		sql.assert_not_called()
+
+	def test_credit_is_read_in_the_profiles_company_when_none_is_sent(self):
+		with patch("frappe.db.sql", return_value=[]) as sql:
+			self.assertEqual(customers.get_customer_credit("Greenview", "", pos_profile=PROFILE.name), [])
+		self.assertTrue(sql.call_args_list)
+		self.assertEqual({call.args[1]["company"] for call in sql.call_args_list}, {"Mule City"})
+
+	def test_negative_the_other_credit_endpoints_refuse_an_outside_customer_or_company(self):
+		from xpos.api import payments
+		from xpos.x_pos.api import payments as legacy_payments
+
+		with patch("frappe.db.sql", return_value=[]) as sql, patch("frappe.get_all", return_value=[]) as get_all:
+			for call in (
+				lambda: payments.get_available_credit("Insider", "Mule City"),
+				lambda: payments.get_available_credit("Greenview", "Other Co"),
+				lambda: legacy_payments.get_available_credit("Insider", "Mule City"),
+				lambda: legacy_payments.get_available_credit("Greenview", "Other Co"),
+			):
+				with self.assertRaises(frappe.PermissionError):
+					call()
+		sql.assert_not_called()
+		get_all.assert_not_called()
+
+	def test_negative_a_reader_adds_an_address_but_not_as_primary_or_shipping(self):
+		self.has_permission.return_value = False
+		address = {"address_line1": "77 Feed Lot Ln", "city": "Benson", "is_primary_address": 1, "is_shipping_address": 1}
+		with patch.object(customers, "_insert_customer_address", return_value={"name": "ADDR-1"}) as insert:
+			customers.make_address({"customer": "Greenview", **address})
+		args = insert.call_args.args[1]
+		self.assertEqual((args["is_primary_address"], args["is_shipping_address"]), (0, 0))
+
+	def test_a_customer_writer_may_add_a_primary_shipping_address(self):
+		address = {"address_line1": "77 Feed Lot Ln", "city": "Benson", "is_primary_address": 1, "is_shipping_address": 1}
+		with patch.object(customers, "_insert_customer_address", return_value={"name": "ADDR-1"}) as insert:
+			customers.make_address({"customer": "Greenview", **address})
+		args = insert.call_args.args[1]
+		self.assertEqual((args["is_primary_address"], args["is_shipping_address"]), (1, 1))
+
+	def test_negative_a_walk_in_gets_no_address(self):
+		self.walk_in_customers.return_value = ["Walk-In"]
+		with patch.object(customers, "_insert_customer_address") as insert:
+			with self.assertRaises(frappe.ValidationError):
+				customers.make_address({"customer": "Walk-In", "address_line1": "1 Main St", "city": "Benson"})
+		insert.assert_not_called()

@@ -45,6 +45,27 @@ NO_CASHIER = "(none)"
 #: Payment Entry types a till takes in (+) or hands out (-) of the drawer.
 TILL_PAYMENT_TYPES = ("Receive", "Pay")
 
+#: The largest count a till may record for one mode of payment (upstream bb17c4f).
+MAX_COUNTED_AMOUNT = 999_999_999_999
+
+
+def counted_amount(value, mode_of_payment) -> float:
+	"""A till count, refused with a message instead of a database error when it cannot be stored."""
+	amount = flt(value)
+	if amount < 0 or amount > MAX_COUNTED_AMOUNT:
+		frappe.throw(_("The amount for {0} is out of range.").format(mode_of_payment))
+	return amount
+
+
+def ensure_may_close(opening) -> None:
+	"""Closing a shift needs the ``close_shift`` right on that shift's own POS Profile, as a user of it.
+
+	Upstream 86425a7: a supervisor of one till cannot close another till's shift
+	(MuleCity-0bsc mc63).
+	"""
+	if not user_may_use_profile(opening.pos_profile) or not can_close_shift(pos_profile=opening.pos_profile):
+		frappe.throw(_("Only a Supervisor can close a shift."), frappe.PermissionError)
+
 
 def resolve_cash_mode_of_payment(pos_profile: str | None) -> str:
 	"""The mode of payment whose drawer change is physically handed back out of."""
@@ -299,7 +320,9 @@ def _append_balance_details(shift, balance_details: list[dict] | None) -> None:
 			"balance_details",
 			{
 				"mode_of_payment": detail.get("mode_of_payment"),
-				"amount": flt(detail.get("opening_amount") or detail.get("amount", 0)),
+				"amount": counted_amount(
+					detail.get("opening_amount") or detail.get("amount", 0), detail.get("mode_of_payment")
+				),
 			},
 		)
 
@@ -463,12 +486,10 @@ def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
 	- Tax summary per shift
 	- Payment reconciliation with expected vs actual amounts
 	"""
-	if not can_close_shift():
-		frappe.throw(_("Only a Supervisor can close a shift."), frappe.PermissionError)
+	opening = frappe.get_doc("POS Opening Shift", opening_shift)
+	ensure_may_close(opening)
 
 	closing_details = json.loads(closing_details) if isinstance(closing_details, str) else closing_details
-
-	opening = frappe.get_doc("POS Opening Shift", opening_shift)
 	doctype = get_invoice_type()
 
 	invoices = _get_shift_invoices(opening, doctype, CLOSING_INVOICE_FIELDS)
@@ -504,7 +525,7 @@ def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
 
 		for detail in closing_details:
 			mode_of_payment = detail.get("mode_of_payment")
-			closing_amount = flt(detail.get("closing_amount", 0))
+			closing_amount = counted_amount(detail.get("closing_amount", 0), mode_of_payment)
 			server_row = expected_amounts.get(mode_of_payment) or {}
 			expected_amount = flt(server_row.get("amount", 0))
 
@@ -853,7 +874,9 @@ def create_closing_shift(data: str | dict, local_id: str | None = None) -> dict:
 		opening = frappe.get_doc("POS Opening Shift", opening_shift)
 	except frappe.DoesNotExistError:
 		frappe.throw(_("POS Opening Shift {0} not found").format(opening_shift))
+	ensure_may_close(opening)
 
+	# The shift's own till, company and the user who closes it: never the payload's (mc63).
 	closing_shift = frappe.get_doc(
 		{
 			"doctype": "POS Closing Shift",
@@ -861,9 +884,9 @@ def create_closing_shift(data: str | dict, local_id: str | None = None) -> dict:
 			"period_end_date": data.get("period_end_date") or now_datetime(),
 			"posting_date": data.get("posting_date") or nowdate(),
 			"posting_time": data.get("posting_time") or now_datetime().strftime("%H:%M:%S"),
-			"pos_profile": data.get("pos_profile") or opening.pos_profile,
-			"user": data.get("user") or frappe.session.user,
-			"company": data.get("company") or opening.company,
+			"pos_profile": opening.pos_profile,
+			"user": frappe.session.user,
+			"company": opening.company,
 			"pos_opening_shift": opening.name,
 			"grand_total": flt(data.get("grand_total", 0)),
 			"net_total": flt(data.get("net_total", 0)),
@@ -873,15 +896,41 @@ def create_closing_shift(data: str | dict, local_id: str | None = None) -> dict:
 	)
 
 	payment_details = data.get("payment_reconciliation") or data.get("closing_details") or []
+	# The till's own expected figures are never trusted: they are what the count is
+	# reconciled against (upstream 86425a7). Expected is recomputed here as close_shift does.
+	doctype = get_invoice_type()
+	till_payments = get_shift_till_payments(opening.name)
+	expected_amounts = get_shift_expected_amounts(
+		opening, doctype, _get_shift_invoices(opening, doctype, CLOSING_INVOICE_FIELDS), till_payments
+	)
+	opening_amounts = {d.mode_of_payment: flt(d.amount) for d in opening.balance_details}
 	for detail in payment_details:
+		mode_of_payment = detail.get("mode_of_payment")
+		closing_amount = counted_amount(detail.get("closing_amount", 0), mode_of_payment)
+		server_row = expected_amounts.get(mode_of_payment) or {}
+		expected_amount = flt(server_row.get("amount", 0))
 		closing_shift.append(
 			"payment_reconciliation",
 			{
-				"mode_of_payment": detail.get("mode_of_payment"),
-				"opening_amount": flt(detail.get("opening_amount", 0)),
-				"expected_amount": flt(detail.get("expected_amount", 0)),
-				"closing_amount": flt(detail.get("closing_amount", 0)),
-				"difference": flt(detail.get("difference", 0)),
+				"mode_of_payment": mode_of_payment,
+				"currency": server_row.get("currency") or None,
+				"opening_amount": flt(opening_amounts.get(mode_of_payment, 0)),
+				"expected_amount": expected_amount,
+				"closing_amount": closing_amount,
+				"difference": closing_amount - expected_amount,
+			},
+		)
+
+	# The Payment Entries counted in the expected amounts, as close_shift lists them.
+	for payment in till_payments:
+		closing_shift.append(
+			"pos_payments",
+			{
+				"payment_entry": payment["name"],
+				"mode_of_payment": payment["mode_of_payment"],
+				"paid_amount": payment["amount"],
+				"posting_date": payment["posting_date"],
+				"customer": payment["party"],
 			},
 		)
 

@@ -23,10 +23,16 @@ from xpos.api.utilities import can_settle_outstanding
 
 
 @frappe.whitelist()
-def get_available_credit(customer: str, company: str) -> list[dict]:
-	"""Return all available credit (outstanding returns + unallocated advances) for a customer."""
-	if not customer or not company:
+def get_available_credit(customer: str, company: str | None = None, pos_profile: str | None = None) -> list[dict]:
+	"""Return all available credit (outstanding returns + unallocated advances) for a customer.
+
+	Only for a customer the till's POS Profile may see, in that profile's company (mc63).
+	"""
+	from xpos.api.customers import customer_in_profile
+
+	if not customer:
 		return []
+	company = customer_in_profile(customer, company, pos_profile)
 
 	credits = []
 

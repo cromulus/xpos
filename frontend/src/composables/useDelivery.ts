@@ -21,6 +21,7 @@ import {
 	cacheCustomerAddress,
 	cachedAddress,
 	queueAddress,
+	tillProfile,
 	type AddedAddress,
 	type AddressForm,
 } from "@/services/addressQueue";
@@ -137,7 +138,7 @@ export async function addDeliveryAddress(
 			const typed = form.miles != null && form.miles > 0;
 			const added = await call<AddedAddress>(
 				ADD_ADDRESS_METHOD,
-				addAddressArgs(customer, form, typed ? { miles_source: "manual" } : {}),
+				addAddressArgs(customer, form, { ...(typed ? { miles_source: "manual" } : {}), pos_profile: tillProfile() }),
 			);
 			await cacheCustomerAddress(customer, cachedAddress(added)).catch(() => undefined);
 			return added;
@@ -165,7 +166,14 @@ export async function addDeliveryAddress(
 		longitude: form.longitude ?? null,
 		geolocation_pending: form.latitude == null,
 	};
-	await queueAddress({ ...form, miles, local_id: local.name, customer, queued_at: new Date().toISOString() });
+	await queueAddress({
+		...form,
+		miles,
+		local_id: local.name,
+		customer,
+		queued_at: new Date().toISOString(),
+		pos_profile: tillProfile(),
+	});
 	await cacheCustomerAddress(customer, cachedAddress(local)).catch(() => undefined);
 	return { ...local, queued: true };
 }

@@ -320,7 +320,11 @@ def redeeming_customer_credit(
 
 
 @frappe.whitelist()
-def get_available_credit(customer: str, company: str) -> list[dict]:
+def get_available_credit(customer: str, company: str | None = None, pos_profile: str | None = None) -> list[dict]:
+	"""Credit a customer may spend: only through the till's POS Profile, in its company (mc63)."""
+	from xpos.api.customers import customer_in_profile
+
+	company = customer_in_profile(customer, company, pos_profile)
 	total_credit = []
 
 	outstanding_invoices = frappe.get_all(

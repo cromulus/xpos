@@ -100,6 +100,8 @@ describe("addresses added offline sync before the sales that ship there", () => 
 		expect(call.mock.calls[0][1]).toEqual({
 			customer: "MC-CUST-4112", address_line1: "88 New Ground Rd", address_line2: null, city: "Coats", state: "NC",
 			pincode: "27521", title: null, delivery_miles: 42, miles_source: "manual_offline", local_id: "LOCAL-ADDR-farm",
+			// The till's POS Profile: the site checks the customer through it (mc63).
+			pos_profile: "Mule City Retail",
 		});
 		const posted = JSON.parse(call.mock.calls[1][1].data);
 		expect(posted.shipping_address_name).toBe("Albert Adkins-Shipping");
@@ -107,6 +109,14 @@ describe("addresses added offline sync before the sales that ship there", () => 
 		expect(posted.xpos_delivery.address).toBe("Albert Adkins-Shipping");
 		expect(db.deleted).toEqual([1]);
 		expect(await queuedAddresses()).toEqual([]);
+	});
+
+	it("an address queued on one till's profile is made through that profile (mc63)", async () => {
+		db.rows = [];
+		await queueAddress({ ...farm, pos_profile: "Mule City Feed Room" });
+		call.mockResolvedValue({ name: "Albert Adkins-Shipping" });
+		await useOfflineStore().syncPendingInvoices();
+		expect(call.mock.calls[0][1].pos_profile).toBe("Mule City Feed Room");
 	});
 
 	it("an address added offline with no sale is still made at sync", async () => {

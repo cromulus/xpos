@@ -36,6 +36,11 @@ from xpos.x_pos.api.payments import redeeming_customer_credit
 from xpos.x_pos.api.utilities import ensure_child_doctype, set_batch_nos_for_bundles
 
 _coupon_row_fields = ("coupon", "coupon_code", "type", "pos_offer", "applied", "customer")
+
+#: Set by the server, never by the till's payload (mc63, MuleCity-0bsc).
+_SERVER_INVOICE_FIELDS = ("owner", "creation", "modified_by", "docstatus")
+#: What scopes an invoice to a till: a saved one keeps its own (mc63).
+_INVOICE_SCOPE_FIELDS = ("pos_profile", "company")
 _offer_row_fields = ("offer_name", "offer", "apply_on", "offer_applied", "coupon_based")
 
 
@@ -181,6 +186,90 @@ def _sanitize_delivery_dates(payload: dict):
 			item["delivery_date"] = _safe_date_string(item.get("delivery_date"))
 
 
+def _check_invoice_shift(shift: str, pos_profile: str) -> None:
+	"""An invoice may join an opening shift of its own till that the caller may use."""
+	from xpos.api.shifts import ensure_shift_access
+
+	opening = frappe.db.get_value("POS Opening Shift", shift, ["name", "pos_profile", "user"], as_dict=True)
+	if not opening or opening.pos_profile != pos_profile:
+		frappe.throw(
+			_("Opening shift {0} is not a shift of POS Profile {1}.").format(shift, pos_profile),
+			frappe.PermissionError,
+		)
+	ensure_shift_access(opening)
+
+
+def _check_invoice_customer(customer: str | None, pos_profile: str) -> None:
+	"""A customer the till's POS Profile may sell to; an unknown name is left to the create-customer step."""
+	if customer and frappe.db.exists("Customer", customer):
+		from xpos.api.customers import require_customer_access
+
+		require_customer_access(customer, pos_profile=pos_profile)
+
+
+def _guard_new_invoice(data: dict):
+	"""Scope a new invoice to the caller's POS Profile and its company (mc63).
+
+	Returns the profile. The client's company must be the profile's; the
+	customer and the opening shift must be ones the profile may use.
+	"""
+	for field in _SERVER_INVOICE_FIELDS:
+		data.pop(field, None)
+	pos = resolve_pos_profile(data.get("pos_profile"))
+	if data.get("company") and data["company"] != pos.company:
+		frappe.throw(
+			_("POS Profile {0} sells for {1}, not {2}.").format(pos.name, pos.company, data["company"]),
+			frappe.PermissionError,
+		)
+	data["pos_profile"] = pos.name
+	data["company"] = pos.company
+	_check_invoice_customer(data.get("customer"), pos.name)
+	if data.get("pos_opening_shift"):
+		_check_invoice_shift(data["pos_opening_shift"], pos.name)
+	return pos
+
+
+def _guard_saved_invoice(invoice_doc, data: dict) -> None:
+	"""Keep a saved invoice on its own till before the client's data is applied (mc63, MuleCity-0bsc).
+
+	``get_pos_invoice`` let the caller write this invoice because of its stored
+	POS Profile and company; the payload may not move it to another profile or
+	company, nor set its owner or docstatus. A new opening shift (a draft resumed
+	on the next shift) must be one of the same till the caller may use, and a new
+	customer one the profile may sell to.
+	"""
+	for field in _SERVER_INVOICE_FIELDS:
+		data.pop(field, None)
+	profile = invoice_doc.get("pos_profile")
+	if not profile:
+		# A draft saved without one (before mc63) takes the caller's, as a new invoice does.
+		pos = resolve_pos_profile(data.get("pos_profile"))
+		profile = invoice_doc.pos_profile = pos.name
+		if not invoice_doc.get("company"):
+			invoice_doc.company = pos.company
+		data.pop("pos_profile", None)
+		if invoice_doc.company != pos.company:
+			frappe.throw(
+				_("POS Profile {0} sells for {1}, not {2}.").format(pos.name, pos.company, invoice_doc.company),
+				frappe.PermissionError,
+			)
+	for field in _INVOICE_SCOPE_FIELDS:
+		sent = data.pop(field, None)
+		if sent and sent != invoice_doc.get(field):
+			frappe.throw(
+				_("Invoice {0} belongs to {1} {2}; it cannot be moved to {3}.").format(
+					invoice_doc.name, _(frappe.unscrub(field)), invoice_doc.get(field), sent
+				),
+				frappe.PermissionError,
+			)
+	shift = data.get("pos_opening_shift")
+	if shift and shift != invoice_doc.get("pos_opening_shift"):
+		_check_invoice_shift(shift, profile)
+	customer = data.get("customer")
+	if customer and customer != invoice_doc.get("customer"):
+		_check_invoice_customer(customer, profile)
+
+
 @frappe.whitelist()
 def update_invoice(data: str) -> dict:
 	currency_cache = {}
@@ -197,19 +286,20 @@ def update_invoice(data: str) -> dict:
 	offers_detail = data.pop("offers_detail", None) or []
 	data.pop("offers", None)
 
-	pos_profile = data.get("pos_profile")
 	doctype = get_invoice_type()
 
 	data["doctype"] = doctype
 
-	return_validity_enabled, default_validity_days = _get_return_validity_settings(pos_profile)
-
 	if data.get("name"):
 		invoice_doc = get_pos_invoice(doctype, data.get("name"), "write")
+		_guard_saved_invoice(invoice_doc, data)
+		pos_profile = invoice_doc.pos_profile
 		invoice_doc.update(data)
 	else:
-		resolve_pos_profile(pos_profile)
+		pos_profile = _guard_new_invoice(data).name
 		invoice_doc = frappe.get_doc(data)
+
+	return_validity_enabled, default_validity_days = _get_return_validity_settings(pos_profile)
 
 	# Populate coupons child table from frontend detail rows
 	_set_child_table_from_detail(invoice_doc, "coupons", coupons_detail, _coupon_row_fields)
@@ -428,6 +518,7 @@ def submit_invoice(invoice: str, data: str | dict, submit_in_background: bool = 
 		created = update_invoice(json.dumps(invoice))
 		invoice_name = created.get("name")
 		invoice_doc = frappe.get_doc(doctype, invoice_name)
+		pos_profile = invoice_doc.pos_profile
 	else:
 		if "modified" in invoice:
 			del invoice["modified"]
@@ -438,6 +529,8 @@ def submit_invoice(invoice: str, data: str | dict, submit_in_background: bool = 
 		if invoice_doc.docstatus == 2:
 			frappe.throw(_("Invoice {0} has been cancelled and cannot be submitted.").format(invoice_name))
 
+		_guard_saved_invoice(invoice_doc, invoice)
+		pos_profile = invoice_doc.pos_profile
 		invoice_doc.update(invoice)
 
 		# Populate coupons/offers child tables

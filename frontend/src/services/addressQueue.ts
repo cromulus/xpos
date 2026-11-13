@@ -20,6 +20,7 @@
 import { call } from "@/services/api";
 import { addSyncId, getCustomer, getServerName, getSyncMeta, setSyncMeta, upsertCustomers } from "@/services/dbBridge";
 import { TYPED_OFFLINE, type CustomerDelivery, type DeliveryAddress, type DeliveryQuote } from "@/services/delivery";
+import { usePosStore } from "@/stores/posStore";
 import { isNetworkError } from "@/utils";
 
 const QUEUE_KEY = "pending_delivery_addresses";
@@ -45,6 +46,8 @@ export interface QueuedAddress extends AddressForm {
 	local_id: string;
 	customer: string;
 	queued_at: string;
+	/** The till's POS Profile when it was queued: the site checks the customer through it (mc63). */
+	pos_profile?: string;
 	/** The server refused it (not a network failure): kept for review, not retried. */
 	refused?: string;
 }
@@ -68,6 +71,15 @@ export interface AddressQueueDeps {
 	isNetworkError(error: unknown): boolean;
 	/** The site made it: swap the local entry on the cached customer row for the real one. */
 	replaced?(queued: QueuedAddress, added: AddedAddress): Promise<void>;
+}
+
+/** The till's POS Profile, which decides whose addresses it may add (mc63); none outside a till. */
+export function tillProfile(): string | undefined {
+	try {
+		return usePosStore().profileName || undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /** The add, as XPOS's one API surface takes it. */
@@ -103,7 +115,12 @@ export const defaultAddressQueueDeps: AddressQueueDeps = {
 	add(queued) {
 		return call<AddedAddress>(
 			ADD_ADDRESS_METHOD,
-			addAddressArgs(queued.customer, queued, { miles_source: TYPED_OFFLINE, local_id: queued.local_id }),
+			addAddressArgs(queued.customer, queued, {
+				miles_source: TYPED_OFFLINE,
+				local_id: queued.local_id,
+				// Queued before mc63: the till's profile now (a till keeps one profile).
+				pos_profile: queued.pos_profile || tillProfile(),
+			}),
 		);
 	},
 	async remember(localId, serverName) {

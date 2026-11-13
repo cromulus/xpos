@@ -127,6 +127,21 @@ def require_customer_access(customer: str, ptype: str = "read", pos_profile: str
 	return pos
 
 
+def profile_company(pos, company: str | None = None) -> str:
+	"""The POS Profile's company; a different one asked for by the client is refused (mc63)."""
+	if company and company != pos.company:
+		frappe.throw(
+			_("POS Profile {0} sells for {1}, not {2}.").format(pos.name, pos.company, company),
+			frappe.PermissionError,
+		)
+	return pos.company
+
+
+def customer_in_profile(customer: str, company: str | None = None, pos_profile: str | None = None) -> str:
+	"""Check the customer through the till's POS Profile and return the profile's company (mc63)."""
+	return profile_company(require_customer_access(customer, pos_profile=pos_profile), company)
+
+
 @frappe.whitelist()
 def get_customers(
 	search_term: str = "", limit: int = 20, pos_profile: str = None, preload: int = 0, with_metadata: int = 0
@@ -885,7 +900,18 @@ def make_address(args: str | dict):
 	# the fork checks what it may read: the profile's groups, the walk-in and the
 	# clerk's User Permissions (MuleCity-0bsc). The address itself is a new
 	# record, not a change to the customer.
+	#
+	# Read access lets a clerk add an address, not make it the customer's main or
+	# shipping one: that changes the customer, so it needs Customer write. A
+	# walk-in account gets no addresses, as add_delivery_address (mc63).
+	if customer in walk_in_customers():
+		frappe.throw(
+			_("Addresses need a named customer, not {0}. Choose the customer first.").format(customer),
+			frappe.ValidationError,
+		)
 	require_customer_access(customer, "read", args.get("pos_profile"))
+	if not frappe.has_permission("Customer", "write", doc=customer):
+		args = {**args, "is_primary_address": 0, "is_shipping_address": 0}
 	return _insert_customer_address(customer, args)
 
 
@@ -972,6 +998,7 @@ def add_delivery_address(
 	make_primary_shipping: int = 0,
 	latitude: float | None = None,
 	longitude: float | None = None,
+	pos_profile: str | None = None,
 ):
 	"""Add a delivery address for ``customer`` at the till (Mule City, MuleCity-qajl).
 
@@ -983,6 +1010,9 @@ def add_delivery_address(
 	A walk-in or unknown customer gets none (Bill 2026-10-01 22:52).
 	``latitude``/``longitude``: the point of a typeahead pick (address_resolve),
 	passed on only when given (MuleCity-p644).
+	``pos_profile``: the till's profile, whose customer groups decide whose
+	addresses it may add (mc63); without it, the user's default profile.
+	``make_primary_shipping`` needs Customer write, as make_address's flags.
 	"""
 	add = _last_hook(ADD_ADDRESS_HOOK)
 	if not add:
@@ -993,7 +1023,9 @@ def add_delivery_address(
 			frappe.ValidationError,
 		)
 	# Inside the till's POS Profile and the clerk's User Permissions, as make_address.
-	require_customer_access(customer)
+	require_customer_access(customer, "read", pos_profile)
+	if cint(make_primary_shipping) and not frappe.has_permission("Customer", "write", doc=customer):
+		make_primary_shipping = 0
 	return add(
 		customer=customer,
 		address_line1=address_line1,
@@ -1049,15 +1081,17 @@ def address_resolve(place_id: str, session_token: str | None = None) -> dict:
 
 
 @frappe.whitelist()
-def get_customer_credit(customer: str, company: str, pos_profile: str | None = None):
+def get_customer_credit(customer: str, company: str | None = None, pos_profile: str | None = None):
 	"""
 	Return all available credit (outstanding returns + unallocated advances) for a customer.
 
-	Only for a customer the till's POS Profile may see, as get_customer_info.
+	Only for a customer the till's POS Profile may see, as get_customer_info, and
+	only in that profile's company: ``company`` may be left out, and another
+	company is refused (mc63).
 	"""
-	if not customer or not company:
+	if not customer:
 		return []
-	require_customer_access(customer, pos_profile=pos_profile)
+	company = customer_in_profile(customer, company, pos_profile)
 
 	credits = []
 

@@ -44,6 +44,29 @@ def _ensure_customer_fields(data):
 	data.setdefault("quotation_to", "Customer")
 
 
+def _quotation_doc(data: dict, ptype: str):
+	"""The Quotation the payload names, or a new one, once the caller holds ``ptype`` on it (mc63).
+
+	The payload is always a Quotation: before mc63 its ``doctype`` was the
+	client's, so with ``ignore_permissions`` any logged-in user could create any
+	document (MuleCity-0bsc). Saving still skips link and child-table checks, as
+	before, but only after Frappe's own permission on the Quotation.
+	"""
+	data["doctype"] = "Quotation"
+	for field in ("owner", "creation", "modified_by", "docstatus"):
+		data.pop(field, None)
+	name = data.get("name")
+	if name and frappe.db.exists("Quotation", name):
+		doc = frappe.get_doc("Quotation", name)
+		frappe.has_permission("Quotation", ptype, doc=doc, throw=True)
+		doc.update(data)
+		return doc
+	frappe.has_permission("Quotation", "create", throw=True)
+	if ptype != "write":
+		frappe.has_permission("Quotation", ptype, throw=True)
+	return frappe.get_doc(data)
+
+
 @frappe.whitelist()
 def update_quotation(data: str | dict):
 	"""Create or update a Quotation document."""
@@ -51,11 +74,7 @@ def update_quotation(data: str | dict):
 		data = json.loads(data)
 	_map_delivery_dates(data)
 	_ensure_customer_fields(data)
-	if data.get("name") and frappe.db.exists("Quotation", data.get("name")):
-		doc = frappe.get_doc("Quotation", data.get("name"))
-		doc.update(data)
-	else:
-		doc = frappe.get_doc(data)
+	doc = _quotation_doc(data, "write")
 
 	doc.flags.ignore_permissions = True
 	frappe.flags.ignore_account_permission = True
@@ -71,11 +90,7 @@ def submit_quotation(order: str | dict):
 		order = json.loads(order)
 	_map_delivery_dates(order)
 	_ensure_customer_fields(order)
-	if order.get("name") and frappe.db.exists("Quotation", order.get("name")):
-		doc = frappe.get_doc("Quotation", order.get("name"))
-		doc.update(order)
-	else:
-		doc = frappe.get_doc(order)
+	doc = _quotation_doc(order, "submit")
 
 	doc.flags.ignore_permissions = True
 	frappe.flags.ignore_account_permission = True
