@@ -265,6 +265,14 @@ class TestCustomerAccessJn61(CustomerCase):
 		used=0,
 	)
 
+	def setUp(self):
+		super().setUp()
+		# nowdate reads System Settings through frappe.db.get_value, stubbed here.
+		for target in ("xpos.api.offers.nowdate", "xpos.x_pos.api.offers.nowdate"):
+			patcher = patch(target, return_value="2026-11-13")
+			patcher.start()
+			self.addCleanup(patcher.stop)
+
 	def coupon_lookups(self):
 		"""Answer POS Coupon lookups with COUPON; record the filters they used."""
 		seen = []
