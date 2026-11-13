@@ -73,7 +73,8 @@ class TestThePickedPointIsSaved(HookCase):
 	def test_the_picked_point_reaches_the_sites_add_address(self):
 		added = []
 		self.with_hooks(xpos_add_delivery_address=lambda **args: added.append(args) or {"name": "ADDR-NEW"})
-		with patch.object(customers, "walk_in_customers", return_value=["Walk-In"]):
+		with patch.object(customers, "walk_in_customers", return_value=["Walk-In"]), \
+				patch.object(customers, "require_customer_access"):
 			customers.add_delivery_address("Greenview", **ADDRESS, county="Harnett County",
 				latitude="35.4123", longitude="-78.6712")
 		self.assertEqual(added[0]["latitude"], 35.4123)
@@ -86,7 +87,8 @@ class TestThePickedPointIsSaved(HookCase):
 			return {"name": "ADDR-NEW"}
 
 		self.with_hooks(xpos_add_delivery_address=add)
-		with patch.object(customers, "walk_in_customers", return_value=["Walk-In"]):
+		with patch.object(customers, "walk_in_customers", return_value=["Walk-In"]), \
+				patch.object(customers, "require_customer_access"):
 			self.assertEqual(customers.add_delivery_address("Greenview", **ADDRESS), {"name": "ADDR-NEW"})
 			self.assertEqual(customers.add_delivery_address("Greenview", **ADDRESS, latitude=None, longitude=None),
 				{"name": "ADDR-NEW"})

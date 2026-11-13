@@ -77,7 +77,9 @@ class TestCreateSalesOrderKeepsTheNote(unittest.TestCase):
 		data = {"pos_profile": "Counter", "customer": "SMITH", "items": [{"item_code": "LAYER", "qty": 1, "rate": 20}]}
 		if notes is not None:
 			data["pos_notes"] = notes
-		with patch("xpos.api.sales_orders.apply_sales_person"):
+		# The profile gate (order_profile, upstream #181) has its own tests in test_sales_orders.
+		with patch("xpos.api.sales_orders.apply_sales_person"), \
+				patch("xpos.api.sales_orders.order_profile", return_value=pos):
 			sales_orders.create_sales_order(json.dumps(data))
 		return order
 

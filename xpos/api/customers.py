@@ -679,7 +679,11 @@ def create_customer(
 	customer.insert(ignore_permissions=True)
 
 	if address_line1 and city:
-		make_address(
+		# The customer was made just above by this call, so the address goes with
+		# it without make_address's Customer write check: the shared counter login
+		# reads customers only, yet adds a new one with its address (MuleCity-0bsc).
+		_insert_customer_address(
+			customer.name,
 			{
 				"customer": customer.name,
 				"address_line1": address_line1,
@@ -878,7 +882,11 @@ def make_address(args: str | dict):
 	if not (args.get("address_line1") or "").strip() or not (args.get("city") or "").strip():
 		frappe.throw(_("Street address and city are required to save an address"))
 	require_customer_access(customer, "write", args.get("pos_profile"))
+	return _insert_customer_address(customer, args)
 
+
+def _insert_customer_address(customer: str, args: dict) -> dict:
+	"""Insert an Address linked to ``customer``; callers check access first."""
 	address = frappe.get_doc(
 		{
 			"doctype": "Address",
