@@ -231,7 +231,8 @@ class TestAddADeliveryAddressAtTheTill(HookCase):
 				patch.object(customers, "require_customer_access") as access:
 			result = customers.add_delivery_address("Greenview", **self.ADDRESS, delivery_miles=17.4,
 				miles_source="manual_offline", local_id="LOCAL-ADDR-1")
-		access.assert_called_once_with("Greenview")
+		# No till profile sent: the user's default (mc63 passes the till's when it is).
+		access.assert_called_once_with("Greenview", "read", None)
 		self.assertEqual(result, {"name": "ADDR-NEW", "miles": 18.2})
 		self.assertEqual(added, [{"customer": "Greenview", **self.ADDRESS, "address_line2": None, "county": None,
 			"country": "United States", "title": None, "delivery_miles": 17.4, "miles_source": "manual_offline",

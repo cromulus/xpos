@@ -520,28 +520,18 @@ def check_open_shift(user: str | None = None):
 	return data
 
 
-@frappe.whitelist()
-def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
-	"""Create a POS Closing Shift and close the opening shift.
+def build_closing_shift(opening, counted: list[dict] | None, every_mode: bool, local_id: str | None = None):
+	"""An unsaved POS Closing Shift for ``opening``, built on the server (mc63, MuleCity-0bsc).
 
-	- Aggregates invoices by POS opening shift reference
-	- Tax summary per shift
-	- Payment reconciliation with expected vs actual amounts
+	The one builder for the till's Close Shift, the offline sync and the desk
+	endpoint. Everything is the server's: the shift's profile and company, the
+	caller as user, now as the dates, totals, taxes and transactions from the
+	shift's invoices, Payment Entries from the till, and the opening and expected
+	amounts. From ``counted`` only each mode's ``closing_amount`` is taken
+	(``reconciliation_rows``; ``every_mode``: see there). Returns (doc, invoices).
 	"""
-	opening = frappe.get_doc("POS Opening Shift", opening_shift)
-	ensure_may_close(opening)
-
-	closing_details = json.loads(closing_details) if isinstance(closing_details, str) else closing_details
 	doctype = get_invoice_type()
-
 	invoices = _get_shift_invoices(opening, doctype, CLOSING_INVOICE_FIELDS)
-
-	grand_total = sum(flt(row_value(inv, "grand_total", 0)) for inv in invoices)
-	net_total = sum(flt(row_value(inv, "net_total", 0)) for inv in invoices)
-	total_qty = len(invoices)
-
-	returns_count = sum(1 for inv in invoices if inv.get("is_return"))
-
 	closing_shift = frappe.get_doc(
 		{
 			"doctype": "POS Closing Shift",
@@ -553,17 +543,18 @@ def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
 			"user": frappe.session.user,
 			"company": opening.company,
 			"pos_opening_shift": opening.name,
-			"grand_total": grand_total,
-			"net_total": net_total,
-			"total_quantity": total_qty,
+			"grand_total": sum(flt(row_value(inv, "grand_total", 0)) for inv in invoices),
+			"net_total": sum(flt(row_value(inv, "net_total", 0)) for inv in invoices),
+			"total_quantity": len(invoices),
+			**({"xpos_local_id": local_id} if local_id else {}),
 		}
 	)
 
 	till_payments = get_shift_till_payments(opening.name)
 
-	if closing_details:
+	if counted or every_mode:
 		expected_amounts = get_shift_expected_amounts(opening, doctype, invoices, till_payments)
-		for row in reconciliation_rows(opening, expected_amounts, closing_details, every_mode=False):
+		for row in reconciliation_rows(opening, expected_amounts, counted, every_mode=every_mode):
 			closing_shift.append("payment_reconciliation", row)
 
 	tax_summary = _get_shift_tax_summary(invoices, doctype)
@@ -582,13 +573,15 @@ def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
 
 	invoice_link_field = "pos_invoice" if doctype == "POS Invoice" else "sales_invoice"
 	for inv in invoices:
-		row = {
-			invoice_link_field: row_value(inv, "name"),
-			"posting_date": row_value(inv, "posting_date"),
-			"customer": row_value(inv, "customer"),
-			"grand_total": row_value(inv, "grand_total", 0),
-		}
-		closing_shift.append("pos_transactions", row)
+		closing_shift.append(
+			"pos_transactions",
+			{
+				invoice_link_field: row_value(inv, "name"),
+				"posting_date": row_value(inv, "posting_date"),
+				"customer": row_value(inv, "customer"),
+				"grand_total": row_value(inv, "grand_total", 0),
+			},
+		)
 
 	# The Payment Entries counted in the expected amounts, as the desk closing lists them.
 	for payment in till_payments:
@@ -602,6 +595,27 @@ def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
 				"customer": payment["party"],
 			},
 		)
+
+	return closing_shift, invoices
+
+
+@frappe.whitelist()
+def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
+	"""Create a POS Closing Shift and close the opening shift.
+
+	- Aggregates invoices by POS opening shift reference
+	- Tax summary per shift
+	- Payment reconciliation with expected vs actual amounts
+	"""
+	opening = frappe.get_doc("POS Opening Shift", opening_shift)
+	ensure_may_close(opening)
+
+	closing_details = json.loads(closing_details) if isinstance(closing_details, str) else closing_details
+	closing_shift, invoices = build_closing_shift(opening, closing_details, every_mode=False)
+	grand_total = sum(flt(row_value(inv, "grand_total", 0)) for inv in invoices)
+	net_total = sum(flt(row_value(inv, "net_total", 0)) for inv in invoices)
+	total_qty = len(invoices)
+	returns_count = sum(1 for inv in invoices if inv.get("is_return"))
 
 	closing_shift.insert(ignore_permissions=True)
 	closing_shift.submit()
@@ -901,47 +915,10 @@ def create_closing_shift(data: str | dict, local_id: str | None = None) -> dict:
 		frappe.throw(_("POS Opening Shift {0} not found").format(opening_shift))
 	ensure_may_close(opening)
 
-	# Only the till's counts are taken: the shift's own till, company, totals and dates,
-	# the closing user and the expected cash are the server's (mc63; upstream 86425a7
-	# never trusts the till's expected figures). Totals as close_shift sums them.
-	doctype = get_invoice_type()
-	invoices = _get_shift_invoices(opening, doctype, CLOSING_INVOICE_FIELDS)
-	till_payments = get_shift_till_payments(opening.name)
-	closing_shift = frappe.get_doc(
-		{
-			"doctype": "POS Closing Shift",
-			"period_start_date": opening.period_start_date,
-			"period_end_date": now_datetime(),
-			"posting_date": nowdate(),
-			"posting_time": now_datetime().strftime("%H:%M:%S"),
-			"pos_profile": opening.pos_profile,
-			"user": frappe.session.user,
-			"company": opening.company,
-			"pos_opening_shift": opening.name,
-			"grand_total": sum(flt(row_value(inv, "grand_total", 0)) for inv in invoices),
-			"net_total": sum(flt(row_value(inv, "net_total", 0)) for inv in invoices),
-			"total_quantity": len(invoices),
-			"xpos_local_id": local_id,
-		}
-	)
-
+	# Only the till's counts are taken (build_closing_shift); upstream 86425a7 never
+	# trusts the till's expected figures. Every mode is reconciled, an uncounted one at 0.
 	counted = data.get("payment_reconciliation") or data.get("closing_details") or []
-	expected_amounts = get_shift_expected_amounts(opening, doctype, invoices, till_payments)
-	for row in reconciliation_rows(opening, expected_amounts, counted, every_mode=True):
-		closing_shift.append("payment_reconciliation", row)
-
-	# The Payment Entries counted in the expected amounts, as close_shift lists them.
-	for payment in till_payments:
-		closing_shift.append(
-			"pos_payments",
-			{
-				"payment_entry": payment["name"],
-				"mode_of_payment": payment["mode_of_payment"],
-				"paid_amount": payment["amount"],
-				"posting_date": payment["posting_date"],
-				"customer": payment["party"],
-			},
-		)
+	closing_shift, _invoices = build_closing_shift(opening, counted, every_mode=True, local_id=local_id)
 
 	closing_shift.insert(ignore_permissions=True)
 	closing_shift.submit()

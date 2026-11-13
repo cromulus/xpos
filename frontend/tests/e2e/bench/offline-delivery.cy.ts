@@ -121,11 +121,11 @@ describe("delivery while the store's internet is down", () => {
 	 * Bill 2026-10-01 (MuleCity-qajl.3, qajl.4): the internet is down and a customer
 	 * with three places on file wants a delivery to the back shed, which has no
 	 * miles yet. The till cached the addresses when it opened: the picker opens on
-	 * their primary shipping address (the yard), Leslie searches "back", picks the
+	 * their primary address (the yard), Leslie searches "back", picks the
 	 * shed, types its miles (priced by the cached policy) and the day. The synced
 	 * sale ships to the shed and keeps the day and the typed miles, flagged manual.
 	 */
-	it("offline, the picker opens on the primary shipping address; a searched address with no miles is priced from typed miles and the sale keeps them", function () {
+	it("offline, the picker opens on the primary address; a searched address with no miles is priced from typed miles and the sale keeps them", function () {
 		cy.benchCall("xpos.api.delivery.get_delivery_policy").then((policy: DeliveryPolicy | null) => {
 			if (!policy?.item) this.skip();
 			const stamp = Date.now();
@@ -137,15 +137,16 @@ describe("delivery while the store's internet is down", () => {
 						customer_name: name,
 						customer_type: "Individual",
 						...(row?.customer_group ? { customer_group: row.customer_group } : {}),
-						address_line1: "4410 Old Fairground Rd",
-						city: "Dunn",
+						// The new customer's own address is its primary one: the yard.
+						address_line1: "77 Feed Lot Ln",
+						city: "Benson",
 					}),
 				)
 				.then((created: { name: string }) => {
-					// The counter's own address calls (Edit Customer): the yard is the primary shipping address.
+					// The counter's own address calls (Edit Customer). Since mc63 a login that only
+					// reads customers cannot make one primary or shipping, and the till never asks to.
 					cy.benchCall("xpos.api.customers.make_address", { args: JSON.stringify({ customer: created.name,
-						address_title: `Yard ${stamp}`, address_line1: "77 Feed Lot Ln", city: "Benson",
-						is_primary_address: 1, is_shipping_address: 1 }) });
+						address_title: `Fairground ${stamp}`, address_line1: "4410 Old Fairground Rd", city: "Dunn" }) });
 					cy.benchCall("xpos.api.customers.make_address", { args: JSON.stringify({ customer: created.name,
 						address_title: `Shed ${stamp}`, address_line1: "5 Back Rd", city: "Coats" }) });
 					cy.benchCall("frappe.client.get_value", { doctype: "Item", filters: item(), fieldname: "weight_per_unit" }).then(

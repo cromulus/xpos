@@ -40,11 +40,12 @@ Customers (`api/customers.py`):
 
 Shift closing:
 - Desk endpoints, from upstream `86425a7` / `882e1a8`: `submit_closing_shift`
-  needs submit on POS Closing Shift and read on the opening shift, takes only a
-  new closing (a saved one is refused), always saves a POS Closing Shift (it
-  saved whatever doctype the payload named), on the shift's own profile and
-  company, with the server's opening and expected amounts, and without
-  `ignore_permissions`; `make_closing_shift_from_opening`
+  needs submit on POS Closing Shift, read on the opening shift and the right to
+  close it (`ensure_may_close`), takes only a new closing (a saved one is
+  refused) and builds it on the server (`build_closing_shift`, below): from the
+  payload only the opening shift and each mode's counted `closing_amount` (it
+  saved the whole payload, whatever doctype it named); saved without
+  `ignore_permissions`. No XPOS screen calls it. `make_closing_shift_from_opening`
   needs create plus read on the opening shift; `get_pos_invoices` and
   `get_payments_entries` (`ensure_opening_shift_read`; `get_pos_invoices` also
   submits printed drafts), `get_closing_shift_overview` and
@@ -53,13 +54,15 @@ Shift closing:
   them.
 - `close_shift` and the offline sync's `create_closing_shift`
   (`ensure_may_close`): `close_shift` on the shift's own profile, as a user of it.
-  `create_closing_shift` takes only the till's counts: expected cash is
-  recomputed (as `close_shift` does, Payment Entries included and listed), the
-  totals are summed from the shift's invoices, the dates are the sync's, the
-  profile and company are the shift's and the user is the caller. Its rows are
-  every mode the shift opened with or expects (`reconciliation_rows`): one the
-  till did not count counts as 0. A mode counted twice is refused (also in
-  `close_shift`, which otherwise keeps the modes the till sends). Counts
+  One server-side builder, `build_closing_shift`, for the till's Close Shift, the
+  sync and the desk endpoint: the shift's profile and company, the caller as
+  user, now as the dates, totals, taxes and transactions from the shift's
+  invoices, Payment Entries from the till, opening and expected amounts
+  recomputed. From the payload only each mode's counted `closing_amount`. The
+  sync and the desk endpoint reconcile every mode the shift opened with or
+  expects (`reconciliation_rows`): one not counted counts as 0. The till's Close
+  Shift keeps the modes it sends (as before). A mode counted twice is refused.
+  The synced closing now also lists taxes and transactions, as `close_shift`'s. Counts
   (opening float, closing count) are range-checked (`counted_amount`, `bb17c4f`).
 
 Legacy quotations (`x_pos/api/quotations.py`): `update_quotation` /
@@ -72,6 +75,10 @@ call them.
 Tests: `test_scope_guards` (new: invoice scope, shift closing, desk closing,
 quotations) and `TestCustomerAccessMc63` in `test_access_guards`, stubbed so they
 run on a Mule slot; `frontend/tests/addressQueue.spec.ts`. All fail on mc62.
+The offline e2e `offline-delivery.cy.ts` made its yard address primary shipping
+through the counter login's `make_address`, which mc63 no longer allows a
+Customer reader; the yard is now the new customer's own (primary) address. The
+till's Edit Customer never sends those flags.
 
 Still open, not in mc63 (also upstream): `offers.get_pos_coupon` /
 `get_active_gift_coupons` and both `get_last_invoice_rates` take a customer and

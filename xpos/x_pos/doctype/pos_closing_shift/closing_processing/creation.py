@@ -196,21 +196,17 @@ def make_closing_shift_from_opening(opening_shift: str | dict):
 
 @frappe.whitelist()
 def submit_closing_shift(closing_shift: dict):
-	"""Save and submit a new POS Closing Shift built on the desk (mc63, MuleCity-0bsc).
+	"""Save and submit a new POS Closing Shift for an opening shift (mc63, MuleCity-0bsc).
 
 	Only a new one: a saved closing is submitted from its own form. The caller
-	needs submit on POS Closing Shift and read on the opening shift. The shift's
-	POS Profile and company, and every payment row's opening and expected amount,
-	are the server's (``shifts.reconciliation_rows``: every mode the shift opened
-	with or expects; one not counted counts as 0); only the counts are the form's.
-	Saved with Frappe's own permission checks (no ``ignore_permissions``).
+	needs submit on POS Closing Shift, read on the opening shift and the right to
+	close it (``ensure_may_close``: close_shift on its own profile, as a user of
+	it). The closing is built on the server (``shifts.build_closing_shift``, as
+	the till's Close Shift and the offline sync); from the payload only the
+	opening shift and each mode's counted ``closing_amount`` are taken. Saved with
+	Frappe's own permission checks (no ``ignore_permissions``).
 	"""
-	from xpos.api.shifts import (
-		CLOSING_INVOICE_FIELDS,
-		_get_shift_invoices,
-		get_shift_expected_amounts,
-		reconciliation_rows,
-	)
+	from xpos.api.shifts import build_closing_shift, ensure_may_close
 
 	frappe.has_permission("POS Closing Shift", "submit", throw=True)
 	if isinstance(closing_shift, str):
@@ -226,21 +222,14 @@ def submit_closing_shift(closing_shift: dict):
 		frappe.throw(_("Opening Shift is required"))
 	frappe.has_permission("POS Opening Shift", "read", doc=opening_name, throw=True)
 	opening = frappe.get_doc("POS Opening Shift", opening_name)
+	ensure_may_close(opening)
 
-	# Always a POS Closing Shift: the client's doctype would let it save any document.
-	closing_shift["doctype"] = "POS Closing Shift"
-	for field in ("name", "owner", "creation", "modified", "modified_by", "docstatus", "amended_from"):
-		closing_shift.pop(field, None)
-	closing_shift["pos_profile"] = opening.pos_profile
-	closing_shift["company"] = opening.company
-	doctype = get_invoice_type()
-	expected = get_shift_expected_amounts(
-		opening, doctype, _get_shift_invoices(opening, doctype, CLOSING_INVOICE_FIELDS)
-	)
-	closing_shift["payment_reconciliation"] = reconciliation_rows(
-		opening, expected, closing_shift.get("payment_reconciliation"), every_mode=True
-	)
-	closing_shift_doc = frappe.get_doc(closing_shift)
+	counted = [
+		{"mode_of_payment": row.get("mode_of_payment"), "closing_amount": row.get("closing_amount")}
+		for row in closing_shift.get("payment_reconciliation") or []
+		if isinstance(row, dict)
+	]
+	closing_shift_doc, _invoices = build_closing_shift(opening, counted, every_mode=True)
 	closing_shift_doc.insert()
 	closing_shift_doc.submit()
 	return closing_shift_doc.name

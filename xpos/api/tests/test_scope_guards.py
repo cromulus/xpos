@@ -216,6 +216,7 @@ class TestShiftClosing(unittest.TestCase):
 			("xpos.api.shifts.get_invoice_type", {"return_value": "Sales Invoice"}),
 			("xpos.api.shifts._get_shift_invoices", {"return_value": []}),
 			("xpos.api.shifts.get_shift_till_payments", {"return_value": []}),
+			("xpos.api.shifts._get_shift_tax_summary", {"return_value": []}),
 			(
 				"xpos.api.shifts.get_shift_expected_amounts",
 				{"return_value": {"Cash": {"amount": 400, "currency": "USD"}, "Card": {"amount": 75, "currency": "USD"}}},
@@ -349,37 +350,45 @@ class TestDeskShiftClosing(unittest.TestCase):
 				closing_creation.submit_closing_shift(json.dumps({"doctype": "POS Closing Shift"}))
 		get_doc.assert_not_called()
 
-	def desk_submit(self, payload, exists=False):
+	def desk_submit(self, payload, exists=False, may_close=True):
 		opening = SimpleNamespace(
 			name="POS-OS-1",
 			pos_profile="Mule City Retail",
 			company="Mule City",
+			period_start_date="2026-11-12 07:00:00",
+			user="pos@mulecity.com",
 			balance_details=[SimpleNamespace(mode_of_payment="Cash", amount=100)],
 		)
 		made = MagicMock()
+		appended = []
+		made.append.side_effect = lambda table, row: appended.append((table, row))
+		invoices = [frappe._dict(name="ACC-SINV-1", grand_total=50, net_total=45, customer="Greenview",
+			posting_date="2026-11-12", is_return=0)]
 		with (
 			patch("frappe.db.exists", return_value=exists),
 			patch("frappe.get_doc", side_effect=lambda *a, **k: opening if a and a[0] == "POS Opening Shift" else made) as get_doc,
-			patch(
-				"xpos.x_pos.doctype.pos_closing_shift.closing_processing.creation.get_invoice_type",
-				return_value="Sales Invoice",
-			),
-			patch("xpos.api.shifts._get_shift_invoices", return_value=[]),
+			patch("xpos.api.shifts.user_may_use_profile", return_value=may_close),
+			patch("xpos.api.shifts.can_close_shift", return_value=True),
+			patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice"),
+			patch("xpos.api.shifts._get_shift_invoices", return_value=invoices),
+			patch("xpos.api.shifts._get_shift_tax_summary", return_value=[]),
+			patch("xpos.api.shifts.get_shift_till_payments", return_value=[]),
 			patch(
 				"xpos.api.shifts.get_shift_expected_amounts",
 				return_value={"Cash": {"amount": 400, "currency": "USD"}, "Card": {"amount": 75, "currency": "USD"}},
 			),
 		):
 			closing_creation.submit_closing_shift(json.dumps(payload))
-		return get_doc.call_args.args[0], made
+		return get_doc.call_args.args[0], made, appended
 
 	def test_negative_a_submitted_closing_is_always_a_new_pos_closing_shift(self):
 		self.refuse(("POS Closing Shift", "submit"), ("POS Opening Shift", "read"))
-		doc, made = self.desk_submit(
+		doc, made, _rows = self.desk_submit(
 			{"doctype": "User", "email": "x@example.com", "owner": "Administrator", "pos_opening_shift": "POS-OS-1"}
 		)
 		self.assertEqual(doc["doctype"], "POS Closing Shift")
 		self.assertNotIn("owner", doc)
+		self.assertNotIn("email", doc)
 		made.insert.assert_called_once_with()
 		made.submit.assert_called_once_with()
 
@@ -393,20 +402,42 @@ class TestDeskShiftClosing(unittest.TestCase):
 		with self.assertRaises(frappe.PermissionError):
 			self.desk_submit({"pos_opening_shift": "POS-OS-1"})
 
-	def test_negative_a_desk_closing_cannot_bring_its_own_expected_cash_or_till(self):
+	def test_negative_a_desk_closing_needs_the_right_to_close_that_shift(self):
 		self.refuse(("POS Closing Shift", "submit"), ("POS Opening Shift", "read"))
-		doc, _made = self.desk_submit(
+		with self.assertRaises(frappe.PermissionError):
+			self.desk_submit({"pos_opening_shift": "POS-OS-1"}, may_close=False)
+
+	def test_negative_a_desk_closing_takes_only_the_counts(self):
+		self.refuse(("POS Closing Shift", "submit"), ("POS Opening Shift", "read"))
+		doc, _made, appended = self.desk_submit(
 			{
 				"pos_opening_shift": "POS-OS-1",
 				"pos_profile": "Other Till",
 				"company": "Other Co",
+				"user": "boss@mulecity.com",
+				"grand_total": 99999,
+				"net_total": 99999,
+				"total_quantity": 999,
+				"posting_date": "2020-01-01",
+				"pos_transactions": [{"sales_invoice": "ACC-SINV-FORGED", "grand_total": 99999}],
+				"taxes": [{"account_head": "Forged", "amount": 1}],
 				"payment_reconciliation": [
 					{"mode_of_payment": "Cash", "opening_amount": 999, "expected_amount": 300, "closing_amount": 300},
 				],
 			}
 		)
-		self.assertEqual((doc["pos_profile"], doc["company"]), ("Mule City Retail", "Mule City"))
-		rows = {row["mode_of_payment"]: row for row in doc["payment_reconciliation"]}
+		self.assertEqual(
+			(doc["pos_profile"], doc["company"], doc["user"], doc["grand_total"], doc["net_total"], doc["total_quantity"]),
+			("Mule City Retail", "Mule City", frappe.session.user, 50, 45, 1),
+		)
+		self.assertNotEqual(str(doc["posting_date"]), "2020-01-01")
+		for field in ("pos_transactions", "taxes", "payment_reconciliation"):
+			self.assertNotIn(field, doc)
+		self.assertEqual(
+			[row["sales_invoice"] for table, row in appended if table == "pos_transactions"], ["ACC-SINV-1"]
+		)
+		self.assertEqual([row for table, row in appended if table == "taxes"], [])
+		rows = {row["mode_of_payment"]: row for table, row in appended if table == "payment_reconciliation"}
 		self.assertEqual(
 			(rows["Cash"]["opening_amount"], rows["Cash"]["expected_amount"], rows["Cash"]["difference"]),
 			(100, 400, -100),
