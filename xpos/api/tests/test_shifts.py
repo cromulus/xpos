@@ -612,3 +612,25 @@ class TestShiftAmountCalculations(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestCloseTaxBreakdown(unittest.TestCase):
+	"""A shift with taxed and tax-exempt sales shows each tax account once, with what it collected."""
+
+	ACCOUNT = "Sales Tax Payable - TC"
+
+	@patch("xpos.api.shifts.frappe")
+	def test_a_zero_rate_row_on_the_same_account_is_not_listed(self, mock_frappe):
+		mock_frappe.get_all.return_value = [
+			{"account_head": self.ACCOUNT, "rate": 0.0, "amount": 0.0},
+			{"account_head": self.ACCOUNT, "rate": 6.75, "amount": 0.62},
+		]
+		summary = shifts._get_shift_tax_summary([{"name": "SINV-1"}, {"name": "SINV-2"}])
+		self.assertEqual(summary, [{"account_head": self.ACCOUNT, "rate": 6.75, "amount": 0.62}])
+
+	@patch("xpos.api.shifts.frappe")
+	def test_a_returned_tax_still_shows(self, mock_frappe):
+		"""Only rows totalling nothing go: a shift of returns shows its negative tax."""
+		mock_frappe.get_all.return_value = [{"account_head": self.ACCOUNT, "rate": 6.75, "amount": -0.07}]
+		summary = shifts._get_shift_tax_summary([{"name": "SINV-RET-1"}])
+		self.assertEqual(summary, [{"account_head": self.ACCOUNT, "rate": 6.75, "amount": -0.07}])

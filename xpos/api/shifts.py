@@ -762,7 +762,11 @@ def _get_shift_tax_summary(invoices: list, doctype: str = "Sales Invoice") -> li
 		order_by="account_head",
 	)
 
-	return taxes
+	# A 0% template row (tax exempt, resale) usually posts to the same account as
+	# the taxed sales, so the close listed that account twice, once at 0.00. A
+	# row that totals nothing is not shown; rows of one account at different
+	# nonzero rates stay apart, as ERPNext's closing keeps them.
+	return [tax for tax in taxes if flt(row_value(tax, "amount"), 2)]
 
 
 @frappe.whitelist()
