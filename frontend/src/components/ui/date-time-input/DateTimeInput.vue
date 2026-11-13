@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContentStyled } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { nowDate, nowDatetime } from "@/utils/datetime";
 
 type DateTimeMode = "date" | "datetime-local";
 type OutputFormat = "native" | "frappe";
@@ -98,9 +99,9 @@ function clearValue() {
 
 function setNow() {
 	if (props.mode === "date") {
-		onValueChange(new Date().toISOString().slice(0, 10));
+		onValueChange(nowDate());
 	} else {
-		onValueChange(new Date().toISOString().slice(0, 19));
+		onValueChange(nowDatetime().replace(" ", "T"));
 	}
 	open.value = false;
 }

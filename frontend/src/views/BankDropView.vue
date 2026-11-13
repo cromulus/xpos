@@ -267,6 +267,7 @@
 </template>
 
 <script setup lang="ts">
+import { nowDate } from "@/utils/datetime";
 import { formatLocalDate } from "@/utils/localDate";
 import { computed, ref, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
@@ -731,7 +732,7 @@ async function handleSave() {
 	if (!canSubmit.value) return;
 	isSaving.value = true;
 	try {
-		const postingDate = new Date().toISOString().slice(0, 10);
+		const postingDate = nowDate();
 		if (isElectronMode) {
 			await createBankDrop({
 				to_account: form.value.target_account,
