@@ -27,6 +27,29 @@ from xpos.x_pos.doctype.pos_closing_shift.closing_processing import data as clos
 from xpos.x_pos.doctype.pos_closing_shift.closing_processing import overview as closing_overview
 
 PROFILE = frappe._dict(name="Mule City Retail", company="Mule City")
+_REAL_GET_DOC = frappe.get_doc
+
+
+def fake_get_doc(opening=None, made=None):
+	"""A frappe.get_doc stand-in: the opening shift, ``made`` for a new document, the real thing otherwise.
+
+	Frappe's own lookups (System Settings for now_datetime) must stay real: a
+	mock there is cached in Redis and cannot be pickled.
+	"""
+
+	def get_doc(*args, **kwargs):
+		if args and isinstance(args[0], dict):
+			return made(args[0]) if callable(made) and not isinstance(made, MagicMock) else made
+		if args and args[0] == "POS Opening Shift" and opening is not None:
+			return opening
+		return _REAL_GET_DOC(*args, **kwargs)
+
+	return get_doc
+
+
+def new_doc_payload(get_doc_mock):
+	"""The dict the last new document was built from (frappe.get_doc(dict))."""
+	return [call.args[0] for call in get_doc_mock.call_args_list if call.args and isinstance(call.args[0], dict)][-1]
 
 
 class Applied(Exception):
@@ -164,22 +187,30 @@ class TestSavedInvoiceStaysOnItsTill(InvoiceCase):
 
 class TestNewInvoiceIsScopedToTheProfile(InvoiceCase):
 	def test_negative_a_new_invoice_for_another_company_is_refused(self):
-		with patch("frappe.get_doc") as get_doc:
+		made = []
+		with patch("frappe.get_doc", side_effect=fake_get_doc(made=lambda d: made.append(d) or MagicMock())):
 			with self.assertRaises(frappe.PermissionError):
 				creation.update_invoice(json.dumps({"pos_profile": PROFILE.name, "company": "Other Co"}))
-		get_doc.assert_not_called()
+		self.assertEqual(made, [])
 
 	def test_negative_a_new_invoice_for_a_customer_outside_the_profile_is_refused(self):
-		with patch("frappe.get_doc") as get_doc:
+		made = []
+		with patch("frappe.get_doc", side_effect=fake_get_doc(made=lambda d: made.append(d) or MagicMock())):
 			with self.assertRaises(frappe.PermissionError):
 				creation.update_invoice(json.dumps({"pos_profile": PROFILE.name, "customer": "Insider"}))
-		get_doc.assert_not_called()
+		self.assertEqual(made, [])
 
 	def test_negative_a_new_invoice_cannot_name_its_owner(self):
-		with patch("frappe.get_doc", side_effect=Applied) as get_doc:
+		made_docs = []
+
+		def make(data):
+			made_docs.append(data)
+			raise Applied
+
+		with patch("frappe.get_doc", side_effect=fake_get_doc(made=make)):
 			with self.assertRaises(Applied):
 				creation.update_invoice(json.dumps({"pos_profile": PROFILE.name, "owner": "boss@mulecity.com"}))
-		made = get_doc.call_args.args[0]
+		(made,) = made_docs
 		self.assertNotIn("owner", made)
 		self.assertEqual((made["pos_profile"], made["company"]), ("Mule City Retail", "Mule City"))
 
@@ -202,15 +233,8 @@ class TestShiftClosing(unittest.TestCase):
 		self.closing.append.side_effect = lambda table, row: self.appended.append((table, row))
 		self.made = []
 
-		def get_doc(*args, **kwargs):
-			if args and args[0] == "POS Opening Shift":
-				return self.opening
-			self.made.append(args[0])
-			return self.closing
-
 		for target, kwargs in (
-			("frappe.get_doc", {"side_effect": get_doc}),
-			("frappe.db.get_value", {"return_value": None}),
+			("frappe.get_doc", {"side_effect": fake_get_doc(self.opening, self.closing)}),
 			("xpos.api.shifts.can_close_shift", {"return_value": True}),
 			("xpos.api.shifts.user_may_use_profile", {"return_value": False}),
 			("xpos.api.shifts.get_invoice_type", {"return_value": "Sales Invoice"}),
@@ -271,7 +295,7 @@ class TestShiftClosing(unittest.TestCase):
 		)
 		# A mode the till left out is counted as 0, not dropped.
 		self.assertEqual((rows["Card"]["closing_amount"], rows["Card"]["difference"]), (0, -75))
-		closing = frappe.get_doc.call_args_list[-1].args[0]
+		closing = new_doc_payload(frappe.get_doc)
 		self.assertEqual(
 			(closing["pos_profile"], closing["company"], closing["user"]),
 			("Other Till", "Mule City", frappe.session.user),
@@ -366,7 +390,7 @@ class TestDeskShiftClosing(unittest.TestCase):
 			posting_date="2026-11-12", is_return=0)]
 		with (
 			patch("frappe.db.exists", return_value=exists),
-			patch("frappe.get_doc", side_effect=lambda *a, **k: opening if a and a[0] == "POS Opening Shift" else made) as get_doc,
+			patch("frappe.get_doc", side_effect=fake_get_doc(opening, made)) as get_doc,
 			patch("xpos.api.shifts.user_may_use_profile", return_value=may_close),
 			patch("xpos.api.shifts.can_close_shift", return_value=True),
 			patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice"),
@@ -379,7 +403,7 @@ class TestDeskShiftClosing(unittest.TestCase):
 			),
 		):
 			closing_creation.submit_closing_shift(json.dumps(payload))
-		return get_doc.call_args.args[0], made, appended
+		return new_doc_payload(get_doc), made, appended
 
 	def test_negative_a_submitted_closing_is_always_a_new_pos_closing_shift(self):
 		self.refuse(("POS Closing Shift", "submit"), ("POS Opening Shift", "read"))

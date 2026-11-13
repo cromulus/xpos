@@ -195,7 +195,7 @@ def make_closing_shift_from_opening(opening_shift: str | dict):
 
 
 @frappe.whitelist()
-def submit_closing_shift(closing_shift: dict):
+def submit_closing_shift(closing_shift: str | dict):
 	"""Save and submit a new POS Closing Shift for an opening shift (mc63, MuleCity-0bsc).
 
 	Only a new one: a saved closing is submitted from its own form. The caller
