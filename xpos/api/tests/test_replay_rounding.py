@@ -43,6 +43,18 @@ def shared_counter_login() -> tuple[str, str] | None:
 	return logins[0], (initials[0] if initials else "")
 
 
+def sale_group(profile) -> str:
+	"""A leaf Customer Group the profile sells to: the till refuses a customer outside them (MuleCity-py8t.81)."""
+	from xpos.api.customers import allowed_customer_groups
+
+	leaves = [
+		g
+		for g in allowed_customer_groups(profile)
+		if not frappe.db.get_value("Customer Group", g, "is_group")
+	]
+	return leaves[0] if leaves else frappe.db.get_value("Customer Group", {"is_group": 0}, "name")
+
+
 class TestOfflineReplayACentShort(IntegrationTestCase):
 	def setUp(self):
 		if not frappe.db.exists("POS Profile", PROFILE):
@@ -72,7 +84,7 @@ class TestOfflineReplayACentShort(IntegrationTestCase):
 				{
 					"doctype": "Customer",
 					"customer_name": f"XPOS Replay Cent {self.run}",
-					"customer_group": frappe.db.get_value("Customer Group", {"is_group": 0}, "name"),
+					"customer_group": sale_group(self.profile),
 					"territory": frappe.db.get_value("Territory", {"is_group": 0}, "name"),
 				}
 			)

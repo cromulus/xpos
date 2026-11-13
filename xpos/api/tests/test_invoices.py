@@ -28,6 +28,10 @@ class TestCreateInvoice(unittest.TestCase):
 		self.stub("get_currency_precision", return_value=2)
 		# The caller's right to sell has its own tests below.
 		self.stub("resolve_pos_profile")
+		# The cart's customer is checked against the profile in test_invoice_customer_scope.
+		patcher = patch("xpos.api.customers.require_customer_access")
+		patcher.start()
+		self.addCleanup(patcher.stop)
 		# Taxes (the site's xpos_apply_taxes, else ERPNext's party resolution) have
 		# their own tests; these unit tests use a mocked invoice, which they cannot read.
 		patcher = patch("xpos.api.site_hooks.apply_taxes")

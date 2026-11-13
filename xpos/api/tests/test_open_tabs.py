@@ -144,6 +144,10 @@ class TestSaveDraftInvoiceConcurrency(unittest.TestCase):
 		patcher = patch("xpos.api.invoices.resolve_pos_profile")
 		patcher.start()
 		self.addCleanup(patcher.stop)
+		# The cart's customer is checked against the profile in test_invoice_customer_scope.
+		patcher = patch("xpos.api.customers.require_customer_access")
+		patcher.start()
+		self.addCleanup(patcher.stop)
 		# Taxes (site_hooks.apply_taxes) have their own tests; a mocked draft
 		# cannot be read by them.
 		patcher = patch("xpos.api.site_hooks.apply_taxes")
