@@ -34,3 +34,14 @@ class TestGuestProfile(RecordAccessTestCase):
 	def test_a_profile_user_still_resolves_it(self):
 		self.assertEqual(frappe.session.user, CASHIER)
 		self.assertEqual(profiles.resolve_pos_profile(OWN_PROFILE).name, OWN_PROFILE)
+
+
+class TestSuperuserDefaultProfile(RecordAccessTestCase):
+	"""A superuser with no POS Profile row still gets an enabled profile."""
+
+	def test_default_profile_without_a_profile_row(self):
+		frappe.set_user("Administrator")
+		frappe.db.delete("POS Profile User", {"user": "Administrator"})
+		profile = profiles.get_default_pos_profile("Administrator")
+		self.assertTrue(profile)
+		self.assertEqual(frappe.db.get_value("POS Profile", profile, "disabled"), 0)
