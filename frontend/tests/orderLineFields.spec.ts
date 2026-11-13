@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { orderLineFields } from '../src/services/orderLineFields';
+import { lineIdentityFields, orderLineFields } from '../src/services/orderLineFields';
+import { installSiteExtension } from "./helpers/siteExtension";
 import { useSiteExtension } from "./helpers/siteExtension";
 
 // A site with the till extensions (boot xpos_site).
@@ -26,4 +27,9 @@ describe('Native mix order transport', () => {
     expect(orderLineFields({ mule_processing_instructions: '' })).toEqual({ mule_processing_instructions: '' });
   });
 
+  it("keeps lines apart by the native links and the site's own identity fields", () => {
+    expect(lineIdentityFields()).toEqual(['sales_order', 'so_detail', 'bom_no', 'mule_vfd', 'mule_processing_instructions']);
+    installSiteExtension({});
+    expect(lineIdentityFields()).toEqual(['sales_order', 'so_detail', 'bom_no']);
+  });
 });

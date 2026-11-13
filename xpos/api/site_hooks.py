@@ -7,8 +7,10 @@ XPOS never imports a site app. A site extends the till through these hooks
 (declared in its own ``hooks.py``); every one has a stock default here, so XPOS
 runs on a plain ERPNext site with no extension installed.
 
-Single-answer hooks use ``last_hook``: the last installed app's function wins,
-and ``None`` means "use the default". The defaults are *not* registered in
+Single-answer hooks use ``last_hook``: the last installed app's function wins
+(``apps.txt`` order; when several apps register one, the "xpos" log names the
+winner), and ``None`` means "use the default". A site that adds a shared app
+registering one of these after its own app must check which it wants. The defaults are *not* registered in
 XPOS's own ``hooks.py``: "last app wins" follows ``apps.txt`` order, so a
 default registered there could shadow a site's hook.
 
@@ -73,9 +75,34 @@ SITE_DEFAULTS = {
 
 
 def last_hook(name: str):
-	"""The site's implementation of a single-answer hook (the last app wins), or None."""
+	"""The site's implementation of a single-answer hook (the last app wins), or None.
+
+	"Last" is ``apps.txt`` order: an app installed after the site's own app that
+	registers the same hook replaces it. When more than one app registers one,
+	the log says which function won (once per worker), so a shared app installed
+	later (e.g. a card reader app registering ``xpos_payment_terminal_app``) never
+	replaces the site's choice silently.
+	"""
 	methods = frappe.get_hooks(name)
-	return frappe.get_attr(methods[-1]) if methods else None
+	if not methods:
+		return None
+	if len(methods) > 1:
+		_warn_shadowed(name, tuple(methods))
+	return frappe.get_attr(methods[-1])
+
+
+_warned: set[tuple] = set()
+
+
+def _warn_shadowed(name: str, methods: tuple) -> None:
+	"""Log once that several apps answer a single-answer hook and only the last is used."""
+	if (name, methods) in _warned:
+		return
+	_warned.add((name, methods))
+	frappe.logger("xpos").warning(
+		f"{name}: {len(methods)} apps register it; {methods[-1]} is used (last in apps.txt), "
+		f"not {', '.join(methods[:-1])}"
+	)
 
 
 def hook_names(name: str) -> list[str]:
@@ -221,6 +248,8 @@ def payment_terminal_app() -> str | None:
 	"""The installed app that provides the card-reader framework, or None."""
 	installed = frappe.get_installed_apps()
 	chosen = frappe.get_hooks(PAYMENT_TERMINAL_APP_HOOK) or []
+	if len(chosen) > 1:
+		_warn_shadowed(PAYMENT_TERMINAL_APP_HOOK, tuple(chosen))
 	for app in reversed(chosen):
 		if app in installed:
 			return app
@@ -242,13 +271,26 @@ def site_map() -> dict:
 	app order. Values are a dotted method path (str), a flag (bool / int), a
 	list of field names, or a nested dict of those (``{"mix": {"quote": "..."}}``). XPOS's own defaults
 	(``SITE_DEFAULTS``) are filled in where no site set the key.
+
+	The merge is one level deep: a later app's top-level key replaces an earlier
+	app's, and a later app's nested dict is merged key by key into an earlier
+	one's, but anything deeper is replaced whole.
+
+	An extension that raises is logged and left out; its path is listed in
+	``extension_errors`` so the till knows the map is incomplete (a site app that
+	wants one broken flag not to drop its other features registers them as
+	separate functions).
 	"""
 	merged: dict = {}
+	failed: list[str] = []
 	for path in frappe.get_hooks(SITE_EXTENSIONS_HOOK) or []:
 		try:
 			extra = frappe.get_attr(path)() or {}
 		except Exception:  # noqa: BLE001 - one app's broken extension must not break every login
 			frappe.log_error(title="XPOS site extension failed", message=frappe.get_traceback())
+			# The till then knows its map is incomplete: a feature that is off may only be
+			# unknown, and a safety check it ran before keeps running (vfdOffline.ts).
+			failed.append(path)
 			continue
 		for key, value in extra.items():
 			if isinstance(value, dict) and isinstance(merged.get(key), dict):
@@ -257,6 +299,8 @@ def site_map() -> dict:
 				merged[key] = value
 	for key, method in SITE_DEFAULTS.items():
 		merged.setdefault(key, method)
+	if failed:
+		merged["extension_errors"] = failed
 	# The picker shows and matches the site's customer codes field (xpos_customer_fields).
 	codes = customer_fields()["codes"]
 	if codes:

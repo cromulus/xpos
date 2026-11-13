@@ -4,10 +4,16 @@
  * On only when the site's `xpos_site.vfd` map names its methods (`context`,
  * `prepare`, `replay`); with none, nothing here calls the server, no sale is
  * checked and every queued sale replays through `create_invoice`.
+ *
+ * It fails closed: a till that has cached feed coverage (it ran with the
+ * feature on) keeps checking every offline sale while its map is incomplete
+ * (a Guest or stale boot, or a site extension that failed: siteMapComplete),
+ * and replays through the method it cached with that coverage. Only a whole
+ * map without `vfd` clears the cache and turns the check off.
  * Prepared native pickups reuse the existing queue; a cached clock is not proof of sale time.
  */
 import { useAuthStore } from '@/stores/authStore';
-import { siteFeature, siteMethod } from '@/services/siteExtensions';
+import { siteFeature, siteMapComplete, siteMethod } from '@/services/siteExtensions';
 import { getApiBaseUrlSync } from '@/services/electronBridge';
 import { call } from '@/services/api';
 import { getOfflineMeta, setOfflineMeta } from '@/services/dbBridge';
@@ -21,6 +27,8 @@ const fields = ['item_code', 'qty', 'uom', 'conversion_factor', 'sales_order', '
 export interface VfdContext {
   profile: string; company: string; cached_at: string; timezone: string;
   items: Record<string, boolean>; directives: Record<string, number>; user: string;
+  /** The site's replay method when this was cached (kept for an incomplete map). */
+  replay_method?: string;
 }
 export interface VfdSnapshot {
   signature: string;
@@ -51,11 +59,16 @@ function cacheKey(key: string): string {
 }
 export async function refreshVfdContext(profile: string): Promise<void> {
   const method = siteMethod('vfd.context');
-  if (!vfdEnabled() || !method) return;
+  if (!vfdEnabled() || !method) {
+    // The whole map says this site has no offline feed check: forget any old coverage.
+    // An incomplete map proves nothing, so the cache (and its check) stays.
+    if (siteMapComplete()) await setOfflineMeta(cacheKey(`vfd_context::${profile}`), null);
+    return;
+  }
   const context = await call<VfdContext>(method, { pos_profile: profile });
   if (!context?.items || context.profile !== profile) throw new Error('VFD offline context is unavailable.');
   // A failed refresh leaves prior pending tickets and their evidence intact.
-  await setOfflineMeta(cacheKey(`vfd_context::${profile}`), context);
+  await setOfflineMeta(cacheKey(`vfd_context::${profile}`), { ...context, replay_method: siteMethod('vfd.replay') });
 }
 export async function prepareVfdPickup(data: InvoiceData): Promise<void> {
   const method = siteMethod('vfd.prepare');
@@ -97,12 +110,14 @@ export function validateOfflineCoverage(data: InvoiceData, context: VfdContext |
   return true;
 }
 export async function attachOfflineCoverage(data: InvoiceData): Promise<void> {
-  if (!vfdEnabled()) return;
   const context = await getOfflineMeta(cacheKey(`vfd_context::${data.pos_profile}`)) as VfdContext | null;
+  // Fail closed: with the map incomplete, a till that has cached coverage keeps checking.
+  if (!vfdEnabled() && !(context && !siteMapComplete())) return;
   const snapshot = await getOfflineMeta(cacheKey(`vfd_pickup::${data.local_id}`)) as VfdSnapshot | null;
   if (validateOfflineCoverage(data, context, snapshot)) {
     // The replay method rides with the sale for the desktop app's sync, which has no boot.
-    (data as any).mule_vfd_offline = { snapshot, sold_at: new Date().toISOString(), replay_method: siteMethod('vfd.replay') };
+    const replay_method = siteMethod('vfd.replay') || context?.replay_method;
+    (data as any).mule_vfd_offline = { snapshot, sold_at: new Date().toISOString(), replay_method };
   }
 }
 export function queuedInvoiceMethod(data: unknown): string {

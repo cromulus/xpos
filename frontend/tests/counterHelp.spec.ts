@@ -21,7 +21,7 @@ vi.mock("@/components/ui/popover", async () => {
 });
 
 import CounterHelp from "@/components/CounterHelp.vue";
-import { useSiteExtension } from "./helpers/siteExtension";
+import { installSiteExtension, SITE_FIXTURE, useSiteExtension } from "./helpers/siteExtension";
 
 // A site with the till extensions (boot xpos_site).
 useSiteExtension();
@@ -65,5 +65,16 @@ describe("the till's Help (?) button", () => {
 		expect(w.find("[data-testid=counter-help-unavailable]").exists()).toBe(true);
 		expect(w.findAll("[data-testid=counter-help-entry]")).toHaveLength(0);
 		expect(window.open).not.toHaveBeenCalled();
+	});
+
+	it("negative: a site with help but no manual page names none and opens nothing", async () => {
+		const { help_manual: _none, ...noManual } = SITE_FIXTURE;
+		installSiteExtension(noManual);
+		mocks.call.mockResolvedValue({ entries: [] });
+		const w = mount(CounterHelp);
+		await w.get("[data-testid=counter-help]").trigger("click");
+		await flushPromises();
+		expect(window.open).not.toHaveBeenCalled();
+		expect(w.html()).not.toContain("/manual/counter");
 	});
 });

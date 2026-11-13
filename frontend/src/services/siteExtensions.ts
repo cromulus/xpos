@@ -14,7 +14,14 @@
  * run "the method for a key".
  *
  * The map rides in the boot, so the offline boot copy keeps it.
+ *
+ * The page can start with a Guest boot (the login is part of the SPA) and get
+ * the signed-in user's boot later (services/sessionBoot.ts applyBoot). Reads are
+ * therefore reactive: a `computed(() => siteFeature("mix"))` or a template that
+ * reads a flag re-evaluates when the boot is replaced. Never keep a flag in a
+ * plain const at setup time.
  */
+import { shallowRef } from "vue";
 
 export type SiteValue = string | number | boolean | null | undefined | SiteMap | SiteValue[];
 export interface SiteMap {
@@ -27,8 +34,17 @@ export const SITE_DEFAULTS: Record<string, string> = {
 	tax_contexts: "xpos.api.party_taxes.tax_contexts",
 };
 
+/** Bumped whenever the boot (and so the map) is replaced; reads depend on it. */
+const revision = shallowRef(0);
+
+/** The boot was replaced: every reactive read of the map re-evaluates. */
+export function siteMapChanged(): void {
+	revision.value++;
+}
+
 /** The boot's site map (empty with no site extension or no boot). */
 export function siteMap(): SiteMap {
+	void revision.value;
 	try {
 		const boot = (globalThis as { xpos?: { boot?: Record<string, unknown> } }).xpos?.boot;
 		const map = boot?.xpos_site;
@@ -62,6 +78,26 @@ export function requireSiteMethod(key: string): string {
 	const method = siteMethod(key);
 	if (!method) throw new Error(`This site has no "${key}" feature`);
 	return method;
+}
+
+/**
+ * Whether the boot carries the site's whole map: the boot is a signed-in
+ * server boot (it always has `xpos_site`) and no site extension failed while
+ * building it (`extension_errors`, site_hooks.site_map). False on a Guest
+ * boot, the desktop app (no boot) or a server older than the site hooks: a
+ * feature that is off may then only be unknown.
+ */
+export function siteMapComplete(): boolean {
+	void revision.value;
+	try {
+		const boot = (globalThis as { xpos?: { boot?: Record<string, unknown> } }).xpos?.boot;
+		const map = boot?.xpos_site as SiteMap | undefined;
+		if (!map || typeof map !== "object") return false;
+		const errors = map.extension_errors;
+		return !(Array.isArray(errors) ? errors.length : errors);
+	} catch {
+		return false;
+	}
 }
 
 /** Whether a feature is on: a truthy flag, a method name, or a group with anything in it. */

@@ -30,6 +30,7 @@ import { refreshPrintBrand } from "@/services/printBrand";
 import { attachOfflineCoverage, prepareVfdPickup, queuedInvoiceMethod, refreshVfdContext } from "@/services/vfdOffline";
 import { orderLineFields } from "@/services/orderLineFields";
 import { customerCodes } from "@/utils/customerMatch";
+import { mixOrderPrintUrl, payBalanceReceiptFormat } from "@/services/printFormats";
 import { installSiteExtension } from "./helpers/siteExtension";
 
 const sale = {
@@ -102,6 +103,22 @@ describe("a site with no till extensions", () => {
 			bom_no: "BOM-1",
 		});
 		expect(customerCodes({ name: "C1", mule_filepro_alias_codes: "2980" })).toBe("");
+	});
+});
+
+describe("print formats come from the site, never XPOS", () => {
+	it("a plain site prints a mix order in the default format and a pay-balance receipt in Standard", () => {
+		expect(mixOrderPrintUrl("SO 1")).toBe("/printview?doctype=Sales%20Order&name=SO%201");
+		expect(payBalanceReceiptFormat(undefined)).toBe("Standard");
+		expect(payBalanceReceiptFormat("Desk Receipt")).toBe("Desk Receipt");
+	});
+
+	it("a site's map names its own formats", () => {
+		installSiteExtension({ mix: { order_print_format: "Site Order" }, print_formats: { payment_receipt: "Site Receipt" } });
+		expect(mixOrderPrintUrl("SO-1")).toBe("/printview?doctype=Sales%20Order&name=SO-1&format=Site%20Order");
+		expect(payBalanceReceiptFormat("")).toBe("Site Receipt");
+		// The pay-balance settings still win.
+		expect(payBalanceReceiptFormat("Desk Receipt")).toBe("Desk Receipt");
 	});
 });
 

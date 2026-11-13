@@ -14,6 +14,7 @@
  * and the offline queue stays as it is.
  */
 import { getApiBaseUrlSync, isElectron } from "@/services/electronBridge";
+import { siteMapChanged } from "@/services/siteExtensions";
 
 export const OFFLINE_BOOT_KEY = "offline_boot";
 export const SESSION_EXPIRED_EVENT = "xpos:session-expired";
@@ -132,6 +133,8 @@ function applyBoot(boot: Record<string, unknown>, csrfToken?: string): void {
 	window.xpos.boot = boot as XPosGlobal["boot"];
 	window.xpos._messages = (boot.__messages as Record<string, string>) || window.xpos._messages || {};
 	if (csrfToken !== undefined) window.xpos.csrf_token = csrfToken;
+	// The site's features (boot xpos_site) may change with the user: re-read them.
+	siteMapChanged();
 }
 
 let stale = false;

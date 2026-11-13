@@ -15,3 +15,16 @@ export function orderLineFields(row: Record<string, any>): Record<string, any> {
   ];
   return Object.fromEntries(fields.filter(key => row[key] != null).map(key => [key, row[key]]));
 }
+
+/**
+ * Line fields that keep two cart lines of the same item apart: the native source
+ * links, plus the site's (xpos_site `line_identity_fields`, e.g. a per-line
+ * compliance link). A line that differs in any of them is never merged.
+ */
+export function lineIdentityFields(): string[] {
+  const site = siteValue("line_identity_fields");
+  return [
+    'sales_order', 'so_detail', 'bom_no',
+    ...(Array.isArray(site) ? site.filter((key): key is string => typeof key === "string") : []),
+  ];
+}

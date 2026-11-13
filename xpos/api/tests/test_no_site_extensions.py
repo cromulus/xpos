@@ -106,6 +106,58 @@ class TestSiteMapMerging(IntegrationTestCase):
 		self.assertTrue(merged["flag"])
 		self.assertNotIn("bad", merged)
 
+	def test_a_failed_extension_is_left_out_and_named(self):
+		"""One app's broken map drops only that map, and the till is told the map is incomplete."""
+
+		def broken():
+			raise RuntimeError("site flag lookup failed")
+
+		maps = {"a": lambda: {"vfd": {"context": "a.vfd.context"}}, "b": broken}
+
+		def hooks(hook=None, *args, **kwargs):
+			return ["a", "b"] if hook == site_hooks.SITE_EXTENSIONS_HOOK else []
+
+		with (
+			patch("frappe.get_hooks", side_effect=hooks),
+			patch("frappe.get_attr", side_effect=lambda p: maps[p]),
+			patch("frappe.log_error") as log_error,
+		):
+			merged = site_hooks.site_map()
+		self.assertEqual(merged["vfd"], {"context": "a.vfd.context"})
+		self.assertEqual(merged["extension_errors"], ["b"])
+		log_error.assert_called_once()
+
+	def test_negative_a_whole_map_has_no_extension_errors(self):
+		def hooks(hook=None, *args, **kwargs):
+			return ["a"] if hook == site_hooks.SITE_EXTENSIONS_HOOK else []
+
+		with (
+			patch("frappe.get_hooks", side_effect=hooks),
+			patch("frappe.get_attr", return_value=lambda: {"flag": True}),
+		):
+			self.assertNotIn("extension_errors", site_hooks.site_map())
+
+	def test_several_apps_on_a_single_answer_hook_the_last_wins_and_the_log_says_so(self):
+		used = []
+
+		def hooks(hook=None, *args, **kwargs):
+			return ["site.taxes", "later_app.taxes"] if hook == site_hooks.APPLY_TAXES_HOOK else []
+
+		site_hooks._warned.clear()
+		logger = patch("frappe.logger")
+		with (
+			patch("frappe.get_hooks", side_effect=hooks),
+			patch("frappe.get_attr", side_effect=lambda path: lambda doc: used.append(path)),
+			logger as get_logger,
+		):
+			site_hooks.apply_taxes("DOC")
+			site_hooks.apply_taxes("DOC")
+		self.assertEqual(used, ["later_app.taxes", "later_app.taxes"])
+		warning = get_logger.return_value.warning
+		warning.assert_called_once()
+		self.assertIn("later_app.taxes is used", warning.call_args.args[0])
+		self.assertIn("site.taxes", warning.call_args.args[0])
+
 	def test_a_site_hook_wins_over_the_default(self):
 		calls = []
 

@@ -5,7 +5,7 @@ import { UserSession } from "@/types/pos.types";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { isOnline, isNetworkError } from "@/utils";
-import { bootUser, clearOfflineBoot, markSessionStale, startedFromShell } from "@/services/sessionBoot";
+import { bootUser, clearOfflineBoot, ensureFreshSession, markSessionStale, startedFromShell } from "@/services/sessionBoot";
 
 function friendlyMessage(err: unknown, fallback: string): string {
 	if (isNetworkError(err)) return "Cannot reach the server. Check your connection and try again.";
@@ -181,6 +181,13 @@ export const useAuthStore = defineStore("auth", () => {
 			// A new session has a new token, and the page's boot may be a Guest's or an expired
 			// one's: fetch both before the next call (MuleCity-q8aq).
 			markSessionStale();
+			// Fetch the signed-in boot now, not at the first write: the site's features
+			// (boot xpos_site) must be in place before the till is used, even if the network
+			// drops before anything is sent. Unreachable: the session stays stale and the
+			// next call retries.
+			await ensureFreshSession().catch((refreshError) =>
+				console.warn("[XPOS] Could not fetch the signed-in boot yet", refreshError),
+			);
 			notice.value = "";
 
 			isAuthenticated.value = true;

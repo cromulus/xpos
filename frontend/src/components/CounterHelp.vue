@@ -38,13 +38,13 @@
 			<p v-if="unavailable" class="px-2 py-1.5 text-sm text-muted-foreground" data-testid="counter-help-unavailable">
 				{{ __("Help isn't available on this till right now.") }}
 			</p>
-			<a v-else :href="MANUAL" target="_blank" rel="noopener" class="block px-2 pt-2 text-xs">{{ __("The counter page of the manual") }}</a>
+			<a v-else-if="manual" :href="manual" target="_blank" rel="noopener" class="block px-2 pt-2 text-xs">{{ __("The counter page of the manual") }}</a>
 		</PopoverContentStyled>
 	</Popover>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { CircleHelp } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContentStyled, PopoverTrigger } from "@/components/ui/popover";
@@ -53,7 +53,8 @@ import { requireSiteMethod, siteValue } from "@/services/siteExtensions";
 import { __ } from "@/lib/translate";
 
 type Entry = { id: string; title: string; use_when: string; url: string };
-const MANUAL = String(siteValue("help_manual") || "/manual/counter");
+// The site's manual page (xpos_site `help_manual`); none: no manual link.
+const manual = computed(() => String(siteValue("help_manual") || ""));
 const open = ref(false);
 const entries = ref<Entry[]>([]);
 const unavailable = ref(false);
@@ -73,7 +74,7 @@ async function load() {
 	}
 	if (!entries.value.length) {
 		open.value = false;
-		window.open(MANUAL, "_blank", "noopener");
+		if (manual.value) window.open(manual.value, "_blank", "noopener");
 	}
 }
 </script>

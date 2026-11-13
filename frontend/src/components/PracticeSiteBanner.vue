@@ -13,8 +13,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import __ from "@/lib/translate";
 import { siteFeature } from "@/services/siteExtensions";
 
-const practiceSite = siteFeature("practice_site");
+const practiceSite = computed(() => siteFeature("practice_site"));
 </script>

@@ -1,7 +1,7 @@
 import { withPullCalculation } from "@/services/pullCalculation";
 import { prepareVfdPickup } from "@/services/vfdOffline";
 import { newInvoiceId } from "@/services/invoiceSubmission";
-import { orderLineFields } from "@/services/orderLineFields";
+import { lineIdentityFields, orderLineFields } from "@/services/orderLineFields";
 import type { MixPull, PullFix } from "@/utils/mixPull";
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
@@ -765,11 +765,11 @@ export const useCartStore = defineStore("cart", () => {
 	 * decides the exact split, leaving out bags reserved for other orders).
 	 */
 	// Made-to-order lines are a site feature (xpos_site "mix": its quote, check and checkout).
-	const mixesOn = siteFeature("mix");
+	// Read inside the computed: the boot can arrive after the store (a login in the SPA).
 	const orderLineUids = computed(
 		() =>
 			new Set(
-				(mixesOn ? items.value : [])
+				(siteFeature("mix") ? items.value : [])
 					.filter(
 						(item: CartItem) =>
 							Number(item.is_made_to_order) === 1 &&
@@ -915,7 +915,7 @@ export const useCartStore = defineStore("cart", () => {
 				i.item_code === item.item_code &&
 				i.uom === (item.uom || item.stock_uom) &&
 				// Separate source rows keep their own agreed price and recipe.
-				["sales_order", "so_detail", "bom_no", "mule_vfd", "mule_processing_instructions"].every(
+				lineIdentityFields().every(
 					field => ((i as any)[field] || "") === ((item as any)[field] || ""),
 				) &&
 				!i.serial_no &&

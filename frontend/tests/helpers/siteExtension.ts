@@ -8,6 +8,7 @@
  * the boot. Specs without this helper run as a plain ERPNext site (no extensions).
  */
 import { afterEach, beforeEach } from "vitest";
+import { siteMapChanged } from "@/services/siteExtensions";
 
 const PREFIX = "mulecity_erpnext";
 
@@ -44,6 +45,7 @@ export const SITE_FIXTURE = {
 		"mule_vfd", "mule_processing_instructions", "mule_stored_grain_use",
 		"mule_stored_grain_use_lbs", "mule_bulk_no_bags", "mule_pull_remedy_json",
 	],
+	line_identity_fields: ["mule_vfd", "mule_processing_instructions"],
 	customer_codes_field: "mule_filepro_alias_codes",
 };
 
@@ -55,6 +57,8 @@ export function installSiteExtension(map: Record<string, unknown> = SITE_FIXTURE
 	holder.xpos = holder.xpos || {};
 	holder.xpos.boot = holder.xpos.boot || {};
 	holder.xpos.boot.xpos_site = map;
+	// As sessionBoot.applyBoot does: reactive reads of the map re-evaluate.
+	siteMapChanged();
 }
 
 /** Every test in this file runs on a site with the extensions (or `map`). */
@@ -63,5 +67,6 @@ export function useSiteExtension(map: Record<string, unknown> = SITE_FIXTURE): v
 	afterEach(() => {
 		const boot = (globalThis as unknown as Holder).xpos?.boot;
 		if (boot) delete boot.xpos_site;
+		siteMapChanged();
 	});
 }

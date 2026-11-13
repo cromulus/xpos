@@ -953,8 +953,9 @@ import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
 import ManagerOverride from "@/components/dialogs/ManagerOverride.vue";
 import { requireSiteMethod, siteFeature } from "@/services/siteExtensions";
+import { mixOrderPrintUrl, payBalanceReceiptFormat } from "@/services/printFormats";
 // The site's manager override for a refused charge (xpos_site charge_override); off without one.
-const chargeOverrideOn = siteFeature("charge_override");
+const chargeOverrideOn = computed(() => siteFeature("charge_override"));
 import { isChargeRefusal, isOverrideAnswer, payWithOverride } from "@/services/chargeOverride";
 import { applyCashier, cashierInitialsOk, normalizeInitials } from "@/utils/cashierInitials";
 import { nowDate } from "@/utils/datetime";
@@ -1778,7 +1779,7 @@ async function submitPayment(withPrint: boolean = true) {
 		);
 		await finishSale(result, withPrint);
 	} catch (error: unknown) {
-		if (chargeOverrideOn && isChargeRefusal(error)) {
+		if (chargeOverrideOn.value && isChargeRefusal(error)) {
 			// Not an error toast: the message, and a manager override (MuleCity-zstm.13).
 			const mix = cartStore.hasOrderLines;
 			chargeRefusal.value = {
@@ -1936,7 +1937,7 @@ async function submitPayBalance(invoiceData: InvoiceData, withPrint: boolean) {
 			for (const payment of result.payments)
 				await printInvoice(payment.payment_entry, {
 					doctype: "Payment Entry",
-					format: settings.receipt_format || "Mule Payment Receipt",
+					format: payBalanceReceiptFormat(settings.receipt_format),
 				});
 	} catch {
 		showError(__("Payment saved. Receipt printing failed; use Reprint."));
@@ -1957,12 +1958,7 @@ async function finishMixOrder(result: CounterCheckoutResult, withPrint: boolean)
 		if (result.invoice?.name) {
 			await printInvoice(result.invoice.name);
 		} else {
-			for (const row of result.orders) {
-				window.open(
-					`/printview?doctype=Sales%20Order&name=${encodeURIComponent(row.sales_order)}&format=Mule%20City%20Order`,
-					"_blank",
-				);
-			}
+			for (const row of result.orders) window.open(mixOrderPrintUrl(row.sales_order), "_blank");
 		}
 	} catch {
 		showError(__("Saved. Printing failed; reprint from the order."));

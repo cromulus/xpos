@@ -172,7 +172,7 @@ import ClosingDialog from "@/components/dialogs/ClosingDialog.vue";
 import PullCalculationDialog from "@/components/dialogs/PullCalculationDialog.vue";
 import { siteFeature } from "@/services/siteExtensions";
 // The pull-list calculation runs only for a site's customer mixes (xpos_site "mix").
-const mixesOn = siteFeature("mix");
+const mixesOn = computed(() => siteFeature("mix"));
 import PaymentDialog from "@/components/dialogs/PaymentDialog.vue";
 import CardPaymentDialog from "@/components/dialogs/CardPaymentDialog.vue";
 import { useCardPaymentStore } from "@/stores/cardPaymentStore";

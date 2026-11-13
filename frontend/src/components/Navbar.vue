@@ -261,7 +261,7 @@ import OfflinePendingPanel from "@/components/offline/OfflinePendingPanel.vue";
 import CounterHelp from "@/components/CounterHelp.vue";
 import { siteFeature } from "@/services/siteExtensions";
 // The site's counter help (xpos_site help); the "?" is hidden without it.
-const siteHelp = siteFeature("help");
+const siteHelp = computed(() => siteFeature("help"));
 import AboutDialog from "@/components/dialogs/AboutDialog.vue";
 import KeyboardShortcutsDialog from "@/components/dialogs/KeyboardShortcutsDialog.vue";
 

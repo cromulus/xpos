@@ -195,7 +195,7 @@ import { customerMixItem, type CustomerMixChoice } from "@/services/customerMixC
 import MixWorkspace from "@/components/MixWorkspace.vue";
 import { siteFeature } from "@/services/siteExtensions";
 // Customer mixes are a site feature (xpos_site "mix"): the dialog mounts only with it.
-const mixesOn = siteFeature("mix");
+const mixesOn = computed(() => siteFeature("mix"));
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";

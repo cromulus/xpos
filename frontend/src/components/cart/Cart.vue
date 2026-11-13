@@ -287,7 +287,7 @@ import { siteFeature } from "@/services/siteExtensions";
 // Orders in flight are a site feature (xpos_site find_orders).
 const ordersOn = ordersInFlightEnabled();
 // Customer mixes are a site feature (xpos_site "mix").
-const mixesOn = siteFeature("mix");
+const mixesOn = computed(() => siteFeature("mix"));
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
 import { showsCreditInfo } from "@/utils/creditPanel";
 import { mixCheckStatus } from "@/utils/mixCheck";
