@@ -193,7 +193,12 @@ export const useSettingsStore = defineStore("settings", () => {
 					stock_settings: boot.stock_settings || {},
 					accounts_settings: boot.accounts_settings || {},
 					global_defaults: boot.sysdefaults || {},
-					currency_precision: boot.currency_precision || {},
+					// An older server sends no currency_precision in the boot; Frappe's
+					// sysdefaults carry the same values, so the cart need not fall back to 3 places.
+					currency_precision: boot.currency_precision || {
+						currency_precision: boot.sysdefaults?.currency_precision ?? "",
+						float_precision: boot.sysdefaults?.float_precision ?? "",
+					},
 					number_format: boot.xpos_number_format || boot.sysdefaults || {},
 					pos_settings: boot.pos_settings || {},
 					item_search: boot.xpos_item_search || {},

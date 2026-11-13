@@ -94,14 +94,24 @@ def get_erp_settings():
 		"disable_in_words": cint(frappe.db.get_single_value("Global Defaults", "disable_in_words")),
 	}
 
-	settings["currency_precision"] = {
-		"currency_precision": frappe.db.get_default("currency_precision") or "",
-		"float_precision": frappe.db.get_default("float_precision") or "",
-	}
+	settings["currency_precision"] = get_currency_precision_settings()
 
 	settings["number_format"] = get_number_format_settings()
 
 	return settings
+
+
+def get_currency_precision_settings():
+	"""Money and float precisions for the SPA.
+
+	The Electron app reads them from get_erp_settings, the web app from its boot
+	(extend_bootinfo). Without them the cart rounds every line rate to a
+	3-place fallback instead of the site's float precision.
+	"""
+	return {
+		"currency_precision": frappe.db.get_default("currency_precision") or "",
+		"float_precision": frappe.db.get_default("float_precision") or "",
+	}
 
 
 def get_number_format_settings():
