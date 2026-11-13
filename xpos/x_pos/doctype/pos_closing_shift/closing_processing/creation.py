@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 from frappe.utils import flt, json
 
 from xpos.api.utilities import get_invoice_type
@@ -194,11 +195,41 @@ def make_closing_shift_from_opening(opening_shift: str | dict):
 
 
 @frappe.whitelist()
-def submit_closing_shift(closing_shift: dict):
+def submit_closing_shift(closing_shift: str | dict):
+	"""Save and submit a new POS Closing Shift for an opening shift.
+
+	Only a new one: a saved closing is submitted from its own form. The caller
+	needs submit on POS Closing Shift, read on the opening shift and the right
+	to close it (``ensure_may_close``: close_shift on its own POS Profile, as a
+	user of it). The closing is built on the server (``build_closing_shift``,
+	as the till's Close Shift and the offline sync); from the payload only the
+	opening shift and each mode's counted ``closing_amount`` are taken. It is
+	saved with Frappe's own permission checks.
+	"""
+	from xpos.api.shifts import build_closing_shift, ensure_may_close
+
 	frappe.has_permission("POS Closing Shift", "submit", throw=True)
-	closing_shift = json.loads(closing_shift)
-	closing_shift_doc = frappe.get_doc(closing_shift)
-	closing_shift_doc.flags.ignore_permissions = True
-	closing_shift_doc.save()
+	if isinstance(closing_shift, str):
+		closing_shift = json.loads(closing_shift)
+	name = closing_shift.get("name")
+	if name and frappe.db.exists("POS Closing Shift", name):
+		frappe.throw(
+			_("POS Closing Shift {0} is already saved; submit it from its form.").format(name),
+			frappe.PermissionError,
+		)
+	opening_name = closing_shift.get("pos_opening_shift")
+	if not opening_name:
+		frappe.throw(_("Opening Shift is required"))
+	frappe.has_permission("POS Opening Shift", "read", doc=opening_name, throw=True)
+	opening = frappe.get_doc("POS Opening Shift", opening_name)
+	ensure_may_close(opening)
+
+	counted = [
+		{"mode_of_payment": row.get("mode_of_payment"), "closing_amount": row.get("closing_amount")}
+		for row in closing_shift.get("payment_reconciliation") or []
+		if isinstance(row, dict)
+	]
+	closing_shift_doc, _invoices = build_closing_shift(opening, counted, every_mode=True)
+	closing_shift_doc.insert()
 	closing_shift_doc.submit()
 	return closing_shift_doc.name

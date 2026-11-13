@@ -28,6 +28,7 @@ from xpos.x_pos.api import payments as legacy_payments
 from xpos.x_pos.api import quotations
 from xpos.x_pos.api.invoice_processing import creation as legacy_creation
 from xpos.x_pos.api.invoice_processing import data as legacy_invoice_data
+from xpos.x_pos.doctype.pos_closing_shift.closing_processing import creation as closing_creation
 
 
 class TestGuestProfile(RecordAccessTestCase):
@@ -333,3 +334,50 @@ class TestSyncedClosingIsBuiltOnTheServer(ClosingCase):
 			shifts.create_closing_shift(
 				{"pos_opening_shift": self.opening.name, "payment_reconciliation": counts}
 			)
+
+
+class TestDeskClosingIsAClosingShift(ClosingCase):
+	"""submit_closing_shift saves only a server-built POS Closing Shift."""
+
+	FORGED_USER = "forged-closing@example.com"
+
+	def test_a_forged_doctype_is_not_saved(self):
+		forged = {"doctype": "User", "email": self.FORGED_USER, "first_name": "Forged"}
+		with self.assertRaises(frappe.ValidationError):
+			closing_creation.submit_closing_shift(frappe.as_json(forged))
+		name = closing_creation.submit_closing_shift(
+			frappe.as_json({**forged, "pos_opening_shift": self.opening.name})
+		)
+		self.assertEqual(
+			frappe.db.get_value("POS Closing Shift", name, "pos_opening_shift"), self.opening.name
+		)
+		self.assertFalse(frappe.db.exists("User", self.FORGED_USER))
+
+	def test_only_the_counts_are_taken(self):
+		name = closing_creation.submit_closing_shift(
+			{
+				"pos_opening_shift": self.opening.name,
+				"pos_profile": OTHER_PROFILE,
+				"company": OTHER_COMPANY,
+				"grand_total": 999999,
+				"payment_reconciliation": [
+					{"mode_of_payment": "Cash", "closing_amount": 25, "expected_amount": 0, "difference": 25}
+				],
+			}
+		)
+		closing = frappe.get_doc("POS Closing Shift", name)
+		self.assertEqual(
+			(closing.pos_profile, closing.company, closing.grand_total), (OWN_PROFILE, "_Test Company", 0)
+		)
+		cash = {row.mode_of_payment: row for row in closing.payment_reconciliation}["Cash"]
+		self.assertEqual((cash.expected_amount, cash.closing_amount, cash.difference), (25, 25, 0))
+
+	def test_a_saved_closing_cannot_be_overwritten(self):
+		name = closing_creation.submit_closing_shift({"pos_opening_shift": self.opening.name})
+		with self.assertRaises(frappe.PermissionError):
+			closing_creation.submit_closing_shift({"name": name, "pos_opening_shift": self.opening.name})
+
+	def test_a_user_who_may_not_close_this_shift_is_refused(self):
+		frappe.set_user(CASHIER)
+		with self.assertRaises(frappe.PermissionError):
+			closing_creation.submit_closing_shift({"pos_opening_shift": self.opening.name})
