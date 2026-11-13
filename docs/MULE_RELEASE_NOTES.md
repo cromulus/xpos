@@ -1,5 +1,46 @@
 # Mule City XPOS release notes
 
+## Unreleased (branch xpos-seams): XPOS names no site app (MuleCity-py8t.76)
+
+XPOS no longer imports or calls mulecity_erpnext. A site plugs in through the
+hooks in `xpos/api/site_hooks.py` (server) and the boot map `xpos_site`
+(`frontend/src/services/siteExtensions.ts`); every hook has a stock default.
+
+**Deploy order.** The Mule lane that registers these hooks (`lane/xpos-seams`
+in mulecity-full: `xpos_site_extensions`, `xpos_apply_taxes`,
+`xpos_preview_cart`, `xpos_repeat_lines`, `xpos_order_line_fields`,
+`xpos_customer_fields`, `xpos_payment_terminal_app`, ...) must be live **no
+later than** the XPOS_REF bump to this release. With this XPOS and the old Mule
+app, every Mule till feature switches off without an error: taxes use stock
+`party_taxes` instead of Mule's tax context, Repeat Invoice loses the mix line,
+the preview loses the stored-grain flag, `mule_vfd` and
+`mule_processing_instructions` are no longer carried, and mixes, the manager
+override, the offline VFD check, help, feed details and orders in flight are
+off. The other order is harmless: the old XPOS ignores the new hooks, and
+`pickup_invoice` returns both `mule_notice` and `xpos_notice`.
+
+Behaviour notes:
+- The site map is reactive (`siteMapChanged`, called when the boot is
+  replaced). A till opened signed out and signed in inside the SPA gets the
+  site's features without a reload; the login fetches the signed-in boot at
+  once (`authStore.login` -> `ensureFreshSession`).
+- `site_map()` lists an extension that raised in `extension_errors`. The
+  offline VFD check fails closed: a till with cached feed coverage keeps
+  checking while the map is incomplete (Guest/stale boot, failed extension) and
+  replays through the method cached with the coverage; only a whole map without
+  `vfd` clears the cache.
+- Single-answer hooks: the last app in `apps.txt` wins; when several apps
+  register one, the "xpos" log names the winner once per worker.
+- The card reader module is never assumed: a call before the config asks
+  `xpos.api.card_terminal.get_card_terminal_service`.
+- Site values, not XPOS constants: `help_manual` (no default page),
+  `mix.order_print_format`, `print_formats.payment_receipt` (else Standard),
+  `line_identity_fields` (lines that differ in these never merge).
+- The desktop (Electron) app has no boot, so no site map: stock taxes, and a
+  VFD sale queued offline before this release replays through `create_invoice`
+  (the server's VFD checks still run there). Mule City does not run the
+  desktop app.
+
 ## mule-v2.10.1-mc63 (contains mc62)
 
 ### The access gaps mc62 left (MuleCity-0bsc)
