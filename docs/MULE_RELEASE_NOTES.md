@@ -26,7 +26,9 @@ Customers (`api/customers.py`):
 - `add_delivery_address(..., pos_profile=None)`: checked through the till's own
   profile; the SPA sends `profileName` online and stores it on an address queued
   offline (`QueuedAddress.pos_profile`; one queued before mc63 replays with the
-  till's current profile). `make_primary_shipping` needs Customer write.
+  till's current profile). `make_primary_shipping` needs Customer write (no
+  caller sends it today; Mule's hook still makes a customer's first address
+  their shipping one by itself).
 - `get_customer_credit(customer, company=None, pos_profile=None)`: read in the
   profile's company; another company is a PermissionError (`profile_company`,
   `customer_in_profile`). The same for `api/payments.get_available_credit` and
@@ -74,7 +76,8 @@ call them.
 
 Tests: `test_scope_guards` (new: invoice scope, shift closing, desk closing,
 quotations) and `TestCustomerAccessMc63` in `test_access_guards`, stubbed so they
-run on a Mule slot; `frontend/tests/addressQueue.spec.ts`. All fail on mc62.
+run on a Mule slot; `frontend/tests/addressQueue.spec.ts`. The refusal cases
+fail on mc62 (43 of the 60 in the two modules; the rest are the allowed paths).
 The offline e2e `offline-delivery.cy.ts` made its yard address primary shipping
 through the counter login's `make_address`, which mc63 no longer allows a
 Customer reader; the yard is now the new customer's own (primary) address. The
