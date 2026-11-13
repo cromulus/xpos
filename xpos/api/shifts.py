@@ -9,6 +9,7 @@ from frappe import _
 from frappe.utils import cint, flt, now_datetime, nowdate
 
 from xpos.api.exchange import change_leg_table_exists, payment_tender_fields_exist
+from xpos.api.profiles import user_may_use_profile
 from xpos.api.utilities import can_close_shift, get_invoice_type, is_pos_cashier
 from xpos.utils import row_value
 
@@ -569,6 +570,15 @@ def close_shift(opening_shift: str, closing_details: str | list[dict] | None):
 	}
 
 
+def ensure_shift_access(opening) -> None:
+	"""Shift figures are for the shift's own cashier or someone allowed to close shifts."""
+	user = frappe.session.user
+	if not user_may_use_profile(opening.pos_profile, user) or (
+		opening.user != user and not can_close_shift(user, opening.pos_profile)
+	):
+		frappe.throw(_("You are not permitted to view this shift."), frappe.PermissionError)
+
+
 @frappe.whitelist()
 def get_shift_summary(opening_shift: str):
 	"""Get summary of the current shift for closing.
@@ -576,6 +586,7 @@ def get_shift_summary(opening_shift: str):
 	Enhanced version with tax breakdown and return info.
 	"""
 	opening = frappe.get_doc("POS Opening Shift", opening_shift)
+	ensure_shift_access(opening)
 	doctype = get_invoice_type()
 
 	invoices = _get_shift_invoices(opening, doctype, SUMMARY_INVOICE_FIELDS)

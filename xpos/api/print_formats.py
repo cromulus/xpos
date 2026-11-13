@@ -103,6 +103,7 @@ def mark_invoice_printed(doctype: str, name: str) -> dict:
 	"""Record that a POS receipt has printed, so later prints count as reprints."""
 	if doctype not in REPRINT_DOCTYPES:
 		frappe.throw(_("Unsupported doctype for print tracking: {0}").format(doctype))
+	frappe.has_permission(doctype, "read", doc=name, throw=True)
 	current = cint(frappe.db.get_value(doctype, name, "print_count"))
 	frappe.db.set_value(doctype, name, "print_count", current + 1, update_modified=False)
 	return {"name": name, "print_count": current + 1}
