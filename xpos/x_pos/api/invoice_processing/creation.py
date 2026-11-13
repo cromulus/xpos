@@ -200,11 +200,77 @@ def _check_invoice_shift(shift: str, pos_profile: str) -> None:
 
 
 def _check_invoice_customer(customer: str | None, pos_profile: str) -> None:
-	"""A customer the till's POS Profile may sell to; an unknown name is left to the create-customer step."""
+	"""A customer the till's POS Profile may sell to; an unknown name is left to _settle_invoice_customer."""
 	if customer and frappe.db.exists("Customer", customer):
 		from xpos.api.customers import require_customer_access
 
 		require_customer_access(customer, pos_profile=pos_profile)
+
+
+def _new_customer_group(pos, customer_name: str) -> str:
+	"""The Customer Group an invoice's new customer goes in: one the POS Profile sells to (MuleCity-py8t.79).
+
+	The profile's own default (a ``customer_group`` field, when a site adds one;
+	stock POS Profile has none), else Selling Settings' default. Either must be
+	a leaf group inside the profile's Customer Groups (any group when the
+	profile lists none). Nothing fits: the sale is refused, never put in All
+	Customer Groups.
+	"""
+	from xpos.api.customers import allowed_customer_groups
+
+	allowed = allowed_customer_groups(pos)
+	for group in (pos.get("customer_group"), frappe.db.get_single_value("Selling Settings", "customer_group")):
+		if (
+			group
+			and (not allowed or group in allowed)
+			and not frappe.db.get_value("Customer Group", group, "is_group")
+		):
+			return group
+	frappe.throw(
+		_(
+			"Customer {0} does not exist, and POS Profile {1} has no default customer group to add it to. "
+			"Choose an existing customer, or add the customer first."
+		).format(customer_name, pos.name),
+		frappe.ValidationError,
+	)
+
+
+def _settle_invoice_customer(invoice_doc, pos_profile: str) -> None:
+	"""Make the invoice's customer if it does not exist yet, then check the final one (MuleCity-py8t.79).
+
+	A name that does not exist is made only for a caller with Customer create
+	permission, under their own permissions, in a group the profile sells to
+	(_new_customer_group). A failed insert stops the sale. Whatever customer
+	the invoice ends with must pass require_customer_access for the profile:
+	_check_invoice_customer skips unknown names, and _guard_saved_invoice
+	checks only a changed customer.
+	"""
+	from xpos.api.customers import require_customer_access
+
+	customer_name = invoice_doc.get("customer")
+	if customer_name and not frappe.db.exists("Customer", customer_name):
+		if not frappe.has_permission("Customer", "create"):
+			frappe.throw(
+				_("Customer {0} does not exist, and you are not permitted to create customers.").format(
+					customer_name
+				),
+				frappe.PermissionError,
+			)
+		pos = resolve_pos_profile(pos_profile)
+		cust = frappe.get_doc(
+			{
+				"doctype": "Customer",
+				"customer_name": customer_name,
+				"customer_group": _new_customer_group(pos, customer_name),
+				"territory": frappe.db.get_single_value("Selling Settings", "territory") or "All Territories",
+				"customer_type": "Individual",
+			}
+		)
+		cust.insert()
+		invoice_doc.customer = cust.name
+		invoice_doc.customer_name = cust.customer_name
+	if invoice_doc.get("customer"):
+		require_customer_access(invoice_doc.customer, pos_profile=pos_profile)
 
 
 def _guard_new_invoice(data: dict):
@@ -318,24 +384,7 @@ def update_invoice(data: str) -> dict:
 
 	_validate_return_window(invoice_doc, doctype, return_validity_enabled)
 
-	customer_name = invoice_doc.get("customer")
-	if customer_name and not frappe.db.exists("Customer", customer_name):
-		try:
-			cust = frappe.get_doc(
-				{
-					"doctype": "Customer",
-					"customer_name": customer_name,
-					"customer_group": "All Customer Groups",
-					"territory": "All Territories",
-					"customer_type": "Individual",
-				}
-			)
-			cust.flags.ignore_permissions = True
-			cust.insert()
-			invoice_doc.customer = cust.name
-			invoice_doc.customer_name = cust.customer_name
-		except Exception as e:
-			frappe.log_error(f"Failed to create customer {customer_name}: {e}")
+	_settle_invoice_customer(invoice_doc, pos_profile)
 
 	effective_price_list = _resolve_effective_price_list(
 		invoice_doc.get("customer"),
