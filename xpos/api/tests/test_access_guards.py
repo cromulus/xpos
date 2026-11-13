@@ -317,7 +317,8 @@ class TestCustomerAccessJn61(CustomerCase):
 		result = offers.get_pos_coupon("GIFT100", "Greenview", "", pos_profile=PROFILE.name)
 		self.assertEqual(result["msg"], "Apply")
 		self.assertEqual(seen[-1]["company"], "Mule City")
-		# No customer picked yet: still the profile's company.
+		# No customer picked yet: still the profile's company (a coupon for anyone).
+		self.COUPON = frappe._dict(self.COUPON, coupon_code="SUMMER10", coupon_type="Promotional", customer=None)
 		offers.get_pos_coupon("SUMMER10", "", "Mule City")
 		self.assertEqual(seen[-1]["company"], "Mule City")
 		with patch.object(legacy_offers, "check_coupon_code", return_value={"coupon": None}) as legacy_check:
