@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import frappe
 
-from xpos.api import card_terminal, tender
+from xpos.api import card_terminal, site_hooks, tender
 from xpos.api.tests.test_tender import Doc, fake_precision, fake_rate
 
 _patches = []
@@ -167,7 +167,33 @@ class TestFeatureIsOffWithoutTheTerminalFramework(unittest.TestCase):
 	def test_config_is_disabled_without_the_framework(self):
 		with patch("xpos.api.card_terminal.payments_ready", return_value=False):
 			config = card_terminal.get_card_terminal_config("Mule City Retail")
-		self.assertEqual(config, {"enabled": False, "card_modes": [], "mode_of_payment": None, "terminals": []})
+		self.assertEqual(
+			config, {"enabled": False, "card_modes": [], "mode_of_payment": None, "terminals": [], "service": None}
+		)
+
+
+class TestTheTerminalAppIsTheSites(unittest.TestCase):
+	"""The card-reader framework is whichever app the site names (xpos_payment_terminal_app),
+	else pay_ng or payments when installed; the register calls that app's service."""
+
+	def app(self, hooked, installed):
+		with patch("xpos.api.site_hooks.frappe.get_hooks", return_value=hooked), patch(
+			"xpos.api.site_hooks.frappe.get_installed_apps", return_value=installed
+		):
+			return site_hooks.payment_terminal_app(), card_terminal.terminal_service_method_prefix()
+
+	def test_the_sites_app_wins(self):
+		self.assertEqual(
+			self.app(["payments"], ["frappe", "pay_ng", "payments"]), ("payments", "payments.transactions.service")
+		)
+
+	def test_without_a_hook_pay_ng_then_payments(self):
+		self.assertEqual(self.app([], ["frappe", "pay_ng"]), ("pay_ng", "pay_ng.transactions.service"))
+		self.assertEqual(self.app([], ["frappe", "payments"]), ("payments", "payments.transactions.service"))
+
+	def test_negative_a_named_app_that_is_not_installed_turns_the_reader_off(self):
+		self.assertEqual(self.app(["pay_ng"], ["frappe", "payments"]), (None, None))
+		self.assertEqual(self.app([], ["frappe"]), (None, None))
 
 
 class TestEndpoints(unittest.TestCase):
@@ -203,6 +229,7 @@ class TestTheRegistersReaderPicksTheCardMode(unittest.TestCase):
 				"card_modes": ["Square Card", "Stripe Card"],
 				"mode_of_payment": "Stripe Card",
 				"terminals": [reader],
+				"service": card_terminal.terminal_service_method_prefix(),
 			},
 		)
 
