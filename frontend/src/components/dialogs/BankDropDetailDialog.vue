@@ -96,6 +96,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatLocalDate } from "@/utils/localDate";
 import { computed } from "vue";
 import { useMoney } from "@/composables/useMoney";
 import { Badge } from "@/components/ui/badge";
@@ -161,7 +162,7 @@ function statusVariant(
 
 function formatDate(date?: string) {
 	if (!date) return "-";
-	return new Date(date).toLocaleDateString(undefined, {
+	return formatLocalDate(date, {
 		year: "numeric",
 		month: "short",
 		day: "numeric",

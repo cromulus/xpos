@@ -122,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatLocalDate } from "@/utils/localDate";
 import { ref, onMounted, onUnmounted, watch, nextTick, type ComponentPublicInstance } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
@@ -259,7 +260,7 @@ onUnmounted(() => {
 
 function formatDate(date: string) {
 	if (!date) return "";
-	return new Date(date).toLocaleDateString(undefined, {
+	return formatLocalDate(date, {
 		year: "numeric",
 		month: "short",
 		day: "numeric",

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatLocalDate } from "@/utils/localDate";
 import { ref, computed, onMounted } from "vue";
 import { usePurchaseStore } from "@/stores/purchaseStore";
 import { usePosStore } from "@/stores/posStore";
@@ -51,8 +52,7 @@ const hasShortageData = computed(() => transitFormItems.value.some((i) => i.retu
 
 function formatDate(d: string): string {
 	if (!d) return "";
-	const dt = new Date(d);
-	return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+	return formatLocalDate(d, { month: "short", day: "numeric", year: "numeric" }, "en-US");
 }
 
 async function selectTransit(entry: InTransitEntry): Promise<void> {

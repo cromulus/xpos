@@ -267,6 +267,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatLocalDate } from "@/utils/localDate";
 import { computed, ref, watch } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
@@ -458,7 +459,7 @@ watch(
 
 function formatDate(date: string) {
 	if (!date) return "";
-	return new Date(date).toLocaleDateString(undefined, {
+	return formatLocalDate(date, {
 		year: "numeric",
 		month: "short",
 		day: "numeric",
