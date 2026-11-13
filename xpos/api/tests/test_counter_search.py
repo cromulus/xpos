@@ -64,13 +64,14 @@ class TestCustomerAddress(unittest.TestCase):
 	"""A cashier can create a customer with a complete linked mailing address."""
 	def test_full_address_is_passed_to_the_native_address_document(self):
 		from xpos.api.customers import create_customer
-		with patch("xpos.api.customers.frappe") as api, patch("xpos.api.customers.make_address") as address:
+		# create_customer inserts its own new customer's address (_insert_customer_address, MuleCity-0bsc).
+		with patch("xpos.api.customers.frappe") as api, patch("xpos.api.customers._insert_customer_address") as address:
 			api.db.get_single_value.side_effect = lambda dt, field: {"territory": "North Carolina", "country": "United States"}.get(field)
 			create_customer("Test Buyer", customer_group="Individual", address_line1="123 Main St", address_line2="Suite 2", city="Benson", state="NC", pincode="27504")
 			fields = api.get_doc.call_args.args[0]
 			self.assertEqual(fields["territory"], "North Carolina")
 			self.assertNotIn("gender", fields)
-			data = address.call_args.args[0]
+			data = address.call_args.args[1]
 			self.assertEqual((data["address_line1"], data["address_line2"], data["state"], data["pincode"]), ("123 Main St", "Suite 2", "NC", "27504"))
 
 	def test_partial_address_is_rejected_before_creating_customer(self):
