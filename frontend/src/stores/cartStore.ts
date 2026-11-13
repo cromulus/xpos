@@ -5,6 +5,7 @@ import { call } from "@/services/api";
 import { usePosStore } from "./posStore";
 import { useSettingsStore } from "./settingsStore";
 import { roundFor } from "@/composables/useCurrency";
+import { roundTo } from "@/utils/numberFormat";
 import { getCachedItemByCode, getCachedStockForItem } from "@/services/dbBridge";
 import type {
 	CartItem,
@@ -180,7 +181,7 @@ export const useCartStore = defineStore("cart", () => {
 				total += disc.discount_amount * Math.abs(item.qty);
 			}
 		}
-		return Math.round(total * 100) / 100;
+		return money(total);
 	});
 
 	const offerGrandTotalDiscountPct = computed(() =>
@@ -191,23 +192,35 @@ export const useCartStore = defineStore("cart", () => {
 		items.value.reduce((sum: number, item: CartItem) => sum + Math.abs(item.qty), 0),
 	);
 
+	/**
+	 * Money to the cent as ERPNext rounds it (Frappe's default "Commercial Rounding": half
+	 * away from zero). Math.round rounds half toward +infinity, so a return's -$0.405 tax
+	 * came to -$0.40 while the invoice posted -$0.41, and the refund left -$0.01 owing.
+	 */
+	function money(value: number): number {
+		return roundTo(value, 2) || 0;
+	}
+
+	/** A line's net as the invoice posts it: qty × rate less its discount, to the cent. */
+	function lineNet(item: CartItem): number {
+		const itemTotal = item.qty * item.rate;
+		let discount = 0;
+		if (item.discount_percentage) {
+			discount = (itemTotal * item.discount_percentage) / 100;
+		} else if (item.discount_amount) {
+			discount = item.qty < 0 ? -item.discount_amount : item.discount_amount;
+		}
+		return money(itemTotal - discount);
+	}
+
 	const subtotal = computed(() =>
-		items.value.reduce((sum: number, item: CartItem) => {
-			const itemTotal = item.qty * item.rate;
-			let discount = 0;
-			if (item.discount_percentage) {
-				discount = (itemTotal * item.discount_percentage) / 100;
-			} else if (item.discount_amount) {
-				discount = item.qty < 0 ? -item.discount_amount : item.discount_amount;
-			}
-			return sum + (itemTotal - discount);
-		}, 0),
+		items.value.reduce((sum: number, item: CartItem) => sum + lineNet(item), 0),
 	);
 
 	/** The additional discount taken off the net before tax (apply_discount_on "Net Total"), else 0. */
 	const netTotalDiscount = computed(() => {
 		if (applyDiscountOn.value !== "Net Total") return 0;
-		if (discountPercentage.value > 0) return Math.round(subtotal.value * discountPercentage.value) / 100;
+		if (discountPercentage.value > 0) return money((subtotal.value * discountPercentage.value) / 100);
 		return discountAmount.value > 0 ? discountAmount.value : 0;
 	});
 
@@ -267,7 +280,7 @@ export const useCartStore = defineStore("cart", () => {
 				const share =
 					i === itemNets.length - 1
 						? remaining
-						: Math.round((discount * line.net * 100) / subtotal.value) / 100;
+						: money((discount * line.net) / subtotal.value);
 				line.net -= share;
 				remaining -= share;
 			});
@@ -299,7 +312,7 @@ export const useCartStore = defineStore("cart", () => {
 				result.push({
 					description: tax.description || "Tax",
 					rate: tax.rate,
-					amount: Math.round(totalTaxAmount * 100) / 100,
+					amount: money(totalTaxAmount),
 					included_in_print_rate: isIncluded,
 				});
 			}
@@ -322,7 +335,7 @@ export const useCartStore = defineStore("cart", () => {
 				result.push({
 					description: desc,
 					rate: 0,
-					amount: Math.round(amount * 100) / 100,
+					amount: money(amount),
 					included_in_print_rate: taxInclusive,
 				});
 			}
@@ -378,10 +391,11 @@ export const useCartStore = defineStore("cart", () => {
 		if (!isReturnMode.value && selectedDeliveryCharge.value) {
 			total += selectedDeliveryCharge.value.rate || 0;
 		}
-		total = isReturnMode.value ? total : Math.max(0, total);
+		total = isReturnMode.value ? money(total) : Math.max(0, money(total));
 		// card value is exact money, so a sale that sells or spends one is never rounded
 		if (!posStore.disableRoundedTotal && total !== 0 && !isGiftCardSale.value && !giftCardTender.value) {
-			total = Math.round(total);
+			// Half away from zero, as ERPNext's rounded_total: a -6.50 return is -7, not -6.
+			total = roundTo(total, 0) || 0;
 		}
 		return roundFor(posStore.invoiceCurrency || posStore.currency, total);
 	});
@@ -1792,7 +1806,7 @@ export const useCartStore = defineStore("cart", () => {
 				totalDisc += discountAmount.value;
 			}
 
-			data.discount_amount = Math.round(totalDisc * 100) / 100;
+			data.discount_amount = money(totalDisc);
 			data.additional_discount_percentage = 0;
 		}
 
@@ -1887,10 +1901,10 @@ export const useCartStore = defineStore("cart", () => {
 				item_name: item.local_item_name || item.item_name,
 				qty: item.qty,
 				rate: item.rate,
-				amount: Math.round(gross * 100) / 100,
+				amount: money(gross),
 				uom: item.uom || item.stock_uom,
 				discount_percentage: item.discount_percentage,
-				discount_amount: Math.round(discount * 100) / 100,
+				discount_amount: money(discount),
 				price_list_rate: item.rate,
 				serial_no: item.serial_no,
 				batch_no: item.batch_no,
@@ -1899,7 +1913,7 @@ export const useCartStore = defineStore("cart", () => {
 		});
 
 		const itemDiscountTotal = snapshotItems.reduce((sum, it) => sum + (it.discount_amount || 0), 0);
-		const totalDiscount = Math.round((itemDiscountTotal + (discountAmount.value || 0)) * 100) / 100;
+		const totalDiscount = money(itemDiscountTotal + (discountAmount.value || 0));
 		const totalQty = items.value.reduce((sum: number, item: CartItem) => sum + item.qty, 0);
 		const paid = totalPayments.value;
 		const change = paid - grandTotal.value;
@@ -1932,9 +1946,9 @@ export const useCartStore = defineStore("cart", () => {
 							}
 						: {}),
 				})),
-			subtotal: Math.round(subtotal.value * 100) / 100,
+			subtotal: money(subtotal.value),
 			total_discount: totalDiscount,
-			net_total: Math.round((subtotal.value - includedTaxAmount.value) * 100) / 100,
+			net_total: money(subtotal.value - includedTaxAmount.value),
 			grand_total: grandTotal.value,
 			total_qty: totalQty,
 			change: change > 0.01 && !isReturnMode.value ? Math.round(change * 100) / 100 : 0,
