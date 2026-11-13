@@ -52,7 +52,9 @@ class TestNoSiteAppIsNamed(IntegrationTestCase):
 
 	def test_the_site_map_is_not_a_dispatcher(self):
 		"""The map only names methods: nothing in site_hooks is callable over HTTP."""
-		self.assertFalse([fn for fn in frappe.whitelisted if getattr(fn, "__module__", "") == site_hooks.__name__])
+		self.assertFalse(
+			[fn for fn in frappe.whitelisted if getattr(fn, "__module__", "") == site_hooks.__name__]
+		)
 
 
 class TestBootWithoutExtensions(NoExtensions):
@@ -132,18 +134,8 @@ class TestSellingWithoutExtensions(NoExtensions):
 		if not self.profile.selling_price_list:
 			self.skipTest("the POS Profile has no selling price list")
 		run = frappe.generate_hash(length=6)
-		self.customer = (
-			frappe.get_doc(
-				{
-					"doctype": "Customer",
-					"customer_name": f"XPOS Plain Site {run}",
-					"customer_group": frappe.db.get_value("Customer Group", {"is_group": 0}, "name"),
-					"territory": frappe.db.get_value("Territory", {"is_group": 0}, "name"),
-				}
-			)
-			.insert(ignore_permissions=True)
-			.name
-		)
+		self.run = run
+		self.customer = self._customer(f"XPOS Plain Site {run}", self._sale_group())
 		self.item = (
 			frappe.get_doc(
 				{
@@ -166,6 +158,31 @@ class TestSellingWithoutExtensions(NoExtensions):
 				"price_list_rate": 10,
 			}
 		).insert(ignore_permissions=True)
+
+	def _sale_group(self):
+		"""A leaf Customer Group this register sells to (any leaf when it has no limit)."""
+		from xpos.api.customers import allowed_customer_groups
+
+		allowed = allowed_customer_groups(self.profile)
+		filters = {"is_group": 0, **({"name": ["in", allowed]} if allowed else {})}
+		group = frappe.db.get_value("Customer Group", filters, "name")
+		if not group:
+			self.skipTest("the POS Profile sells to no leaf customer group")
+		return group
+
+	def _customer(self, name, group):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Customer",
+					"customer_name": name,
+					"customer_group": group,
+					"territory": frappe.db.get_value("Territory", {"is_group": 0}, "name"),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def cart(self):
 		return {
@@ -199,6 +216,19 @@ class TestSellingWithoutExtensions(NoExtensions):
 		)
 		self.assertEqual(summary["items"][0]["item_code"], self.item)
 		self.assertNotIn("stored_grain", summary["items"][0])
+
+	def test_negative_tax_context_refuses_a_customer_outside_the_registers_groups(self):
+		from xpos.api.customers import allowed_customer_groups
+
+		allowed = allowed_customer_groups(self.profile)
+		if not allowed:
+			self.skipTest("the POS Profile sells to every customer group")
+		outside = frappe.db.get_value("Customer Group", {"is_group": 0, "name": ["not in", allowed]}, "name")
+		if not outside:
+			self.skipTest("no customer group outside the POS Profile's")
+		stranger = self._customer(f"XPOS Plain Outside {self.run}", outside)
+		with self.assertRaises(frappe.PermissionError):
+			party_taxes.tax_context(stranger, self.profile_name)
 
 	def test_negative_tax_context_refuses_a_register_the_caller_may_not_use(self):
 		frappe.set_user("Guest")
