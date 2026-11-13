@@ -184,6 +184,19 @@ class TestSavedInvoiceStaysOnItsTill(InvoiceCase):
 				creation.submit_invoice(json.dumps({"name": "ACC-SINV-1", field: value}), "{}")
 		self.assertEqual(self.draft.applied, [])
 
+	def test_negative_submitting_a_saved_draft_rechecks_its_unchanged_customer(self):
+		"""The draft's customer, sent again or left out, is checked before the payload is applied (MuleCity-py8t.81)."""
+		self.draft.customer = "Insider"
+		for payload in ({"name": "ACC-SINV-1"}, {"name": "ACC-SINV-1", "customer": "Insider"}):
+			with self.subTest(payload), self.assertRaises(frappe.PermissionError):
+				creation.submit_invoice(json.dumps(payload), "{}")
+		self.assertEqual(self.draft.applied, [])
+
+	def test_submitting_a_saved_draft_for_a_customer_inside_the_profile_goes_on(self):
+		with self.assertRaises(Applied):
+			creation.submit_invoice(json.dumps({"name": "ACC-SINV-1"}), "{}")
+		self.require_customer_access.assert_called_once_with("Greenview", pos_profile="Mule City Retail")
+
 
 class TestNewInvoiceIsScopedToTheProfile(InvoiceCase):
 	def test_negative_a_new_invoice_for_another_company_is_refused(self):
