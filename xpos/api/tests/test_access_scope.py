@@ -11,6 +11,7 @@ Builds on test_record_access's fixtures. Run on a disposable test site::
 import frappe
 
 from xpos.api import customers as customers_api
+from xpos.api import invoices as invoices_api
 from xpos.api import offers, profiles
 from xpos.api.tests.test_record_access import (
 	CASHIER,
@@ -22,6 +23,7 @@ from xpos.api.tests.test_record_access import (
 	RecordAccessTestCase,
 )
 from xpos.x_pos.api import offers as legacy_offers
+from xpos.x_pos.api.invoice_processing import data as legacy_invoice_data
 
 
 class TestGuestProfile(RecordAccessTestCase):
@@ -98,3 +100,33 @@ class TestCouponsThroughTheCallersProfile(RecordAccessTestCase):
 		for get in (offers.get_pos_coupon, legacy_offers.get_pos_coupon):
 			with self.subTest(get.__module__), self.assertRaises(frappe.PermissionError):
 				get("_TEST-NO-SUCH-COUPON", "", pos_profile=OTHER_PROFILE)
+
+
+class TestLastInvoiceRatesThroughTheCallersProfile(RecordAccessTestCase):
+	"""Last invoice rates reveal what a customer paid: the profile's customers, in its company."""
+
+	ITEMS = ["_Test PS Item A"]
+
+	def lookups(self, customer, **kwargs):
+		return (
+			lambda: invoices_api.get_last_invoice_rates(customer, self.ITEMS, **kwargs),
+			lambda: legacy_invoice_data.get_last_invoice_rates(customer, self.ITEMS, **kwargs),
+		)
+
+	def test_a_customer_inside_the_profile_is_looked_up(self):
+		rates = invoices_api.get_last_invoice_rates(INSIDE, self.ITEMS, pos_profile=OWN_PROFILE)
+		self.assertIsInstance(rates, (list, dict))
+
+	def test_a_customer_outside_the_profile_groups_is_refused(self):
+		for i, lookup in enumerate(self.lookups(OUTSIDE, pos_profile=OWN_PROFILE)):
+			with self.subTest(i), self.assertRaises(frappe.PermissionError):
+				lookup()
+
+	def test_another_company_or_profile_is_refused(self):
+		for kwargs in (
+			{"company": OTHER_COMPANY, "pos_profile": OWN_PROFILE},
+			{"pos_profile": OTHER_PROFILE},
+		):
+			for i, lookup in enumerate(self.lookups(INSIDE, **kwargs)):
+				with self.subTest(i, **kwargs), self.assertRaises(frappe.PermissionError):
+					lookup()

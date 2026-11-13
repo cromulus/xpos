@@ -2060,8 +2060,16 @@ def fetch_exchange_rate(from_currency: str, to_currency: str):
 
 
 @frappe.whitelist()
-def get_last_invoice_rates(customer: str, item_codes: str | list, company: str):
-	"""Get the most recent invoice rates for items by customer."""
+def get_last_invoice_rates(
+	customer: str, item_codes: str | list, company: str | None = None, pos_profile: str | None = None
+):
+	"""Get the most recent invoice rates for items by customer.
+
+	Only for a customer the caller's POS Profile may see, in that profile's company.
+	"""
+	from xpos.api.customers import customer_in_profile
+
+	company = customer_in_profile(customer, company, pos_profile)
 	if isinstance(item_codes, str):
 		item_codes = json.loads(item_codes)
 

@@ -2,15 +2,21 @@ import frappe
 
 
 @frappe.whitelist()
-def get_last_invoice_rates(customer: str, item_codes: list, company: str | None = None):
+def get_last_invoice_rates(
+	customer: str, item_codes: list, company: str | None = None, pos_profile: str | None = None
+):
 	"""
 	Get the last invoice rate for a list of items for a specific customer.
+
+	Only for a customer the caller's POS Profile may see, in that profile's
+	company (not the site's default company).
 	"""
-	if not company:
-		company = frappe.db.get_default("company")
+	from xpos.api.customers import customer_in_profile
 
 	if not customer or not item_codes:
 		return []
+
+	company = customer_in_profile(customer, company, pos_profile)
 
 	if isinstance(item_codes, str):
 		import json
