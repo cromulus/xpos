@@ -60,11 +60,15 @@ def _quotation_doc(data: dict, ptype: str):
 		doc = frappe.get_doc("Quotation", name)
 		frappe.has_permission("Quotation", ptype, doc=doc, throw=True)
 		doc.update(data)
+		# Again on the changed document: its company and customer, under User Permissions.
+		frappe.has_permission("Quotation", ptype, doc=doc, throw=True)
 		return doc
+	data.pop("name", None)
 	frappe.has_permission("Quotation", "create", throw=True)
-	if ptype != "write":
-		frappe.has_permission("Quotation", ptype, throw=True)
-	return frappe.get_doc(data)
+	doc = frappe.get_doc(data)
+	for needed in dict.fromkeys(("create", ptype if ptype != "write" else "create")):
+		frappe.has_permission("Quotation", needed, doc=doc, throw=True)
+	return doc
 
 
 @frappe.whitelist()

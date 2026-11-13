@@ -218,7 +218,7 @@ class TestShiftClosing(unittest.TestCase):
 			("xpos.api.shifts.get_shift_till_payments", {"return_value": []}),
 			(
 				"xpos.api.shifts.get_shift_expected_amounts",
-				{"return_value": {"Cash": {"amount": 400, "currency": "USD"}}},
+				{"return_value": {"Cash": {"amount": 400, "currency": "USD"}, "Card": {"amount": 75, "currency": "USD"}}},
 			),
 		):
 			patcher = patch(target, **kwargs)
@@ -250,23 +250,47 @@ class TestShiftClosing(unittest.TestCase):
 				"pos_profile": "Mule City Retail",
 				"company": "Other Co",
 				"user": "boss@mulecity.com",
-				# The till claims 300 was expected and counted: no shortage.
+				"grand_total": 99999,
+				"net_total": 99999,
+				"total_quantity": 999,
+				"posting_date": "2020-01-01",
+				"period_end_date": "2020-01-01 23:00:00",
+				# The till claims 300 was expected and counted: no shortage. It leaves Card out.
 				"payment_reconciliation": [
 					{"mode_of_payment": "Cash", "opening_amount": 999, "expected_amount": 300,
 						"closing_amount": 300, "difference": 0},
 				],
 			}
 		)
-		(cash,) = [row for table, row in self.appended if table == "payment_reconciliation"]
+		rows = {row["mode_of_payment"]: row for table, row in self.appended if table == "payment_reconciliation"}
+		cash = rows["Cash"]
 		self.assertEqual(
 			(cash["expected_amount"], cash["closing_amount"], cash["difference"], cash["opening_amount"]),
 			(400, 300, -100, 100),
 		)
+		# A mode the till left out is counted as 0, not dropped.
+		self.assertEqual((rows["Card"]["closing_amount"], rows["Card"]["difference"]), (0, -75))
 		closing = frappe.get_doc.call_args_list[-1].args[0]
 		self.assertEqual(
 			(closing["pos_profile"], closing["company"], closing["user"]),
 			("Other Till", "Mule City", frappe.session.user),
 		)
+		self.assertEqual((closing["grand_total"], closing["net_total"], closing["total_quantity"]), (0, 0, 0))
+		self.assertNotEqual(str(closing["posting_date"]), "2020-01-01")
+
+	def test_negative_a_synced_closing_cannot_count_a_mode_twice(self):
+		self.user_may_use_profile.return_value = True
+		with self.assertRaises(frappe.ValidationError):
+			shifts.create_closing_shift(
+				{
+					"pos_opening_shift": "POS-OS-1",
+					"payment_reconciliation": [
+						{"mode_of_payment": "Cash", "closing_amount": 300},
+						{"mode_of_payment": "Cash", "closing_amount": 100},
+					],
+				}
+			)
+		self.closing.insert.assert_not_called()
 
 	def test_negative_a_count_out_of_range_is_refused(self):
 		self.user_may_use_profile.return_value = True
@@ -325,15 +349,69 @@ class TestDeskShiftClosing(unittest.TestCase):
 				closing_creation.submit_closing_shift(json.dumps({"doctype": "POS Closing Shift"}))
 		get_doc.assert_not_called()
 
-	def test_negative_a_submitted_closing_is_always_a_pos_closing_shift(self):
+	def desk_submit(self, payload, exists=False):
+		opening = SimpleNamespace(
+			name="POS-OS-1",
+			pos_profile="Mule City Retail",
+			company="Mule City",
+			balance_details=[SimpleNamespace(mode_of_payment="Cash", amount=100)],
+		)
+		made = MagicMock()
+		with (
+			patch("frappe.db.exists", return_value=exists),
+			patch("frappe.get_doc", side_effect=lambda *a, **k: opening if a and a[0] == "POS Opening Shift" else made) as get_doc,
+			patch(
+				"xpos.x_pos.doctype.pos_closing_shift.closing_processing.creation.get_invoice_type",
+				return_value="Sales Invoice",
+			),
+			patch("xpos.api.shifts._get_shift_invoices", return_value=[]),
+			patch(
+				"xpos.api.shifts.get_shift_expected_amounts",
+				return_value={"Cash": {"amount": 400, "currency": "USD"}, "Card": {"amount": 75, "currency": "USD"}},
+			),
+		):
+			closing_creation.submit_closing_shift(json.dumps(payload))
+		return get_doc.call_args.args[0], made
+
+	def test_negative_a_submitted_closing_is_always_a_new_pos_closing_shift(self):
+		self.refuse(("POS Closing Shift", "submit"), ("POS Opening Shift", "read"))
+		doc, made = self.desk_submit(
+			{"doctype": "User", "email": "x@example.com", "owner": "Administrator", "pos_opening_shift": "POS-OS-1"}
+		)
+		self.assertEqual(doc["doctype"], "POS Closing Shift")
+		self.assertNotIn("owner", doc)
+		made.insert.assert_called_once_with()
+		made.submit.assert_called_once_with()
+
+	def test_negative_a_saved_closing_cannot_be_resubmitted_through_the_endpoint(self):
+		self.refuse(("POS Closing Shift", "submit"), ("POS Opening Shift", "read"))
+		with self.assertRaises(frappe.PermissionError):
+			self.desk_submit({"name": "POS-CS-1", "pos_opening_shift": "POS-OS-1"}, exists=True)
+
+	def test_negative_a_desk_closing_needs_read_on_its_opening_shift(self):
 		self.refuse(("POS Closing Shift", "submit"))
-		with patch("frappe.get_doc") as get_doc:
-			closing_creation.submit_closing_shift(
-				json.dumps({"doctype": "User", "email": "x@example.com", "owner": "Administrator"})
-			)
-		made = get_doc.call_args.args[0]
-		self.assertEqual(made["doctype"], "POS Closing Shift")
-		self.assertNotIn("owner", made)
+		with self.assertRaises(frappe.PermissionError):
+			self.desk_submit({"pos_opening_shift": "POS-OS-1"})
+
+	def test_negative_a_desk_closing_cannot_bring_its_own_expected_cash_or_till(self):
+		self.refuse(("POS Closing Shift", "submit"), ("POS Opening Shift", "read"))
+		doc, _made = self.desk_submit(
+			{
+				"pos_opening_shift": "POS-OS-1",
+				"pos_profile": "Other Till",
+				"company": "Other Co",
+				"payment_reconciliation": [
+					{"mode_of_payment": "Cash", "opening_amount": 999, "expected_amount": 300, "closing_amount": 300},
+				],
+			}
+		)
+		self.assertEqual((doc["pos_profile"], doc["company"]), ("Mule City Retail", "Mule City"))
+		rows = {row["mode_of_payment"]: row for row in doc["payment_reconciliation"]}
+		self.assertEqual(
+			(rows["Cash"]["opening_amount"], rows["Cash"]["expected_amount"], rows["Cash"]["difference"]),
+			(100, 400, -100),
+		)
+		self.assertEqual(rows["Card"]["closing_amount"], 0)
 
 
 class TestLegacyQuotations(unittest.TestCase):
@@ -345,6 +423,47 @@ class TestLegacyQuotations(unittest.TestCase):
 		):
 			quotations.update_quotation({"doctype": "User", "email": "x@example.com"})
 		self.assertEqual(get_doc.call_args.args[0]["doctype"], "Quotation")
+
+	def test_negative_the_quotation_built_is_checked_as_a_document(self):
+		"""Type-level create is not enough: the built Quotation (company, customer, User Permissions) is checked."""
+
+		def has_permission(doctype=None, ptype="read", doc=None, *a, throw=False, **k):
+			if doc is None:
+				return True
+			raise frappe.PermissionError("user permission")
+
+		with (
+			patch("frappe.has_permission", side_effect=has_permission),
+			patch("frappe.db.exists", return_value=False),
+			patch("frappe.get_doc") as get_doc,
+		):
+			for call in (
+				lambda: quotations.update_quotation({"company": "Other Co", "party_name": "Insider"}),
+				lambda: quotations.submit_quotation({"company": "Other Co", "party_name": "Insider"}),
+			):
+				with self.assertRaises(frappe.PermissionError):
+					call()
+		get_doc.return_value.save.assert_not_called()
+
+	def test_negative_a_quotation_changed_into_one_the_user_may_not_have_is_refused(self):
+		doc = MagicMock()
+		checked = []
+
+		def has_permission(doctype=None, ptype="read", doc=None, *a, throw=False, **k):
+			checked.append(ptype)
+			if len(checked) > 1:  # the check after update()
+				raise frappe.PermissionError("changed company")
+			return True
+
+		with (
+			patch("frappe.has_permission", side_effect=has_permission),
+			patch("frappe.db.exists", return_value=True),
+			patch("frappe.get_doc", return_value=doc),
+		):
+			with self.assertRaises(frappe.PermissionError):
+				quotations.update_quotation({"name": "SAL-QTN-1", "company": "Other Co"})
+		doc.update.assert_called_once()
+		doc.save.assert_not_called()
 
 	def test_negative_the_legacy_quotation_endpoints_need_quotation_permission(self):
 		with (

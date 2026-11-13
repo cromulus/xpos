@@ -40,8 +40,11 @@ Customers (`api/customers.py`):
 
 Shift closing:
 - Desk endpoints, from upstream `86425a7` / `882e1a8`: `submit_closing_shift`
-  needs submit on POS Closing Shift and always saves a POS Closing Shift (it
-  saved whatever doctype the payload named); `make_closing_shift_from_opening`
+  needs submit on POS Closing Shift and read on the opening shift, takes only a
+  new closing (a saved one is refused), always saves a POS Closing Shift (it
+  saved whatever doctype the payload named), on the shift's own profile and
+  company, with the server's opening and expected amounts, and without
+  `ignore_permissions`; `make_closing_shift_from_opening`
   needs create plus read on the opening shift; `get_pos_invoices` and
   `get_payments_entries` (`ensure_opening_shift_read`; `get_pos_invoices` also
   submits printed drafts), `get_closing_shift_overview` and
@@ -50,16 +53,21 @@ Shift closing:
   them.
 - `close_shift` and the offline sync's `create_closing_shift`
   (`ensure_may_close`): `close_shift` on the shift's own profile, as a user of it.
-  `create_closing_shift` recomputes expected cash on the server (as `close_shift`
-  does, Payment Entries included and listed), keeps the shift's profile and
-  company and the closing user, and never takes the till's `expected_amount` or
-  `difference`. Counts (opening float, closing count) are range-checked
-  (`counted_amount`, `bb17c4f`).
+  `create_closing_shift` takes only the till's counts: expected cash is
+  recomputed (as `close_shift` does, Payment Entries included and listed), the
+  totals are summed from the shift's invoices, the dates are the sync's, the
+  profile and company are the shift's and the user is the caller. Its rows are
+  every mode the shift opened with or expects (`reconciliation_rows`): one the
+  till did not count counts as 0. A mode counted twice is refused (also in
+  `close_shift`, which otherwise keeps the modes the till sends). Counts
+  (opening float, closing count) are range-checked (`counted_amount`, `bb17c4f`).
 
 Legacy quotations (`x_pos/api/quotations.py`): `update_quotation` /
 `submit_quotation` saved the payload's doctype with `ignore_permissions`, so any
-logged-in user could create any document. Now Quotation only, behind
-Quotation write / create / submit. The SPA does not call them.
+logged-in user could create any document. Now Quotation only, behind Quotation
+write / create / submit, checked on the type and again on the built or changed
+document (its company and customer, under User Permissions). The SPA does not
+call them.
 
 Tests: `test_scope_guards` (new: invoice scope, shift closing, desk closing,
 quotations) and `TestCustomerAccessMc63` in `test_access_guards`, stubbed so they
