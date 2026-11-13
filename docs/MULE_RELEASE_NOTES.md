@@ -34,13 +34,25 @@ Mule behaviour kept:
 - `get_customers` keeps the fork's search, ranking, preload and picker rows.
 - `get_customer_balance` keeps the `xpos_customer_balance` hook (MuleCity-biez).
 - `make_address` keeps its single JSON `args`; the till's `pos_profile` is in it.
+  It checks read access to the customer (groups, walk-in, User Permissions), not
+  upstream's Customer write: the shared counter login (Customer read only) adds
+  delivery addresses in Edit Customer. `create_customer` inserts its new
+  customer's address itself (`_insert_customer_address`).
+- `get_default_pos_profile`: ERPNext v16's POS Settings has no `pos_profile`
+  field, so a superuser without a profile row no longer hits a ValidationError.
 - `get_invoice_for_repeat` keeps its `check_permission("read")`.
 
 Fork endpoints given the same checks: `add_delivery_address`, `quote_delivery`
 (also refuses an address that is not the customer's), `get_customer_credit`.
 
-Tests: upstream's `test_record_access` (helpers in `record_access_fixtures.py`)
-plus `TestForkEndpointScope`; `test_sales_orders`; `test_customers` adjusted.
+Tests: `test_access_guards` (stubbed, runs on a Mule slot: refusals for a
+customer outside the groups, a reader changing one, User Permissions, someone
+else's or a forged profile, another till's or company's invoice, other doctypes;
+walk-in and own records pass); `test_sales_orders`; new cases in `test_shifts`.
+Upstream's live `test_record_access` (helpers in `record_access_fixtures.py`,
+plus `TestForkEndpointScope`) needs ERPNext's `_Test` records, so it does not run
+on a Mule site. Stories in `test_customers`, `test_delivery`, `test_order_notes`
+and others stub the new gates.
 
 Not taken (not access fixes, or features): `27d0727` (MariaDB 11.6+ snapshot
 isolation on row locks; Mule runs 11.8.6, follow-up bead), `6915c61` (the
