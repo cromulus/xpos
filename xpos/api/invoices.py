@@ -65,6 +65,11 @@ def _get_item_rate_precision():
 	return p if p >= 0 else 3
 
 
+def discount_applies_on(data: dict, pos) -> str:
+	"""The register's apply_discount_on, else the POS Profile's (as ERPNext sets it), else Grand Total."""
+	return data.get("apply_discount_on") or pos.get("apply_discount_on") or "Grand Total"
+
+
 def _resolve_invoice_posting_date(pos, requested_posting_date=None, current_posting_date=None):
 	"""Respect the POS Profile posting-date setting while validating client input."""
 	if not cint(pos.get("allow_change_posting_date")):
@@ -594,10 +599,10 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 
 	if additional_discount_percentage:
 		invoice_doc.additional_discount_percentage = additional_discount_percentage
-		invoice_doc.apply_discount_on = data.get("apply_discount_on") or "Grand Total"
+		invoice_doc.apply_discount_on = discount_applies_on(data, pos)
 	elif discount_amount:
 		invoice_doc.discount_amount = discount_amount
-		invoice_doc.apply_discount_on = data.get("apply_discount_on") or "Grand Total"
+		invoice_doc.apply_discount_on = discount_applies_on(data, pos)
 
 	invoice_doc.pos_notes = data.get("pos_notes", "")
 
@@ -1327,10 +1332,10 @@ def save_draft_invoice(data: str | dict):
 
 	if data.get("additional_discount_percentage"):
 		invoice_doc.additional_discount_percentage = flt(data["additional_discount_percentage"])
-		invoice_doc.apply_discount_on = data.get("apply_discount_on") or "Grand Total"
+		invoice_doc.apply_discount_on = discount_applies_on(data, pos)
 	elif data.get("discount_amount"):
 		invoice_doc.discount_amount = flt(data["discount_amount"])
-		invoice_doc.apply_discount_on = data.get("apply_discount_on") or "Grand Total"
+		invoice_doc.apply_discount_on = discount_applies_on(data, pos)
 
 	invoice_doc.pos_notes = data.get("pos_notes") or ""
 

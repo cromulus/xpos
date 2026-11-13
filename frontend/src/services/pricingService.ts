@@ -36,7 +36,7 @@ export interface CartPricingRequest {
 const EMPTY_TRANSACTION = {
 	additional_discount_percentage: 0,
 	discount_amount: 0,
-	apply_discount_on: "Grand Total",
+	apply_discount_on: "",
 	from_pricing_rule: false,
 };
 
