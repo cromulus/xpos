@@ -47,6 +47,10 @@ class TestWalkInReachesTheOfflineCache(IntegrationTestCase):
 		patcher = patch("frappe.get_cached_doc", side_effect=cached_doc)
 		patcher.start()
 		self.addCleanup(patcher.stop)
+		# The stand-in profile is not a POS Profile row; resolve_pos_profile would refuse it.
+		resolve = patch("xpos.api.customers.resolve_pos_profile", return_value=self.profile)
+		resolve.start()
+		self.addCleanup(resolve.stop)
 
 	def _group(self, name):
 		return frappe.get_doc(

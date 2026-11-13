@@ -161,13 +161,8 @@ def cart_weight(items: list[dict], skip_item: str | None = None) -> float:
 	)
 
 
-@frappe.whitelist()
-def quote_delivery(customer: str, address: str, items: str | list | None = None) -> dict:
-	"""The site's delivery charge for this cart (``items``: item_code, qty, conversion_factor) to one address."""
-	quote = _last_hook(QUOTE_HOOK)
-	if not quote:
-		frappe.throw(_("This site does not quote delivery"))
-	# The quote reads the customer's address and miles: the same access as the till's customer card.
+def require_quote_access(customer: str, address: str) -> None:
+	"""The quote reads the customer's address and miles: the same access as the till's customer card."""
 	from xpos.api.customers import require_customer_access
 
 	require_customer_access(customer)
@@ -176,6 +171,15 @@ def quote_delivery(customer: str, address: str, items: str | list | None = None)
 		{"parenttype": "Address", "parent": address, "link_doctype": "Customer", "link_name": customer},
 	):
 		frappe.throw(_("Address {0} is not one of {1}'s.").format(address, customer), frappe.PermissionError)
+
+
+@frappe.whitelist()
+def quote_delivery(customer: str, address: str, items: str | list | None = None) -> dict:
+	"""The site's delivery charge for this cart (``items``: item_code, qty, conversion_factor) to one address."""
+	quote = _last_hook(QUOTE_HOOK)
+	if not quote:
+		frappe.throw(_("This site does not quote delivery"))
+	require_quote_access(customer, address)
 	items = frappe.parse_json(items) if isinstance(items, str) else (items or [])
 	policy_of = _last_hook(POLICY_HOOK)
 	delivery_item = (policy_of() or {}).get("item_code") if policy_of else None

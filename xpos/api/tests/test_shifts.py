@@ -5,6 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import frappe
+
 from xpos.api import shifts
 
 
@@ -566,6 +568,12 @@ class TestSecondShiftOnTheSameDay(unittest.TestCase):
 	same till and rings nothing. Close Shift for the second shift must show 0 invoices and 0.00,
 	not the three invoices already counted in the first shift's closing."""
 
+	def setUp(self):
+		# These stories mock the shift; who may see it is TestShiftSummaryAccess's.
+		access = patch("xpos.api.shifts.ensure_shift_access")
+		access.start()
+		self.addCleanup(access.stop)
+
 	# Three invoices from the first shift: linked to it and already in its closing.
 	FIRST_SHIFT_INVOICES = tuple(
 		{
@@ -682,6 +690,12 @@ class TestCloseSheetByCashier(unittest.TestCase):
 	and returns under typed initials. The Close Shift sheet shows each cashier's sales and
 	returns (count and total), and a "(none)" row for invoices saved without initials."""
 
+	def setUp(self):
+		# These stories mock the shift; who may see it is TestShiftSummaryAccess's.
+		access = patch("xpos.api.shifts.ensure_shift_access")
+		access.start()
+		self.addCleanup(access.stop)
+
 	INVOICES = (
 		{"name": "SINV-1", "grand_total": 21.35, "net_total": 20, "is_return": 0, "pos_cashier": "LE"},
 		{"name": "SINV-2", "grand_total": 10.0, "net_total": 10, "is_return": 0, "pos_cashier": "BI"},
@@ -760,6 +774,12 @@ class TestTillPaymentsInTheShift(unittest.TestCase):
 	it to expected cash, lists it under "Payments received" and under LE, and the saved closing
 	lists it in ``pos_payments``. The pickup invoice that later uses the advance has no cash
 	row for it, so a later shift never counts that $40 again."""
+
+	def setUp(self):
+		# These stories mock the shift; who may see it is TestShiftSummaryAccess's.
+		access = patch("xpos.api.shifts.ensure_shift_access")
+		access.start()
+		self.addCleanup(access.stop)
 
 	SHIFT = "POS-OS-26-0000009"
 	ENTRIES = (
@@ -967,3 +987,32 @@ class TestShiftAmountCalculations(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestShiftSummaryAccess(unittest.TestCase):
+	"""A shift's figures are for its own cashier or a close_shift holder on the profile (upstream 86425a7)."""
+
+	OPENING = frappe._dict(name="POS-OS-1", pos_profile="Mule City Retail", user="leslie@mulecity.com")
+
+	@patch("xpos.api.shifts.can_close_shift", return_value=False)
+	@patch("xpos.api.shifts.user_may_use_profile", return_value=True)
+	def test_another_cashiers_shift_is_refused(self, _may_use, _can_close):
+		with patch("xpos.api.shifts.frappe.session", frappe._dict(user="other@mulecity.com")):
+			with self.assertRaises(frappe.PermissionError):
+				shifts.ensure_shift_access(self.OPENING)
+
+	@patch("xpos.api.shifts.can_close_shift", return_value=True)
+	@patch("xpos.api.shifts.user_may_use_profile", return_value=False)
+	def test_a_profile_the_user_may_not_use_is_refused(self, _may_use, _can_close):
+		with patch("xpos.api.shifts.frappe.session", frappe._dict(user="leslie@mulecity.com")):
+			with self.assertRaises(frappe.PermissionError):
+				shifts.ensure_shift_access(self.OPENING)
+
+	@patch("xpos.api.shifts.can_close_shift", return_value=False)
+	@patch("xpos.api.shifts.user_may_use_profile", return_value=True)
+	def test_own_shift_and_a_supervisor_pass(self, _may_use, can_close):
+		with patch("xpos.api.shifts.frappe.session", frappe._dict(user="leslie@mulecity.com")):
+			shifts.ensure_shift_access(self.OPENING)
+		can_close.return_value = True
+		with patch("xpos.api.shifts.frappe.session", frappe._dict(user="manager@mulecity.com")):
+			shifts.ensure_shift_access(self.OPENING)

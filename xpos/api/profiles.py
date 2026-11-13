@@ -72,9 +72,13 @@ def get_default_pos_profile(user: str | None = None) -> str | None:
 		return rows[0][0]
 
 	if is_superuser(user):
-		return frappe.db.get_single_value("POS Settings", "pos_profile") or frappe.db.get_value(
-			"POS Profile", {"disabled": 0}, "name"
+		# ERPNext v16's POS Settings has no pos_profile field; asking for it throws.
+		default = (
+			frappe.db.get_single_value("POS Settings", "pos_profile")
+			if frappe.get_meta("POS Settings").has_field("pos_profile")
+			else None
 		)
+		return default or frappe.db.get_value("POS Profile", {"disabled": 0}, "name")
 
 	return None
 

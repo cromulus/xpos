@@ -70,8 +70,10 @@ class TestTheQuote(HookCase):
 		items = [{"item_code": "FEED", "qty": 30, "conversion_factor": 1},
 			{"item_code": "CORN", "qty": 2, "conversion_factor": 50},
 			{"item_code": "DEL", "qty": 1}]
-		with patch.object(delivery.frappe, "get_all", return_value=weights) as get_all:
+		with patch.object(delivery.frappe, "get_all", return_value=weights) as get_all, \
+				patch.object(delivery, "require_quote_access") as access:
 			self.assertEqual(delivery.quote_delivery("CUST", "ADDR", frappe.as_json(items)), {"amount": 105, "source": "miles"})
+		access.assert_called_once_with("CUST", "ADDR")
 		self.assertEqual(asked, [("CUST", "ADDR", 1600.0)])
 		# The delivery line itself is never weighed.
 		self.assertNotIn("DEL", get_all.call_args.kwargs["filters"]["name"][1])
@@ -225,9 +227,11 @@ class TestAddADeliveryAddressAtTheTill(HookCase):
 
 		added = []
 		self.with_hooks(xpos_add_delivery_address=lambda **args: added.append(args) or {"name": "ADDR-NEW", "miles": 18.2})
-		with patch.object(customers, "walk_in_customers", return_value=["Walk-In"]):
+		with patch.object(customers, "walk_in_customers", return_value=["Walk-In"]), \
+				patch.object(customers, "require_customer_access") as access:
 			result = customers.add_delivery_address("Greenview", **self.ADDRESS, delivery_miles=17.4,
 				miles_source="manual_offline", local_id="LOCAL-ADDR-1")
+		access.assert_called_once_with("Greenview")
 		self.assertEqual(result, {"name": "ADDR-NEW", "miles": 18.2})
 		self.assertEqual(added, [{"customer": "Greenview", **self.ADDRESS, "address_line2": None, "county": None,
 			"country": "United States", "title": None, "delivery_miles": 17.4, "miles_source": "manual_offline",

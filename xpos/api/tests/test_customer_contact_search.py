@@ -8,6 +8,7 @@ farms found only through a contact.
 """
 
 import unittest
+from unittest.mock import patch
 
 import frappe
 
@@ -32,6 +33,10 @@ class TestCustomerContactSearch(unittest.TestCase):
 			}
 		).insert(ignore_permissions=True)
 		self.phone = self.contact.phone_nos[0].phone
+		# A till with no customer-group limit: these cases are about search, not scope.
+		resolve = patch("xpos.api.customers.resolve_pos_profile", return_value=frappe._dict(name="Till", customer_groups=[]))
+		resolve.start()
+		self.addCleanup(resolve.stop)
 
 	def tearDown(self):
 		frappe.db.rollback()

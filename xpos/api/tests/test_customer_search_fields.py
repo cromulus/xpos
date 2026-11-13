@@ -38,6 +38,10 @@ class TestCustomerPickerSearchFields(unittest.TestCase):
 		patcher = patch.object(customers, "_customer_search_fields", return_value=[CODE_FIELD])
 		patcher.start()
 		self.addCleanup(patcher.stop)
+		# A till with no customer-group limit: these cases are about search, not scope.
+		resolve = patch("xpos.api.customers.resolve_pos_profile", return_value=frappe._dict(name="Till", customer_groups=[]))
+		resolve.start()
+		self.addCleanup(resolve.stop)
 
 	def tearDown(self):
 		frappe.db.rollback()

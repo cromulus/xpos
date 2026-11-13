@@ -67,7 +67,7 @@ class TestPrivilegedHelpersAreNotExposed(unittest.TestCase):
 
 		with patch.object(customers.frappe, "get_hooks", return_value=["site.balance"]), \
 				patch.object(customers.frappe, "get_attr", return_value=lambda customer: 12.345):
-			self.assertEqual(customers.get_customer_balance("Anyone"), 12.345)
+			self.assertEqual(customers.get_customer_balance("Anyone", "Mule City"), 12.345)
 
 	def test_settle_outstanding_invoice_remains_the_public_entry_point(self):
 		"""The gated wrapper stays reachable so the feature keeps working."""

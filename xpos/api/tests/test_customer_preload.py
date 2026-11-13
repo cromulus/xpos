@@ -10,10 +10,10 @@ from xpos.api.customers import get_customers
 
 class TestCustomerPreload(unittest.TestCase):
 	def query(self, order="Alphabetical", cap=5, **kwargs):
-		with patch("xpos.api.customers.frappe") as api, patch("xpos.api.customers._profile_walk_ins", return_value=[]):
-			api.get_cached_doc.return_value = frappe._dict(
-				company="Shop", xpos_customer_order=order, xpos_customer_preload_limit=cap
-			)
+		profile = frappe._dict(company="Shop", xpos_customer_order=order, xpos_customer_preload_limit=cap)
+		with patch("xpos.api.customers.frappe") as api, patch("xpos.api.customers._profile_walk_ins", return_value=[]), \
+				patch("xpos.api.customers.resolve_pos_profile", return_value=profile):
+			api.get_cached_doc.return_value = profile
 			api.db.sql.return_value = []
 			get_customers(pos_profile="Till", **kwargs)
 			return api.db.sql.call_args.args

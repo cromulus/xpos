@@ -88,8 +88,10 @@ class TestGetCustomers(unittest.TestCase):
 		self.assertIn("c.customer_group IN", query)
 		self.assertEqual({values["grp_0"], values["grp_1"]}, {"Retail", "Retail Sub"})
 
+	@patch("xpos.api.customers._profile_walk_ins", return_value=[])
+	@patch("xpos.api.customers.resolve_pos_profile")
 	@patch("xpos.api.customers.frappe")
-	def test_get_customers_respects_limit(self, mock_frappe):
+	def test_get_customers_respects_limit(self, mock_frappe, _resolve, _walk_ins):
 		"""Test that get_customers respects the limit parameter."""
 		mock_frappe.db.sql.return_value = []
 
@@ -303,9 +305,11 @@ class TestCustomerRowsCarryTheirTaxCategory(unittest.TestCase):
 	def test_the_list_columns_include_tax_category(self):
 		self.assertIn("tax_category", customers._CUSTOMER_LIST_COLUMNS)
 
+	@patch("xpos.api.customers._profile_walk_ins", return_value=[])
+	@patch("xpos.api.customers.resolve_pos_profile")
 	@patch("xpos.api.customers._enrich_picker_customers")
 	@patch("xpos.api.customers.frappe")
-	def test_the_customer_query_selects_every_list_column(self, mock_frappe, _mock_enrich):
+	def test_the_customer_query_selects_every_list_column(self, mock_frappe, _mock_enrich, _resolve, _walk_ins):
 		"""Listing a column wasn't enough: the query must select it (found on erp2,
 		where every synced row came back without tax_category)."""
 		mock_frappe.db.sql.return_value = []
@@ -319,6 +323,18 @@ class TestCustomerRowsCarryTheirTaxCategory(unittest.TestCase):
 class TestCustomerInfoFromContacts(IntegrationTestCase):
 	"""Mule City (nfxn.8): Leslie opens Edit Customer for an imported customer
 	whose phone and email are on a Contact; the form shows them."""
+
+	def setUp(self):
+		super().setUp()
+		# A till with no customer-group limit: these stories are about the card, not scope.
+		resolve = patch(
+			"xpos.api.customers.resolve_pos_profile",
+			return_value=frappe._dict(
+				name="Till", customer_groups=[], company=frappe.db.get_value("Company", {}, "name")
+			),
+		)
+		resolve.start()
+		self.addCleanup(resolve.stop)
 
 	def _customer_with_contact(self, **customer_fields) -> str:
 		name = frappe.generate_hash(length=8)
@@ -355,6 +371,18 @@ class TestCustomerInfoFromContacts(IntegrationTestCase):
 class TestCounterAddresses(IntegrationTestCase):
 	"""Mule City (nfxn.6): Leslie adds and corrects a customer's delivery
 	address from Edit Customer."""
+
+	def setUp(self):
+		super().setUp()
+		# A till with no customer-group limit: these stories are about the card, not scope.
+		resolve = patch(
+			"xpos.api.customers.resolve_pos_profile",
+			return_value=frappe._dict(
+				name="Till", customer_groups=[], company=frappe.db.get_value("Company", {}, "name")
+			),
+		)
+		resolve.start()
+		self.addCleanup(resolve.stop)
 
 	def _customer(self) -> str:
 		return frappe.get_doc(

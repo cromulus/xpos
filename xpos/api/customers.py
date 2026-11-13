@@ -286,7 +286,7 @@ def get_customers(
 				{"missing": missing},
 				as_dict=True,
 			))
-	_enrich_picker_customers(customers, profile.company)
+	_enrich_picker_customers(customers, profile.company if pos_profile else None)
 	for customer in customers:
 		customer["xpos_search_description"] = _search_description(customer, extra_fields)
 
