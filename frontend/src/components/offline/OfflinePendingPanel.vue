@@ -281,6 +281,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive } from "vue";
+import { formatInstant } from "@/utils/datetime";
 import { useOfflineStore } from "@/stores/offlineStore";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
@@ -397,8 +398,7 @@ function statusLabel(status: string): string {
 
 function formatTime(isoString: string) {
 	try {
-		const d = new Date(isoString);
-		return d.toLocaleString(undefined, {
+		return formatInstant(isoString, {
 			month: "short",
 			day: "numeric",
 			hour: "2-digit",

@@ -255,6 +255,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from "vue";
+import { formatInstant } from "@/utils/datetime";
 import { useCartStore } from "@/stores/cartStore";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
@@ -450,13 +451,13 @@ function close() {
 function formatDateTime(isoString: string | undefined) {
 	if (!isoString) return "";
 	try {
-		return new Intl.DateTimeFormat(undefined, {
+		return formatInstant(isoString, {
 			year: "numeric",
 			month: "short",
 			day: "numeric",
 			hour: "2-digit",
 			minute: "2-digit",
-		}).format(new Date(isoString));
+		}) || isoString;
 	} catch {
 		return isoString;
 	}

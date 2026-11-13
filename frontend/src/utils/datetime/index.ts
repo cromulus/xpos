@@ -1,4 +1,5 @@
 import {
+	getSiteDateLocale,
 	getSystemTimeZone,
 	getUserDateFormat,
 	getUserDatetimeFormat,
@@ -35,6 +36,9 @@ function nowInConfiguredTimeZone(useSystemTime = false): DayjsInstance {
 
 export { dayjs } from "./dayjs";
 export {
+	getSiteDateFormat,
+	getSiteDateLocale,
+	getSiteTimeFormat,
 	getSystemTimeZone,
 	getUserDateFormat,
 	getUserDatetimeFormat,
@@ -207,4 +211,57 @@ export function yearStart(value?: DayjsInput): string {
 
 export function yearEnd(value?: DayjsInput): string {
 	return (parseValue(value) || nowInConfiguredTimeZone()).endOf("year").format(SYSTEM_DATE_FORMAT);
+}
+
+const NAIVE_DATETIME = /^\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+
+/**
+ * An instant as a Date. A server datetime without an offset ("2026-10-06 15:03:00")
+ * is wall time in the site's system time zone, so it is read there, not in the
+ * device's zone; ISO strings with Z or an offset, epoch ms and Dates are taken as is.
+ */
+function toInstant(value: Date | number | string): Date | null {
+	if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+	if (typeof value === "number") return new Date(value);
+	const text = value.trim();
+	const systemZone = getSystemTimeZone();
+	if (systemZone && NAIVE_DATETIME.test(text)) {
+		try {
+			const parsed = dayjs.tz(text, systemZone);
+			if (parsed.isValid()) return parsed.toDate();
+		} catch {
+			// An unknown zone: fall back to the device's.
+		}
+	}
+	const date = new Date(text);
+	return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * An instant (a Date, epoch ms or datetime string) for display, in the site's
+ * time zone (the user's, else the system's) and the site's day/month order,
+ * rather than the browser's. Takes the usual `Intl.DateTimeFormat` options.
+ * Without a configured zone or format, the device's are used. "" when unreadable.
+ */
+export function formatInstant(
+	value: Date | number | string | null | undefined,
+	options: Intl.DateTimeFormatOptions,
+	kind: "datetime" | "date" | "time" = "datetime",
+): string {
+	if (value === null || value === undefined || value === "") return "";
+	const date = toInstant(value);
+	if (!date) return "";
+	const locale = getSiteDateLocale();
+	const timeZone = getUserTimeZone() || getSystemTimeZone();
+	const render = (opts: Intl.DateTimeFormatOptions) =>
+		kind === "date"
+			? date.toLocaleDateString(locale, opts)
+			: kind === "time"
+				? date.toLocaleTimeString(locale, opts)
+				: date.toLocaleString(locale, opts);
+	try {
+		return render(timeZone ? { ...options, timeZone } : options);
+	} catch {
+		return render(options);
+	}
 }

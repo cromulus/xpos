@@ -1,6 +1,10 @@
 import { ref, onMounted, onUnmounted } from "vue";
 import { isElectron } from "@/services/electronBridge";
 import { captureError } from "@/services/errorLog";
+import { formatInstant } from "@/utils/datetime";
+
+/** Sync times in the site's time zone, not the browser's. */
+const SYNC_TIME: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit", second: "2-digit" };
 
 export interface SyncErrorEntry {
 	message: string;
@@ -38,7 +42,7 @@ export function useSyncStatus() {
 		try {
 			const state = await window.electronAPI.getSyncState();
 			if (state?.lastSyncTime) {
-				lastSyncTime.value = new Date(state.lastSyncTime).toLocaleTimeString();
+				lastSyncTime.value = formatInstant(state.lastSyncTime, SYNC_TIME, "time");
 			}
 		} catch {}
 
@@ -72,7 +76,7 @@ export function useSyncStatus() {
 			syncPhase.value = "idle";
 			syncTable.value = null;
 			if (!cycleHadError.value) lastError.value = null;
-			lastSyncTime.value = new Date().toLocaleTimeString();
+			lastSyncTime.value = formatInstant(new Date(), SYNC_TIME, "time");
 			syncCompleteCount.value++;
 		});
 

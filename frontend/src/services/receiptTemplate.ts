@@ -2,6 +2,7 @@ import { formatFor, formatWithSymbol } from "@/composables/useCurrency";
 import type { IssuedGiftCard, ReceiptContext, ReceiptSnapshot } from "@/types/pos.types";
 import { __ } from "@/lib/translate";
 import { formatFloat, formatQty } from "@/utils/numberFormat";
+import { formatDate, formatTime, getSiteDateFormat, getSiteTimeFormat } from "@/utils/datetime";
 
 function esc(value: unknown): string {
 	return String(value ?? "")
@@ -19,15 +20,29 @@ function fmtNative(amount: number, currency: string): string {
 	return `${currency} ${formatFor(currency, amount)}`;
 }
 
+/** A date-only value in the site's date format; dd-mm-yyyy when the boot carries none. */
 function fmtDate(date: string): string {
+	const siteFormat = getSiteDateFormat();
 	const parts = String(date || "").split("-");
-	if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+	if (parts.length === 3) {
+		if (siteFormat) {
+			const formatted = formatDate(String(date).slice(0, 10), siteFormat);
+			if (formatted) return formatted;
+		}
+		return `${parts[2]}-${parts[1]}-${parts[0]}`;
+	}
 	return date || "";
 }
 
+/** A time ("14:05:30") in the site's time format; hh:mm AM/PM when the boot carries none. */
 function fmtTime(time: string): string {
 	const parts = String(time || "").split(":");
 	if (parts.length < 2) return time || "";
+	const siteFormat = getSiteTimeFormat();
+	if (siteFormat) {
+		const formatted = formatTime(`2000-01-01 ${String(time).split(".")[0]}`, siteFormat);
+		if (formatted) return formatted;
+	}
 	let hour = Number(parts[0]);
 	const minute = parts[1];
 	const period = hour >= 12 ? "PM" : "AM";

@@ -54,3 +54,32 @@ export function getUserTimeZone(): string | undefined {
 export function getSystemTimeZone(): string | undefined {
 	return getBootTimeZones().system;
 }
+
+/** The site's date format (dayjs tokens), or undefined when the boot carries none (e.g. Electron). */
+export function getSiteDateFormat(): string | undefined {
+	const format = getBootSysDefaults().date_format;
+	return format ? normalizeDateFormat(format) : undefined;
+}
+
+/** The site's time format (dayjs tokens), or undefined when the boot carries none. */
+export function getSiteTimeFormat(): string | undefined {
+	const format = getBootSysDefaults().time_format;
+	return format ? normalizeTimeFormat(format) : undefined;
+}
+
+/**
+ * A BCP 47 locale whose day/month order matches the site's date format, for
+ * `Intl`/`toLocale*String` calls: "en-US" when the month comes first
+ * (mm-dd-yyyy), "en-GB" when the day does, "en-CA" (2026-10-06) when the year
+ * does. Undefined, i.e. the browser's own locale, when the site sets no format.
+ */
+export function getSiteDateLocale(): string | undefined {
+	const format = (getBootSysDefaults().date_format || "").toLowerCase();
+	if (!format) return undefined;
+	const first = ["y", "m", "d"]
+		.filter((part) => format.includes(part))
+		.sort((a, b) => format.indexOf(a) - format.indexOf(b))[0];
+	if (first === "y") return "en-CA";
+	if (first === "d") return "en-GB";
+	return "en-US";
+}

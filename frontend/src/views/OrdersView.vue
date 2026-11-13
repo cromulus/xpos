@@ -153,6 +153,7 @@
 
 <script setup lang="ts">
 import { formatLocalDate } from "@/utils/localDate";
+import { formatInstant } from "@/utils/datetime";
 import { ref, onMounted } from "vue";
 import { usePosStore } from "@/stores/posStore";
 import { useMoney } from "@/composables/useMoney";
@@ -251,9 +252,7 @@ function localStatusVariant(
 
 function formatDateTime(value: string): string {
 	if (!value) return "";
-	const d = new Date(value);
-	if (Number.isNaN(d.getTime())) return "";
-	return d.toLocaleString(undefined, {
+	return formatInstant(value, {
 		month: "short",
 		day: "numeric",
 		hour: "2-digit",
