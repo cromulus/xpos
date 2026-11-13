@@ -4,6 +4,7 @@
 import frappe
 from frappe.utils import cstr, flt, getdate, nowdate
 
+from xpos.api.profiles import resolve_pos_profile
 from xpos.x_pos.doctype.delivery_charges.delivery_charges import (
 	get_applicable_delivery_charges as _get_applicable_delivery_charges,
 )
@@ -50,7 +51,9 @@ def _is_coupon_active(coupon_data: dict, today: str) -> bool:
 
 @frappe.whitelist()
 def get_offers(profile: str):
-	pos_profile = frappe.get_doc("POS Profile", profile)
+	# Only a POS Profile the caller may use.
+	pos_profile = resolve_pos_profile(profile)
+	profile = pos_profile.name
 	company = pos_profile.company
 	warehouse = pos_profile.warehouse
 	date = nowdate()

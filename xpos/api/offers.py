@@ -6,6 +6,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt, getdate, nowdate
 
+from xpos.api.profiles import resolve_pos_profile
 from xpos.utils import row_value
 from xpos.x_pos.doctype.pos_coupon.pos_coupon import check_coupon_code
 from xpos.x_pos.promotional_scheme_offers import get_promotional_scheme_offers
@@ -13,8 +14,9 @@ from xpos.x_pos.promotional_scheme_offers import get_promotional_scheme_offers
 
 @frappe.whitelist()
 def get_offers(pos_profile: str):
-	"""Return all active POS Offers + promotional scheme offers for a profile."""
-	pos = frappe.get_cached_doc("POS Profile", pos_profile)
+	"""Return all active POS Offers + promotional scheme offers for a POS Profile the caller may use."""
+	pos = resolve_pos_profile(pos_profile)
+	pos_profile = pos.name
 	company = pos.company
 	warehouse = pos.warehouse
 	date = nowdate()

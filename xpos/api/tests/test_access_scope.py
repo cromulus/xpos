@@ -11,13 +11,15 @@ Builds on test_record_access's fixtures. Run on a disposable test site::
 import frappe
 
 from xpos.api import customers as customers_api
-from xpos.api import profiles
+from xpos.api import offers, profiles
 from xpos.api.tests.test_record_access import (
 	CASHIER,
 	INSIDE,
+	OTHER_PROFILE,
 	OWN_PROFILE,
 	RecordAccessTestCase,
 )
+from xpos.x_pos.api import offers as legacy_offers
 
 
 class TestGuestProfile(RecordAccessTestCase):
@@ -45,3 +47,21 @@ class TestSuperuserDefaultProfile(RecordAccessTestCase):
 		profile = profiles.get_default_pos_profile("Administrator")
 		self.assertTrue(profile)
 		self.assertEqual(frappe.db.get_value("POS Profile", profile, "disabled"), 0)
+
+
+class TestOffersThroughTheCallersProfile(RecordAccessTestCase):
+	"""get_offers lists a profile's offers only for a user of that profile."""
+
+	def test_own_profile_offers_are_listed(self):
+		self.assertIsInstance(offers.get_offers(OWN_PROFILE), list)
+		self.assertIsInstance(legacy_offers.get_offers(OWN_PROFILE), list)
+
+	def test_someone_elses_profile_is_refused(self):
+		for get in (offers.get_offers, legacy_offers.get_offers):
+			with self.subTest(get.__module__), self.assertRaises(frappe.PermissionError):
+				get(OTHER_PROFILE)
+
+	def test_guest_is_refused(self):
+		frappe.set_user("Guest")
+		with self.assertRaises(frappe.PermissionError):
+			offers.get_offers(OWN_PROFILE)

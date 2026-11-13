@@ -15,6 +15,12 @@ from xpos.api import offers
 class TestGetOffers(unittest.TestCase):
 	"""Tests for get_offers function."""
 
+	def resolve_profile(self, pos):
+		"""The caller may use the profile (the access check is in test_access_scope)."""
+		patcher = patch("xpos.api.offers.resolve_pos_profile", return_value=pos)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	@patch("xpos.api.offers.get_promotional_scheme_offers")
 	@patch("xpos.api.offers.frappe")
 	def test_get_offers_returns_active_offers(self, mock_frappe, mock_promo):
@@ -22,7 +28,7 @@ class TestGetOffers(unittest.TestCase):
 		mock_pos = MagicMock()
 		mock_pos.company = "Test Company"
 		mock_pos.warehouse = "Store - TC"
-		mock_frappe.get_cached_doc.return_value = mock_pos
+		self.resolve_profile(mock_pos)
 		mock_frappe.db.sql.return_value = [
 			{
 				"name": "OFFER-001",
@@ -45,7 +51,7 @@ class TestGetOffers(unittest.TestCase):
 		mock_pos = MagicMock()
 		mock_pos.company = "Test Company"
 		mock_pos.warehouse = "Store - TC"
-		mock_frappe.get_cached_doc.return_value = mock_pos
+		self.resolve_profile(mock_pos)
 		mock_frappe.db.sql.return_value = []
 		mock_promo.return_value = [
 			{
@@ -67,7 +73,7 @@ class TestGetOffers(unittest.TestCase):
 		mock_pos = MagicMock()
 		mock_pos.company = "Test Company"
 		mock_pos.warehouse = "Store - TC"
-		mock_frappe.get_cached_doc.return_value = mock_pos
+		self.resolve_profile(mock_pos)
 		mock_frappe.db.sql.return_value = [
 			{
 				"name": "OFFER-002",
