@@ -1,5 +1,75 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc63 (contains mc62)
+
+### The access gaps mc62 left (MuleCity-0bsc)
+
+mc62 took upstream's record-access fixes; a review of it found these still open
+(on mc62 and on prod's mc60). mc62 is a net improvement over mc61; mc63 closes
+them.
+
+Invoices (`x_pos/api/invoice_processing/creation.py`):
+- `update_invoice` / `submit_invoice` on a saved invoice (`_guard_saved_invoice`):
+  `get_pos_invoice` allows the write because of the stored POS Profile and
+  company, so the payload may not change either (a different one is a
+  PermissionError). `owner`, `creation`, `modified_by` and `docstatus` are
+  dropped from the payload. A changed `pos_opening_shift` must be a shift of the
+  same profile that the caller may use (`ensure_shift_access`): a draft resumed
+  on the till's next shift still moves to it. A changed customer goes through
+  `require_customer_access` on the invoice's profile. A draft saved without a
+  profile takes the caller's, as a new invoice does.
+- A new invoice (`_guard_new_invoice`): the resolved profile and its company
+  (another company is refused), its customer and opening shift checked the same
+  way; a customer name not yet on file is still left to the create-customer step.
+
+Customers (`api/customers.py`):
+- `add_delivery_address(..., pos_profile=None)`: checked through the till's own
+  profile; the SPA sends `profileName` online and stores it on an address queued
+  offline (`QueuedAddress.pos_profile`; one queued before mc63 replays with the
+  till's current profile). `make_primary_shipping` needs Customer write.
+- `get_customer_credit(customer, company=None, pos_profile=None)`: read in the
+  profile's company; another company is a PermissionError (`profile_company`,
+  `customer_in_profile`). The same for `api/payments.get_available_credit` and
+  legacy `x_pos/api/payments.get_available_credit`, which had no check at all
+  (no SPA caller). `get_customer_balance` is not whitelisted; the till passes the
+  profile's company already.
+- `make_address` keeps read access (Mule's counter login adds delivery addresses
+  in Edit Customer) but a caller without Customer write gets
+  `is_primary_address` / `is_shipping_address` 0; a walk-in account is refused,
+  as `add_delivery_address`.
+
+Shift closing:
+- Desk endpoints, from upstream `86425a7` / `882e1a8`: `submit_closing_shift`
+  needs submit on POS Closing Shift and always saves a POS Closing Shift (it
+  saved whatever doctype the payload named); `make_closing_shift_from_opening`
+  needs create plus read on the opening shift; `get_pos_invoices` and
+  `get_payments_entries` (`ensure_opening_shift_read`; `get_pos_invoices` also
+  submits printed drafts), `get_closing_shift_overview` and
+  `get_payment_reconciliation_details` need read. Mule's Front Desk roles hold
+  these (`xpos_settings.SHIFT_GRANTS`); the till's own Close Shift does not call
+  them.
+- `close_shift` and the offline sync's `create_closing_shift`
+  (`ensure_may_close`): `close_shift` on the shift's own profile, as a user of it.
+  `create_closing_shift` recomputes expected cash on the server (as `close_shift`
+  does, Payment Entries included and listed), keeps the shift's profile and
+  company and the closing user, and never takes the till's `expected_amount` or
+  `difference`. Counts (opening float, closing count) are range-checked
+  (`counted_amount`, `bb17c4f`).
+
+Legacy quotations (`x_pos/api/quotations.py`): `update_quotation` /
+`submit_quotation` saved the payload's doctype with `ignore_permissions`, so any
+logged-in user could create any document. Now Quotation only, behind
+Quotation write / create / submit. The SPA does not call them.
+
+Tests: `test_scope_guards` (new: invoice scope, shift closing, desk closing,
+quotations) and `TestCustomerAccessMc63` in `test_access_guards`, stubbed so they
+run on a Mule slot; `frontend/tests/addressQueue.spec.ts`. All fail on mc62.
+
+Still open, not in mc63 (also upstream): `offers.get_pos_coupon` /
+`get_active_gift_coupons` and both `get_last_invoice_rates` take a customer and
+company with no access check; `open_shift` / `create_opening_shift` do not check
+the profile is the caller's.
+
 ## mule-v2.10.1-mc62 (contains mc61)
 
 ### Upstream record-access security fixes (MuleCity-0bsc)
