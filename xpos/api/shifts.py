@@ -264,7 +264,9 @@ def get_opening_data():
 			filters={"parent": ["in", profile_names]},
 			fields=["parent", "mode_of_payment", "default"],
 			limit_page_length=0,
-			order_by="parent",
+			# The POS Profile's own row order, so the opening dialog lists the
+			# methods as the profile's payments table does.
+			order_by="parent asc, idx asc",
 			ignore_permissions=True,
 		)
 		data["payment_methods"] = payment_methods

@@ -65,6 +65,17 @@ class TestGetOpeningData(unittest.TestCase):
 		self.assertIn("Test Company 1", company_names)
 		self.assertIn("Test Company 2", company_names)
 
+	@patch("xpos.api.shifts.frappe")
+	def test_opening_data_lists_methods_in_pos_profile_order(self, mock_frappe):
+		"""Row 1 of the POS Profile's payments table is listed first, not an alphabetical parent order."""
+		mock_frappe.session.user = "cashier@test.com"
+		mock_frappe.db.sql.return_value = [{"name": "POS-PROFILE-1", "company": "Test Company"}]
+		mock_frappe.get_list.return_value = []
+
+		shifts.get_opening_data()
+
+		self.assertEqual(mock_frappe.get_list.call_args.kwargs["order_by"], "parent asc, idx asc")
+
 
 class TestOpenShift(unittest.TestCase):
 	"""Tests for open_shift function."""
