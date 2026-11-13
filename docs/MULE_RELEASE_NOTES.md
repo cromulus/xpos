@@ -49,7 +49,7 @@ Tests: `test_access_guards` (stubbed, runs on a Mule slot: refusals for a
 customer outside the groups, a reader changing one, User Permissions, someone
 else's or a forged profile, another till's or company's invoice, other doctypes;
 walk-in and own records pass); `test_sales_orders`; new cases in `test_shifts`.
-Upstream's live `test_record_access` (helpers in `record_access_fixtures.py`,
+Upstream's live `test_record_access`, renamed `live_record_access` (helpers in `record_access_fixtures.py`,
 plus `TestForkEndpointScope`) needs ERPNext's `_Test` records, so it does not run
 on a Mule site. Stories in `test_customers`, `test_delivery`, `test_order_notes`
 and others stub the new gates.
