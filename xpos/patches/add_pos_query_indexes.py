@@ -12,7 +12,7 @@ is idempotent and lets real failures surface, so it can safely be re-run.
 
 import frappe
 
-from xpos.patches.common import drop_index
+from xpos.patches.common import drop_index, missing_columns
 
 # Indexes the POS reads through constantly. Column order follows the actual
 # WHERE clauses, so the leading columns are the ones queries always filter on.
@@ -51,7 +51,27 @@ OBSOLETE_INDEXES = (("Item", "item_name_description_ft"),)
 
 def execute():
 	for doctype, columns, index_name in INDEXES:
-		frappe.logger("xpos").info(frappe.db.has_index(f"tab{doctype}", index_name))
+		frappe.logger("xpos").info(ensure_index(doctype, columns, index_name))
 
 	for doctype, index_name in OBSOLETE_INDEXES:
 		frappe.logger("xpos").info(drop_index(doctype, index_name))
+
+
+def ensure_index(doctype: str, columns: list[str], index_name: str) -> str:
+	"""Create the index if it is missing (idempotent).
+
+	An earlier version only logged ``has_index`` and never created anything, so
+	no site had these indexes; it runs from ``after_migrate`` on every migrate.
+	A table or column that isn't there (an app not installed, a field an ERPNext
+	version lacks) is skipped, not an error.
+	"""
+	table = f"tab{doctype}"
+	if not frappe.db.table_exists(doctype):
+		return f"skipped {index_name}: no table {table}"
+	if frappe.db.has_index(table, index_name):
+		return f"present {index_name} on {table}"
+	missing = missing_columns(table, columns)
+	if missing:
+		return f"skipped {index_name}: {table} has no {', '.join(missing)}"
+	frappe.db.add_index(doctype, columns, index_name)
+	return f"created {index_name} on {table}"
