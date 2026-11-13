@@ -23,6 +23,7 @@ from xpos.api.tests.test_record_access import (
 	RecordAccessTestCase,
 )
 from xpos.x_pos.api import offers as legacy_offers
+from xpos.x_pos.api import payments as legacy_payments
 from xpos.x_pos.api.invoice_processing import data as legacy_invoice_data
 
 
@@ -166,3 +167,19 @@ class TestShiftOpensOnTheCallersProfile(RecordAccessTestCase):
 			shifts.create_opening_shift(
 				{"pos_profile": OWN_PROFILE, "company": self.COMPANY, "user": "Administrator"}
 			)
+
+
+class TestLegacyCreditThroughTheCallersProfile(RecordAccessTestCase):
+	"""The legacy x_pos credit lookup is scoped like xpos.api.customer_credit."""
+
+	def test_a_customer_inside_the_profile_is_looked_up(self):
+		self.assertIsInstance(legacy_payments.get_available_credit(INSIDE, pos_profile=OWN_PROFILE), list)
+
+	def test_outside_customer_other_company_or_other_profile_is_refused(self):
+		for customer, kwargs in (
+			(OUTSIDE, {"pos_profile": OWN_PROFILE}),
+			(INSIDE, {"company": OTHER_COMPANY, "pos_profile": OWN_PROFILE}),
+			(INSIDE, {"pos_profile": OTHER_PROFILE}),
+		):
+			with self.subTest(customer=customer, **kwargs), self.assertRaises(frappe.PermissionError):
+				legacy_payments.get_available_credit(customer, **kwargs)
