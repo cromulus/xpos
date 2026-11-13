@@ -68,6 +68,8 @@ export interface POSProfile {
 	enable_cash_movement?: boolean;
 	allow_pos_expense?: boolean;
 	allow_cash_deposit?: boolean;
+	allow_purchase_order?: boolean;
+	allow_purchase_receipt?: boolean;
 	max_discount_percentage_allowed?: number;
 	auto_fetch_coupons_gifts?: boolean;
 	allow_coupon_entry?: boolean;

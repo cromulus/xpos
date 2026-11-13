@@ -42,28 +42,30 @@
 							<span>{{ item.label }}</span>
 						</router-link>
 
-						<p
-							class="px-3 py-2 pt-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
-						>
-							{{ __("Purchasing") }}
-						</p>
-						<router-link
-							v-for="item in purchaseNavItems"
-							:key="item.route"
-							:to="item.route"
-							@click="isOpen = false"
-							:class="
-								cn(
-									'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors no-underline',
-									isActive(item.route)
-										? 'bg-primary/10 text-primary'
-										: 'text-muted-foreground hover:bg-muted hover:text-foreground',
-								)
-							"
-						>
-							<component :is="item.icon" class="w-4 h-4 shrink-0" />
-							<span>{{ item.label }}</span>
-						</router-link>
+						<template v-if="purchaseNavItems.some((it) => it.show)">
+							<p
+								class="px-3 py-2 pt-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
+							>
+								{{ __("Purchasing") }}
+							</p>
+							<router-link
+								v-for="item in purchaseNavItems.filter((it) => it.show)"
+								:key="item.route"
+								:to="item.route"
+								@click="isOpen = false"
+								:class="
+									cn(
+										'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors no-underline',
+										isActive(item.route)
+											? 'bg-primary/10 text-primary'
+											: 'text-muted-foreground hover:bg-muted hover:text-foreground',
+									)
+								"
+							>
+								<component :is="item.icon" class="w-4 h-4 shrink-0" />
+								<span>{{ item.label }}</span>
+							</router-link>
+						</template>
 
 						<template v-if="financeNavItems.some((it) => it.show)">
 							<p
@@ -185,11 +187,14 @@ const mainNavItems = computed(() => [
 	{ route: "/reports", label: __("Reports"), icon: BarChart3, show: true },
 ]);
 
-const purchaseNavItems = [
-	{ route: "/purchase-order", label: __("Purchase Order"), icon: ClipboardList },
-	{ route: "/purchase-invoices", label: __("Purchase Invoice"), icon: Receipt },
-	{ route: "/stock-receiving", label: __("Stock Receiving"), icon: PackageCheck },
-];
+// Shown only when the POS Profile allows them: the server refuses these
+// screens' actions otherwise (purchase_orders.ensure_allowed), so a menu entry
+// would only lead to an error. Purchase invoices use the same profile flag.
+const purchaseNavItems = computed(() => [
+	{ route: "/purchase-order", label: __("Purchase Order"), icon: ClipboardList, show: posStore.allowPurchaseOrder },
+	{ route: "/purchase-invoices", label: __("Purchase Invoice"), icon: Receipt, show: posStore.allowPurchaseOrder },
+	{ route: "/stock-receiving", label: __("Stock Receiving"), icon: PackageCheck, show: posStore.allowPurchaseReceipt },
+]);
 
 const toolsNavItems = [
 	{ route: "/price-checker", label: __("Price Checker"), icon: ScanBarcode, show: true },
