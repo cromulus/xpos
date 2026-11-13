@@ -35,6 +35,7 @@ import {
 	type PricingSource,
 	type ResolvedCartPricing,
 } from "@/services/pricingService";
+import { lineDiscountFromPerUnit, perUnitDiscount } from "@/utils/lineDiscount";
 import type { CartPricingLine, FreeItemLine } from "@/services/pricingEngine";
 import { nowDate, toDateOrNow } from "@/utils/datetime";
 import { debounce, isOnline } from "@/utils";
@@ -1015,7 +1016,10 @@ export const useCartStore = defineStore("cart", () => {
 					item.rate = normalizeItemRate(update.price_list_rate);
 				}
 				item.discount_percentage = update.discount_percentage;
-				item.discount_amount = update.discount_percentage ? 0 : update.discount_amount;
+				// The rule's money discount is per unit; the cart keeps it for the whole line.
+				item.discount_amount = update.discount_percentage
+					? 0
+					: lineDiscountFromPerUnit(update.discount_amount, item.qty);
 				item.pos_pricing_rules = update.pricing_rules;
 			} else if (item.pos_pricing_rules?.length) {
 				item.discount_percentage = 0;
@@ -1250,7 +1254,10 @@ export const useCartStore = defineStore("cart", () => {
 			item.pos_repriced_from = change.quoted_rate;
 			if (change.price_list_rate !== null) item.rate = normalizeItemRate(change.price_list_rate);
 			item.discount_percentage = change.discount_percentage || 0;
-			item.discount_amount = item.discount_percentage ? 0 : change.discount_amount || 0;
+			// The server's money discount is per unit; the cart keeps it for the whole line.
+			item.discount_amount = item.discount_percentage
+				? 0
+				: lineDiscountFromPerUnit(change.discount_amount, item.qty);
 			item.pos_price_unavailable = false;
 			item.pos_price_state = undefined;
 			// Priced by the server for this customer; the price-list watcher must not undo it.
@@ -1376,7 +1383,7 @@ export const useCartStore = defineStore("cart", () => {
 			}
 			const netRate = item.discount_percentage
 				? item.rate * (1 - item.discount_percentage / 100)
-				: item.rate - (item.discount_amount || 0);
+				: item.rate - (item.discount_amount || 0) / (Math.abs(item.qty) || 1);
 			if (netRate <= 0 && !posStore.allowZeroRatedItems) {
 				issues.push(
 					__("{0} has a zero price, which this POS Profile does not allow", [
@@ -1578,7 +1585,8 @@ export const useCartStore = defineStore("cart", () => {
 						stock_uom: item.stock_uom || item.uom || "",
 						image: "",
 						discount_percentage: item.discount_percentage || 0,
-						discount_amount: item.discount_amount || 0,
+						// The server's money discount is per unit; the cart keeps it for the whole line.
+						discount_amount: lineDiscountFromPerUnit(item.discount_amount, item.qty || 1),
 						serial_no: item.serial_no || "",
 						batch_no: item.batch_no || "",
 						actual_qty: actualQty,
@@ -1671,7 +1679,9 @@ export const useCartStore = defineStore("cart", () => {
 				stock_uom: item.stock_uom || item.uom || "",
 				image: "",
 				discount_percentage: item.discount_percentage || 0,
-				discount_amount: item.discount_amount || 0,
+				// Posted and queued lines carry the money discount per unit; the cart keeps it
+				// for the whole line.
+				discount_amount: lineDiscountFromPerUnit(item.discount_amount, item.qty || 1),
 				serial_no: item.serial_no || "",
 				batch_no: item.batch_no || "",
 				actual_qty: 0,
@@ -1699,7 +1709,13 @@ export const useCartStore = defineStore("cart", () => {
 					price_list_rate: normalizeItemRate(item.rate),
 					uom: item.uom || item.stock_uom,
 					discount_percentage: item.discount_percentage,
-					discount_amount: item.discount_amount,
+					// create_invoice takes the money discount per unit.
+					discount_amount: perUnitDiscount(
+						item.discount_amount || 0,
+						item.qty,
+						normalizeItemRate(item.rate),
+						itemRatePrecision.value,
+					),
 					serial_no: item.serial_no,
 					batch_no: item.batch_no,
 					item_tax_template: item.item_tax_template,
