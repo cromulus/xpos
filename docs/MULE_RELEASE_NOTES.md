@@ -40,6 +40,9 @@ Mule behaviour kept:
   customer's address itself (`_insert_customer_address`).
 - `get_default_pos_profile`: ERPNext v16's POS Settings has no `pos_profile`
   field, so a superuser without a profile row no longer hits a ValidationError.
+- `resolve_pos_profile` refuses Guest with a PermissionError (403).
+- `get_customer_balance(customer, company=None)`: the till passes its profile's
+  company (upstream); Mule's own callers may still pass the customer only.
 - `get_invoice_for_repeat` keeps its `check_permission("read")`.
 
 Fork endpoints given the same checks: `add_delivery_address`, `quote_delivery`
