@@ -141,3 +141,31 @@ describe("refreshCsrfToken", () => {
 		expect(window.xpos!.csrf_token).toBe("stale-token");
 	});
 });
+
+describe("a response that is not JSON", () => {
+	it("a maintenance page or a proxy's 502 is an error carrying its HTTP status", async () => {
+		const pages = [
+			[503, "Service Unavailable"],
+			[502, "<html><body>502 Bad Gateway</body></html>"],
+		] as const;
+		for (const [status, body] of pages) {
+			fetchMock.mockResolvedValueOnce(
+				new Response(body, { status, headers: { "Content-Type": "text/html" } }),
+			);
+			const error = (await call("xpos.api.settings.get_erp_settings").catch((e) => e)) as Error & {
+				status?: number;
+			};
+			expect(error).toBeInstanceOf(Error);
+			expect(error).not.toBeInstanceOf(SyntaxError);
+			expect(error.status).toBe(status);
+			expect(error.message).toBe("The server is unreachable. Please try again shortly.");
+		}
+	});
+
+	it("an unreadable 200 is still an error, not a SyntaxError", async () => {
+		fetchMock.mockResolvedValueOnce(new Response("<html>ok</html>", { status: 200 }));
+		const error = await call("xpos.api.settings.get_erp_settings").catch((e) => e);
+		expect(error).toBeInstanceOf(Error);
+		expect(error).not.toBeInstanceOf(SyntaxError);
+	});
+});

@@ -171,7 +171,12 @@ async function postMethod(
 		throw new Error("__offline__");
 	}
 
-	return { response, data: await response.json() };
+	// A maintenance page (503) or a proxy's 502/504 is not JSON. Read it as an empty
+	// answer so the caller gets an error carrying its HTTP status, not a SyntaxError
+	// it cannot tell apart from a real failure.
+	const data = await response.json().catch(() => (response.ok ? null : {}));
+	if (data === null) throw new Error(`Unreadable response from ${method}`);
+	return { response, data };
 }
 
 function handleResponse<T>(
@@ -194,8 +199,9 @@ function handleResponse<T>(
 			exceptionType: data.exc_type,
 		});
 
-		const err = new Error(errorMsg) as Error & { excType?: string };
+		const err = new Error(errorMsg) as Error & { excType?: string; status?: number };
 		if (data.exc_type) err.excType = data.exc_type;
+		err.status = response.status;
 		throw err;
 	}
 	if (data && typeof data === "object" && "message" in data) {
