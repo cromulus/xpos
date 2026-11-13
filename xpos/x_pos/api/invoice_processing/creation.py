@@ -207,6 +207,50 @@ def _check_invoice_customer(customer: str | None, pos_profile: str) -> None:
 		require_customer_access(customer, pos_profile=pos_profile)
 
 
+def _new_customer_group(pos) -> str:
+	"""The group a customer made at this till goes into: inside the POS Profile's customer groups."""
+	from xpos.api.customers import allowed_customer_groups
+
+	default = frappe.db.get_single_value("Selling Settings", "customer_group")
+	allowed = allowed_customer_groups(pos)
+	if not allowed:
+		return default or "All Customer Groups"
+	if default in allowed:
+		return default
+	for row in pos.get("customer_groups") or []:
+		if row.get("customer_group") in allowed:
+			return row.get("customer_group")
+	frappe.throw(
+		_("POS Profile {0} has no customer group a new customer can go into.").format(pos.name),
+		frappe.PermissionError,
+	)
+
+
+def _new_invoice_customer(customer_name: str, pos_profile: str):
+	"""Create the unknown customer an invoice names, as the caller and inside their POS Profile.
+
+	Needs Customer create permission; the customer goes into one of the
+	profile's customer groups and must pass require_customer_access before
+	the invoice uses it. A refusal is raised, not logged.
+	"""
+	from xpos.api.customers import require_customer_access
+
+	frappe.has_permission("Customer", "create", throw=True)
+	pos = resolve_pos_profile(pos_profile)
+	cust = frappe.get_doc(
+		{
+			"doctype": "Customer",
+			"customer_name": customer_name,
+			"customer_group": _new_customer_group(pos),
+			"territory": frappe.db.get_single_value("Selling Settings", "territory") or "All Territories",
+			"customer_type": "Individual",
+		}
+	)
+	cust.insert()
+	require_customer_access(cust.name, pos_profile=pos.name)
+	return cust
+
+
 def _guard_new_invoice(data: dict):
 	"""Scope a new invoice to the caller's POS Profile and its company; returns the profile.
 
@@ -322,22 +366,9 @@ def update_invoice(data: str) -> dict:
 
 	customer_name = invoice_doc.get("customer")
 	if customer_name and not frappe.db.exists("Customer", customer_name):
-		try:
-			cust = frappe.get_doc(
-				{
-					"doctype": "Customer",
-					"customer_name": customer_name,
-					"customer_group": "All Customer Groups",
-					"territory": "All Territories",
-					"customer_type": "Individual",
-				}
-			)
-			cust.flags.ignore_permissions = True
-			cust.insert()
-			invoice_doc.customer = cust.name
-			invoice_doc.customer_name = cust.customer_name
-		except Exception as e:
-			frappe.log_error(f"Failed to create customer {customer_name}: {e}")
+		cust = _new_invoice_customer(customer_name, invoice_doc.get("pos_profile") or pos_profile)
+		invoice_doc.customer = cust.name
+		invoice_doc.customer_name = cust.customer_name
 
 	effective_price_list = _resolve_effective_price_list(
 		invoice_doc.get("customer"),

@@ -14,6 +14,7 @@ from xpos.api import customers as customers_api
 from xpos.api import invoices as invoices_api
 from xpos.api import offers, profiles, shifts
 from xpos.api.tests.test_record_access import (
+	ALLOWED_GROUP,
 	BROAD,
 	CASHIER,
 	INSIDE,
@@ -381,3 +382,33 @@ class TestDeskClosingIsAClosingShift(ClosingCase):
 		frappe.set_user(CASHIER)
 		with self.assertRaises(frappe.PermissionError):
 			closing_creation.submit_closing_shift({"pos_opening_shift": self.opening.name})
+
+
+class TestInvoiceCustomerAutocreate(RecordAccessTestCase):
+	"""An unknown customer named on a legacy invoice is created only as the caller may, inside the profile."""
+
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		frappe.get_doc("User", BROAD).add_roles("Sales Master Manager")
+		frappe.set_user(CASHIER)
+
+	def test_a_user_without_customer_create_is_refused(self):
+		self.assertFalse(frappe.has_permission("Customer", "create"))
+		with self.assertRaises(frappe.PermissionError):
+			legacy_creation._new_invoice_customer("_Test RA Walk Up", OWN_PROFILE)
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("Customer", {"customer_name": "_Test RA Walk Up"}))
+
+	def test_the_new_customer_goes_into_the_profiles_groups(self):
+		frappe.set_user(BROAD)
+		cust = legacy_creation._new_invoice_customer("_Test RA Walk Up", OWN_PROFILE)
+		self.assertEqual(cust.customer_group, ALLOWED_GROUP)
+		self.assertEqual(
+			customers_api.get_customer_info(cust.name, pos_profile=OWN_PROFILE)["name"], cust.name
+		)
+
+	def test_someone_elses_profile_is_refused(self):
+		frappe.set_user(BROAD)
+		with self.assertRaises(frappe.PermissionError):
+			legacy_creation._new_invoice_customer("_Test RA Walk Up", OTHER_PROFILE)
