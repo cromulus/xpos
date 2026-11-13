@@ -275,3 +275,61 @@ class TestLegacyQuotationsAreQuotations(RecordAccessTestCase):
 			quotations.update_quotation({"name": quotation.name, "party_name": OUTSIDE})
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Quotation", quotation.name, "party_name"), INSIDE)
+
+
+class ClosingCase(RecordAccessTestCase):
+	"""A shift opened by Administrator (a superuser, who may close) on the cashier's profile."""
+
+	COMPANY = "_Test Company"
+
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		self.opening = frappe.get_doc(
+			"POS Opening Shift",
+			shifts.open_shift(OWN_PROFILE, self.COMPANY, [{"mode_of_payment": "Cash", "opening_amount": 25}])[
+				"pos_opening_shift"
+			]["name"],
+		)
+
+
+class TestSyncedClosingIsBuiltOnTheServer(ClosingCase):
+	"""create_closing_shift takes only the till's counts from the payload."""
+
+	def test_the_payload_cannot_set_profile_company_user_or_totals(self):
+		result = shifts.create_closing_shift(
+			{
+				"pos_opening_shift": self.opening.name,
+				"pos_profile": OTHER_PROFILE,
+				"company": OTHER_COMPANY,
+				"user": CASHIER,
+				"grand_total": 999999,
+				"net_total": 999999,
+				"total_quantity": 42,
+				"payment_reconciliation": [
+					{"mode_of_payment": "Cash", "closing_amount": 20, "expected_amount": 20, "difference": 0}
+				],
+			}
+		)
+		closing = frappe.get_doc("POS Closing Shift", result["name"])
+		self.assertEqual(
+			(closing.pos_profile, closing.company, closing.user),
+			(OWN_PROFILE, self.COMPANY, "Administrator"),
+		)
+		self.assertEqual((closing.grand_total, closing.total_quantity), (0, 0))
+		cash = {row.mode_of_payment: row for row in closing.payment_reconciliation}["Cash"]
+		self.assertEqual((cash.opening_amount, cash.expected_amount, cash.closing_amount), (25, 25, 20))
+		self.assertEqual(cash.difference, -5)
+
+	def test_an_uncounted_mode_is_a_shortage_not_a_missing_row(self):
+		result = shifts.create_closing_shift({"pos_opening_shift": self.opening.name})
+		closing = frappe.get_doc("POS Closing Shift", result["name"])
+		cash = {row.mode_of_payment: row for row in closing.payment_reconciliation}["Cash"]
+		self.assertEqual((cash.expected_amount, cash.closing_amount, cash.difference), (25, 0, -25))
+
+	def test_a_mode_counted_twice_is_refused(self):
+		counts = [{"mode_of_payment": "Cash", "closing_amount": 25}] * 2
+		with self.assertRaises(frappe.ValidationError):
+			shifts.create_closing_shift(
+				{"pos_opening_shift": self.opening.name, "payment_reconciliation": counts}
+			)
