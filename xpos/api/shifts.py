@@ -11,7 +11,7 @@ from frappe.utils import cint, flt, get_datetime, getdate, now_datetime, nowdate
 
 from xpos.api.exchange import change_leg_table_exists, payment_tender_fields_exist
 from xpos.api.profile_rules import is_blind_closing
-from xpos.api.profiles import user_may_use_profile
+from xpos.api.profiles import resolve_pos_profile, user_may_use_profile
 from xpos.api.utilities import can_close_shift, get_invoice_type, is_pos_cashier
 from xpos.utils import row_value
 from xpos.x_pos.gift_cards import gift_card_config, gift_card_mode
@@ -276,10 +276,19 @@ def get_opening_data():
 	return data
 
 
+def opening_profile(pos_profile: str | None, company: str | None):
+	"""The POS Profile and company a new shift opens on: one the caller may use, in its own company."""
+	from xpos.api.customers import profile_company
+
+	pos = resolve_pos_profile(pos_profile)
+	return pos, profile_company(pos, company)
+
+
 @frappe.whitelist()
 def open_shift(pos_profile: str, company: str, balance_details: str | list[dict] | None = None):
-	"""Create and submit a POS Opening Shift."""
+	"""Create and submit a POS Opening Shift on a POS Profile the caller may use."""
 
+	pos, company = opening_profile(pos_profile, company)
 	balance_details = json.loads(balance_details) if isinstance(balance_details, str) else balance_details
 
 	new_shift = frappe.get_doc(
@@ -288,7 +297,7 @@ def open_shift(pos_profile: str, company: str, balance_details: str | list[dict]
 			"period_start_date": now_datetime(),
 			"posting_date": nowdate(),
 			"user": frappe.session.user,
-			"pos_profile": pos_profile,
+			"pos_profile": pos.name,
 			"company": company,
 			"docstatus": 1,
 		}
@@ -308,7 +317,7 @@ def open_shift(pos_profile: str, company: str, balance_details: str | list[dict]
 	data = {
 		"pos_opening_shift": new_shift.as_dict(),
 	}
-	_enrich_shift_data(data, pos_profile)
+	_enrich_shift_data(data, pos.name)
 
 	return data
 
@@ -722,6 +731,16 @@ def create_opening_shift(data: str | dict, local_id: str | None = None) -> dict:
 	"""
 	data = json.loads(data) if isinstance(data, str) else data
 
+	# The caller's own shift, on a POS Profile they may use, in its company; checked
+	# before the local_id lookup, which still finds a retry of their own push.
+	pos, company = opening_profile(data.get("pos_profile"), data.get("company"))
+	user = frappe.session.user
+	if data.get("user") and data.get("user") != user:
+		frappe.throw(
+			_("{0} cannot open a shift for {1}.").format(user, data.get("user")),
+			frappe.PermissionError,
+		)
+
 	if local_id:
 		existing = frappe.db.get_value("POS Opening Shift", {"xpos_local_id": local_id}, "name")
 		if existing:
@@ -732,9 +751,9 @@ def create_opening_shift(data: str | dict, local_id: str | None = None) -> dict:
 			"doctype": "POS Opening Shift",
 			"period_start_date": data.get("period_start_date") or now_datetime(),
 			"posting_date": data.get("posting_date") or nowdate(),
-			"user": data.get("user") or frappe.session.user,
-			"pos_profile": data.get("pos_profile"),
-			"company": data.get("company"),
+			"user": user,
+			"pos_profile": pos.name,
+			"company": company,
 			"xpos_local_id": local_id,
 			"docstatus": 1,  # Submit immediately
 		}

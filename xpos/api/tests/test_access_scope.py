@@ -12,7 +12,7 @@ import frappe
 
 from xpos.api import customers as customers_api
 from xpos.api import invoices as invoices_api
-from xpos.api import offers, profiles
+from xpos.api import offers, profiles, shifts
 from xpos.api.tests.test_record_access import (
 	CASHIER,
 	INSIDE,
@@ -130,3 +130,39 @@ class TestLastInvoiceRatesThroughTheCallersProfile(RecordAccessTestCase):
 			for i, lookup in enumerate(self.lookups(INSIDE, **kwargs)):
 				with self.subTest(i, **kwargs), self.assertRaises(frappe.PermissionError):
 					lookup()
+
+
+class TestShiftOpensOnTheCallersProfile(RecordAccessTestCase):
+	"""open_shift and the offline sync's create_opening_shift open only the caller's own shift."""
+
+	COMPANY = "_Test Company"
+	CASH = [{"mode_of_payment": "Cash", "opening_amount": 0}]
+
+	def test_own_profile_opens(self):
+		shift = shifts.open_shift(OWN_PROFILE, self.COMPANY, self.CASH)["pos_opening_shift"]
+		self.assertEqual((shift["pos_profile"], shift["user"]), (OWN_PROFILE, CASHIER))
+		synced = shifts.create_opening_shift(
+			{"pos_profile": OWN_PROFILE, "company": self.COMPANY, "balance_details": self.CASH}
+		)
+		self.assertEqual(
+			frappe.db.get_value("POS Opening Shift", synced["name"], ["pos_profile", "user"]),
+			(OWN_PROFILE, CASHIER),
+		)
+
+	def test_someone_elses_profile_is_refused(self):
+		with self.assertRaises(frappe.PermissionError):
+			shifts.open_shift(OTHER_PROFILE, self.COMPANY, self.CASH)
+		with self.assertRaises(frappe.PermissionError):
+			shifts.create_opening_shift({"pos_profile": OTHER_PROFILE, "company": self.COMPANY})
+
+	def test_another_company_is_refused(self):
+		with self.assertRaises(frappe.PermissionError):
+			shifts.open_shift(OWN_PROFILE, OTHER_COMPANY, self.CASH)
+		with self.assertRaises(frappe.PermissionError):
+			shifts.create_opening_shift({"pos_profile": OWN_PROFILE, "company": OTHER_COMPANY})
+
+	def test_a_synced_shift_cannot_name_another_user(self):
+		with self.assertRaises(frappe.PermissionError):
+			shifts.create_opening_shift(
+				{"pos_profile": OWN_PROFILE, "company": self.COMPANY, "user": "Administrator"}
+			)

@@ -80,6 +80,15 @@ class TestGetOpeningData(unittest.TestCase):
 class TestOpenShift(unittest.TestCase):
 	"""Tests for open_shift function."""
 
+	def setUp(self):
+		# The caller's profile and company are checked in test_access_scope.
+		patcher = patch(
+			"xpos.api.shifts.opening_profile",
+			side_effect=lambda profile, company: (SimpleNamespace(name=profile), company),
+		)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	@patch("xpos.api.shifts._enrich_shift_data")
 	@patch("xpos.api.shifts.frappe")
 	def test_open_shift_creates_new_shift(self, mock_frappe, mock_enrich):
