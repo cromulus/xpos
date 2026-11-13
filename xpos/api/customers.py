@@ -679,9 +679,8 @@ def create_customer(
 	customer.insert(ignore_permissions=True)
 
 	if address_line1 and city:
-		# The customer was made just above by this call, so the address goes with
-		# it without make_address's Customer write check: the shared counter login
-		# reads customers only, yet adds a new one with its address (MuleCity-0bsc).
+		# The customer was made just above by this call, so its address goes with
+		# it without make_address's access check (MuleCity-0bsc).
 		_insert_customer_address(
 			customer.name,
 			{
@@ -881,7 +880,12 @@ def make_address(args: str | dict):
 		frappe.throw(_("Customer is required to create an address"))
 	if not (args.get("address_line1") or "").strip() or not (args.get("city") or "").strip():
 		frappe.throw(_("Street address and city are required to save an address"))
-	require_customer_access(customer, "write", args.get("pos_profile"))
+	# Upstream (2f14e6f) asks for Customer write here. Mule City's shared counter
+	# login reads customers only yet adds delivery addresses in Edit Customer, so
+	# the fork checks what it may read: the profile's groups, the walk-in and the
+	# clerk's User Permissions (MuleCity-0bsc). The address itself is a new
+	# record, not a change to the customer.
+	require_customer_access(customer, "read", args.get("pos_profile"))
 	return _insert_customer_address(customer, args)
 
 

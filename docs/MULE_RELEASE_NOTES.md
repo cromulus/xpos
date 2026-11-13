@@ -1,5 +1,52 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc62 (contains mc61)
+
+### Upstream record-access security fixes (MuleCity-0bsc)
+
+Upstream kodlyft/xpos `version-16` (v2.13.4) fixed endpoints that loaded
+customers, invoices, shifts and sales orders by a name from the request with
+no permission check. mc62 takes those fixes onto mc61; it is not a merge of
+`version-16` (that stays for the xpos-improvements rebase).
+
+Taken from upstream:
+- `9cf8318` enforce record access on POS endpoints (#187): invoices load
+  through `get_pos_invoice` (Sales/POS Invoice only, the caller's POS Profile
+  or Desk permission); customer endpoints go through `require_customer_access`;
+  `get_customers` resolves the caller's own POS Profile instead of trusting the
+  one named; legacy `xpos.x_pos.api` endpoints too.
+- `2f14e6f` customer access and visibility (#198, GHSA-q25h-gwpw-jjr2): the
+  profile's customer groups bind Desk users and Administrator too; User
+  Permissions always apply; changing a customer needs Customer write;
+  balances, credit limit and loyalty are per POS Profile company; addresses
+  honour Address User Permissions.
+- `bb17c4f`, sales-order part only (#181): Sales Order / Quotation endpoints
+  need a usable profile with Allow Sales Order and stay in its company; the
+  unguarded legacy `xpos.x_pos.api.sales_orders` is removed.
+- From `86425a7`: `get_shift_summary` only for the shift's cashier or someone
+  with `close_shift`, on a profile they may use. From `882e1a8`:
+  `mark_invoice_printed` needs read on the invoice.
+
+Mule behaviour kept:
+- The profile's walk-in accounts (`xpos_walk_in_customers`, the profile's
+  default customer) count as inside its customer groups, for the list and for
+  `require_customer_access` (MuleCity-yn4b).
+- `get_customers` keeps the fork's search, ranking, preload and picker rows.
+- `get_customer_balance` keeps the `xpos_customer_balance` hook (MuleCity-biez).
+- `make_address` keeps its single JSON `args`; the till's `pos_profile` is in it.
+- `get_invoice_for_repeat` keeps its `check_permission("read")`.
+
+Fork endpoints given the same checks: `add_delivery_address`, `quote_delivery`
+(also refuses an address that is not the customer's), `get_customer_credit`.
+
+Tests: upstream's `test_record_access` (helpers in `record_access_fixtures.py`)
+plus `TestForkEndpointScope`; `test_sales_orders`; `test_customers` adjusted.
+
+Not taken (not access fixes, or features): `27d0727` (MariaDB 11.6+ snapshot
+isolation on row locks; Mule runs 11.8.6, follow-up bead), `6915c61` (the
+fork's `_get_shift_invoices` already filters consolidated invoices), the rest
+of `bb17c4f`, `86425a7`, `882e1a8`, and every feature commit.
+
 ## mule-v2.10.1-mc59 (contains mc58)
 
 ### Delivery billed to the tenth of a mile, to the cent (MuleCity-qgvv)

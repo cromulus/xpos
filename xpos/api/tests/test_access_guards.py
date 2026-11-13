@@ -87,6 +87,16 @@ class TestCustomerAccess(CustomerCase):
 			with self.assertRaises(frappe.PermissionError):
 				call()
 
+	def test_an_address_needs_read_access_not_customer_write(self):
+		"""Mule City's counter login reads customers only and adds addresses in Edit Customer."""
+		self.has_permission.return_value = False
+		address = {"address_line1": "77 Feed Lot Ln", "city": "Benson"}
+		with patch.object(customers, "_insert_customer_address", return_value={"name": "ADDR-1"}) as insert:
+			self.assertEqual(customers.make_address({"customer": "Greenview", **address}), {"name": "ADDR-1"})
+			with self.assertRaises(frappe.PermissionError):
+				customers.make_address({"customer": "Insider", **address})
+		self.assertEqual([call.args[0] for call in insert.call_args_list], ["Greenview"])
+
 	def test_negative_a_delivery_address_for_an_outside_customer_is_refused(self):
 		added = []
 		with patch.object(customers, "_last_hook", return_value=lambda **kw: added.append(kw)):
