@@ -14,6 +14,7 @@ from xpos.api import customers as customers_api
 from xpos.api import invoices as invoices_api
 from xpos.api import offers, profiles, shifts
 from xpos.api.tests.test_record_access import (
+	BROAD,
 	CASHIER,
 	INSIDE,
 	OTHER_COMPANY,
@@ -24,6 +25,7 @@ from xpos.api.tests.test_record_access import (
 )
 from xpos.x_pos.api import offers as legacy_offers
 from xpos.x_pos.api import payments as legacy_payments
+from xpos.x_pos.api import quotations
 from xpos.x_pos.api.invoice_processing import creation as legacy_creation
 from xpos.x_pos.api.invoice_processing import data as legacy_invoice_data
 
@@ -231,3 +233,45 @@ class TestLegacyInvoiceStaysOnItsTill(RecordAccessTestCase):
 		):
 			with self.subTest(**changes), self.assertRaises(frappe.PermissionError):
 				legacy_creation.update_invoice(frappe.as_json({"items": [], **changes}))
+
+
+class TestLegacyQuotationsAreQuotations(RecordAccessTestCase):
+	"""update_quotation / submit_quotation save only a Quotation, behind Quotation permission."""
+
+	FORGED = {"doctype": "User", "email": "forged-quotation@example.com", "first_name": "Forged"}
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("User", self.FORGED["email"]))
+		super().tearDown()
+
+	def test_a_forged_doctype_is_not_saved(self):
+		for user in (CASHIER, BROAD):
+			for save in (quotations.update_quotation, quotations.submit_quotation):
+				frappe.set_user(user)
+				# Refused, or saved as an (invalid) Quotation: never as the forged doctype.
+				with self.subTest(user=user, save=save.__name__), self.assertRaises(Exception):
+					save(dict(self.FORGED))
+
+	def test_a_user_without_quotation_permission_is_refused(self):
+		self.assertFalse(frappe.has_permission("Quotation", "create"))
+		for save in (quotations.update_quotation, quotations.submit_quotation):
+			with self.subTest(save.__name__), self.assertRaises(frappe.PermissionError):
+				save({"party_name": INSIDE, "company": "_Test Company", "items": []})
+
+	def test_another_users_quotation_cannot_be_overwritten_without_permission(self):
+		frappe.set_user("Administrator")
+		quotation = frappe.get_doc(
+			{
+				"doctype": "Quotation",
+				"quotation_to": "Customer",
+				"party_name": INSIDE,
+				"company": "_Test Company",
+				"items": [{"item_code": "_Test PS Item A", "qty": 1, "rate": 100}],
+			}
+		).insert(ignore_permissions=True, ignore_mandatory=True)
+		frappe.set_user(CASHIER)
+		with self.assertRaises(frappe.PermissionError):
+			quotations.update_quotation({"name": quotation.name, "party_name": OUTSIDE})
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Quotation", quotation.name, "party_name"), INSIDE)
