@@ -71,9 +71,10 @@ class TestGetOpeningData(unittest.TestCase):
 class TestOpenShift(unittest.TestCase):
 	"""Tests for open_shift function."""
 
+	@patch("xpos.api.shifts.opening_profile", return_value=(frappe._dict(name="POS-PROFILE-1"), "Test Company"))
 	@patch("xpos.api.shifts._enrich_shift_data")
 	@patch("xpos.api.shifts.frappe")
-	def test_open_shift_creates_new_shift(self, mock_frappe, mock_enrich):
+	def test_open_shift_creates_new_shift(self, mock_frappe, mock_enrich, _profile):
 		"""Test that open_shift creates a new POS Opening Shift."""
 		mock_shift_doc = MagicMock()
 		mock_shift_doc.as_dict.return_value = {"name": "POS-OPEN-001"}
@@ -90,9 +91,10 @@ class TestOpenShift(unittest.TestCase):
 		mock_shift_doc.insert.assert_called_once_with(ignore_permissions=True)
 		self.assertIn("pos_opening_shift", result)
 
+	@patch("xpos.api.shifts.opening_profile", return_value=(frappe._dict(name="POS-PROFILE-1"), "Test Company"))
 	@patch("xpos.api.shifts._enrich_shift_data")
 	@patch("xpos.api.shifts.frappe")
-	def test_open_shift_handles_empty_balance(self, mock_frappe, mock_enrich):
+	def test_open_shift_handles_empty_balance(self, mock_frappe, mock_enrich, _profile):
 		"""Test that open_shift works with no balance details."""
 		mock_shift_doc = MagicMock()
 		mock_shift_doc.as_dict.return_value = {"name": "POS-OPEN-002"}
@@ -927,9 +929,13 @@ class TestOpeningFloat(unittest.TestCase):
 	"""User story (MuleCity-88ck): Leslie types 150 in the Cash box under Opening Cash Balance
 	and clicks Open Shift. The shift keeps Cash = 150 so Close Shift expects float + sales."""
 
+	@patch(
+		"xpos.api.shifts.opening_profile",
+		return_value=(frappe._dict(name="Mule City Retail"), "Mule City Specialty Feeds"),
+	)
 	@patch("xpos.api.shifts._enrich_shift_data")
 	@patch("xpos.api.shifts.frappe")
-	def test_open_shift_keeps_the_typed_cash_float(self, mock_frappe, _enrich):
+	def test_open_shift_keeps_the_typed_cash_float(self, mock_frappe, _enrich, _profile):
 		shift = MagicMock()
 		appended = []
 		shift.append.side_effect = lambda table, row: appended.append((table, row))

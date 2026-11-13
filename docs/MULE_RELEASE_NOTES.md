@@ -41,6 +41,37 @@ Behaviour notes:
   (the server's VFD checks still run there). Mule City does not run the
   desktop app.
 
+### The access gaps mc63 left (MuleCity-jn61)
+
+The endpoints mc63 listed as still open (open upstream too, `version-16` at
+v2.13.4 `3668fca` has no check on any of them, so there was nothing to port)
+now go through mc63's helpers:
+
+- `offers.get_pos_coupon` / `get_active_gift_coupons` (and the legacy
+  `x_pos/api/offers.py` pair): new `pos_profile=None`, `company` optional. A
+  customer is checked through the till's profile (`customer_in_profile`); with no
+  customer picked yet the profile must still be the caller's. The coupon is
+  looked up in the profile's company; another company is a PermissionError.
+  Gift coupons for no customer are an empty list. The SPA's coupon box sends
+  `profileName` (`offerStore.fetchCoupon` / `fetchGiftCoupons`).
+- `invoices.get_last_invoice_rates` and the legacy
+  `x_pos/api/invoice_processing/data.get_last_invoice_rates`: the same
+  (`customer_in_profile`), new `pos_profile=None`, `company` optional. The legacy
+  one no longer falls back to the site's default company. No SPA caller.
+- `shifts.open_shift` and the offline sync's `create_opening_shift`
+  (`opening_profile`): only on a POS Profile the caller may use
+  (`resolve_pos_profile`), in its company (`profile_company`). The synced shift's
+  user is the caller; a payload naming someone else is refused. The check runs
+  before the `local_id` lookup, so a retry of the caller's own push still finds
+  its shift. The till's Open Shift dialog lists only the caller's profiles
+  already, so a cashier sees no change.
+
+Tests: `TestCustomerAccessJn61` in `test_access_guards`,
+`TestOpeningShiftOnTheCallersProfile` in `test_scope_guards`,
+`frontend/tests/offerStoreProfile.spec.ts`; the refusal cases fail on
+`795740d`. Still open (not in this bead): `offers.get_offers(pos_profile)` loads
+the named profile without checking the caller may use it.
+
 ## mule-v2.10.1-mc63 (contains mc62)
 
 ### The access gaps mc62 left (MuleCity-0bsc)

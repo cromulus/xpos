@@ -85,8 +85,9 @@ class TestGetOffers(unittest.TestCase):
 class TestGetPosCoupon(unittest.TestCase):
 	"""Tests for get_pos_coupon function."""
 
+	@patch("xpos.api.offers.coupon_company", return_value="Test Company")
 	@patch("xpos.api.offers.frappe")
-	def test_get_pos_coupon_validates_existing_coupon(self, mock_frappe):
+	def test_get_pos_coupon_validates_existing_coupon(self, mock_frappe, _company):
 		"""Test that get_pos_coupon validates and returns coupon."""
 		mock_frappe.db.get_value.return_value = {
 			"name": "COUPON-001",
@@ -105,8 +106,9 @@ class TestGetPosCoupon(unittest.TestCase):
 		self.assertIsNone(result["offer"])
 		self.assertEqual(result["msg"], "Apply")
 
+	@patch("xpos.api.offers.coupon_company", return_value="Test Company")
 	@patch("xpos.api.offers.frappe")
-	def test_get_pos_coupon_throws_for_invalid_coupon(self, mock_frappe):
+	def test_get_pos_coupon_throws_for_invalid_coupon(self, mock_frappe, _company):
 		"""Test that get_pos_coupon throws error for invalid coupon."""
 		mock_frappe.db.get_value.return_value = None
 		mock_frappe.throw.side_effect = Exception("Invalid coupon")
@@ -114,8 +116,9 @@ class TestGetPosCoupon(unittest.TestCase):
 		with self.assertRaises(Exception):
 			offers.get_pos_coupon("INVALID", "CUST-001", "Test Company")
 
+	@patch("xpos.api.offers.coupon_company", return_value="Test Company")
 	@patch("xpos.api.offers.frappe")
-	def test_get_pos_coupon_validates_expiry(self, mock_frappe):
+	def test_get_pos_coupon_validates_expiry(self, mock_frappe, _company):
 		"""Test that get_pos_coupon validates coupon expiry date."""
 		mock_frappe.db.get_value.return_value = {
 			"name": "COUPON-002",
@@ -162,8 +165,9 @@ class TestValidateCoupon(unittest.TestCase):
 class TestGetActiveGiftCoupons(unittest.TestCase):
 	"""Tests for get_active_gift_coupons function."""
 
+	@patch("xpos.api.offers.coupon_company", return_value="Test Company")
 	@patch("xpos.api.offers.frappe")
-	def test_get_active_gift_coupons_returns_customer_coupons(self, mock_frappe):
+	def test_get_active_gift_coupons_returns_customer_coupons(self, mock_frappe, _company):
 		"""Test that get_active_gift_coupons returns customer's gift cards."""
 		mock_frappe.get_all.return_value = [
 			{

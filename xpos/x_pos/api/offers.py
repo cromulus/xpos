@@ -4,6 +4,7 @@
 import frappe
 from frappe.utils import cstr, flt, getdate, nowdate
 
+from xpos.api.offers import coupon_company
 from xpos.x_pos.doctype.delivery_charges.delivery_charges import (
 	get_applicable_delivery_charges as _get_applicable_delivery_charges,
 )
@@ -11,13 +12,18 @@ from xpos.x_pos.doctype.pos_coupon.pos_coupon import check_coupon_code
 
 
 @frappe.whitelist()
-def get_pos_coupon(coupon: str, customer: str, company: str):
+def get_pos_coupon(coupon: str, customer: str, company: str | None = None, pos_profile: str | None = None):
+	# The till's POS Profile company, for a customer it may see (MuleCity-jn61).
+	company = coupon_company(customer, company, pos_profile)
 	res = check_coupon_code(coupon, customer, company)
 	return res
 
 
 @frappe.whitelist()
-def get_active_gift_coupons(customer: str, company: str):
+def get_active_gift_coupons(customer: str, company: str | None = None, pos_profile: str | None = None):
+	if not customer:
+		return []
+	company = coupon_company(customer, company, pos_profile)
 	coupons = []
 	today = getdate(nowdate())
 	coupons_data = frappe.get_all(

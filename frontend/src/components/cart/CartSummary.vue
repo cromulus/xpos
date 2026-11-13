@@ -669,6 +669,7 @@ async function applyCouponCode() {
 			couponInput.value,
 			cartStore.customer?.name || "",
 			posStore.companyName,
+			posStore.profileName,
 		);
 		if (result.coupon) {
 			const posOfferName = (result.coupon as Record<string, unknown>).pos_offer as string | undefined;
