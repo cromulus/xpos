@@ -8,9 +8,17 @@ Run on a disposable test site::
     bench --site <site> run-tests --module xpos.api.tests.test_record_access
 """
 
+import unittest
 from unittest.mock import patch
 
 import frappe
+
+# These cases build on ERPNext's "_Test" records (_Test Company, _Test Warehouse,
+# _Test Price List); a Mule City site has none, so skip rather than fail
+# discovery there. test_access_guards covers the same refusals on any site.
+if not frappe.db.exists("Company", "_Test Company"):
+	raise unittest.SkipTest("needs ERPNext's _Test records (run on an ERPNext test site)")
+
 from erpnext.accounts.doctype.sales_invoice.test_sales_invoice import create_sales_invoice
 from erpnext.tests.utils import ERPNextTestSuite
 
