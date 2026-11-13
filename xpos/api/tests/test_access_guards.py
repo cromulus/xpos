@@ -375,3 +375,59 @@ class TestCustomerAccessJn61(CustomerCase):
 			legacy_data.get_last_invoice_rates("Greenview", ["FEED-1"])
 		self.assertEqual(sql.call_args.args[1]["company"], "Mule City")
 		self.assertIn(["Sales Invoice", "company", "=", "Mule City"], get_all.call_args.kwargs["filters"])
+
+
+class TestOffersOnTheCallersProfile(unittest.TestCase):
+	"""get_offers reads offers only through a POS Profile the caller may use (MuleCity-get_offers).
+
+	Both the SPA's offers.get_offers and the legacy x_pos one used to load any
+	profile they were sent and list its company's offers.
+	"""
+
+	OFFER_PROFILE = frappe._dict(PROFILE, warehouse="Stores - MC")
+
+	def call_both(self, profile, *, may_use):
+		from xpos.api import offers
+		from xpos.x_pos.api import offers as legacy_offers
+
+		results = []
+		with (
+			patch.object(profiles, "user_may_use_profile", return_value=may_use),
+			patch("frappe.db.exists", return_value=True),
+			patch("frappe.get_cached_doc", return_value=self.OFFER_PROFILE) as get_cached_doc,
+			patch("frappe.get_doc", return_value=self.OFFER_PROFILE) as get_doc,
+			patch("frappe.db.sql", return_value=[]) as sql,
+			patch.object(offers, "_get_promotional_scheme_offers", return_value=[]) as promo,
+			patch.object(legacy_offers, "_get_promotional_scheme_offers", return_value=[]) as legacy_promo,
+		):
+			for call in (
+				lambda: offers.get_offers(profile),
+				lambda: legacy_offers.get_offers(profile),
+			):
+				if may_use:
+					results.append(call())
+				else:
+					with self.assertRaises(frappe.PermissionError):
+						call()
+		return frappe._dict(
+			results=results,
+			sql=sql,
+			loads=get_cached_doc.call_count + get_doc.call_count,
+			promo=promo.call_count + legacy_promo.call_count,
+		)
+
+	def test_negative_someone_elses_profile_lists_no_offers(self):
+		seen = self.call_both("Other Till", may_use=False)
+		seen.sql.assert_not_called()
+		self.assertEqual(seen.loads, 0)
+		self.assertEqual(seen.promo, 0)
+
+	def test_the_callers_profile_lists_its_company_offers(self):
+		seen = self.call_both(PROFILE.name, may_use=True)
+		self.assertEqual(seen.results, [[], []])
+		self.assertEqual(seen.sql.call_count, 2)
+		for call in seen.sql.call_args_list:
+			values = call.kwargs["values"]
+			self.assertEqual(values["company"], "Mule City")
+			self.assertEqual(values["pos_profile"], "Mule City Retail")
+			self.assertEqual(values["warehouse"], "Stores - MC")
