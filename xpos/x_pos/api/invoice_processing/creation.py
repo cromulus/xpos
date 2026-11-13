@@ -242,8 +242,8 @@ def _settle_invoice_customer(invoice_doc, pos_profile: str) -> None:
 	permission, under their own permissions, in a group the profile sells to
 	(_new_customer_group). A failed insert stops the sale. Whatever customer
 	the invoice ends with must pass require_customer_access for the profile:
-	_check_invoice_customer skips unknown names, and _guard_saved_invoice
-	checks only a changed customer.
+	_check_invoice_customer (also behind _guard_saved_invoice) skips unknown
+	names.
 	"""
 	from xpos.api.customers import require_customer_access
 
@@ -301,8 +301,8 @@ def _guard_saved_invoice(invoice_doc, data: dict) -> None:
 	``get_pos_invoice`` let the caller write this invoice because of its stored
 	POS Profile and company; the payload may not move it to another profile or
 	company, nor set its owner or docstatus. A new opening shift (a draft resumed
-	on the next shift) must be one of the same till the caller may use, and a new
-	customer one the profile may sell to.
+	on the next shift) must be one of the same till the caller may use, and the
+	customer, new or kept, one the profile may sell to.
 	"""
 	for field in _SERVER_INVOICE_FIELDS:
 		data.pop(field, None)
@@ -331,9 +331,10 @@ def _guard_saved_invoice(invoice_doc, data: dict) -> None:
 	shift = data.get("pos_opening_shift")
 	if shift and shift != invoice_doc.get("pos_opening_shift"):
 		_check_invoice_shift(shift, profile)
-	customer = data.get("customer")
-	if customer and customer != invoice_doc.get("customer"):
-		_check_invoice_customer(customer, profile)
+	# The customer the invoice ends with, sent again or kept, not only a changed
+	# one: submit_invoice applies a resumed draft without _settle_invoice_customer
+	# (MuleCity-py8t.81).
+	_check_invoice_customer(data.get("customer") or invoice_doc.get("customer"), profile)
 
 
 @frappe.whitelist()

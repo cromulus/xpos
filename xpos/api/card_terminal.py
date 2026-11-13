@@ -278,7 +278,7 @@ def save_card_draft(data: str | dict) -> dict:
 	"""
 	data = dict(json.loads(data) if isinstance(data, str) else data)
 	pos_profile = data.get("pos_profile")
-	check_may_sell(pos_profile)
+	check_may_sell(pos_profile, data.get("customer"))
 	pos = frappe.get_cached_doc("POS Profile", pos_profile)
 
 	modes = card_modes(pos.company)

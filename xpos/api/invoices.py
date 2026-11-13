@@ -583,15 +583,27 @@ def check_discount_cap(invoice_doc, max_discount: float, rule_rates: list[float]
 		)
 
 
-def check_may_sell(pos_profile: str | None) -> None:
-	"""Refuse a caller who may not sell at this register.
+def check_may_sell(pos_profile: str | None, customer: str | None = None) -> None:
+	"""Refuse a caller who may not sell at this register, or to this customer.
 
 	Invoices are inserted with ignore_permissions (the cart sets fields a
 	cashier may not set directly), so the right to sell is checked here: create
-	permission on the invoice doctype and a seat at the POS Profile.
+	permission on the invoice doctype and a seat at the POS Profile. With the
+	cart's ``customer``, it must also be one the profile may sell to
+	(``require_customer_access``: inside its Customer Groups or one of its
+	walk-in accounts, and allowed by the caller's User Permissions;
+	MuleCity-py8t.81). Every till sale path passes it: create_invoice (an
+	offline replay too: the replay flag is the caller's own argument, and a
+	refused replay stays in the till's dead-letter list), save_draft_invoice,
+	preview_invoice and card_terminal.save_card_draft. These never make a
+	customer, so an unknown name is refused here.
 	"""
 	frappe.has_permission(get_invoice_type(), "create", throw=True)
-	resolve_pos_profile(pos_profile)
+	pos = resolve_pos_profile(pos_profile)
+	if customer:
+		from xpos.api.customers import require_customer_access
+
+		require_customer_access(customer, pos_profile=pos.name)
 
 
 def normalize_initials(value) -> str:
@@ -1157,7 +1169,7 @@ def create_invoice(data: str | dict, local_id: str | None = None):
 		doc.check_permission("read")
 		return {**_build_invoice_response(doc), "duplicate": True}
 
-	check_may_sell(data.get("pos_profile"))
+	check_may_sell(data.get("pos_profile"), data.get("customer"))
 	# An address typed at the till while offline is made before the sale ships there.
 	resolve_new_shipping_address(data)
 
@@ -1252,8 +1264,8 @@ def preview_invoice(data: str | dict):
 	XPOS's own) runs the save-time rules and rolls them back.
 	"""
 	data = dict(json.loads(data) if isinstance(data, str) else data)
-	# Only someone who may sell at this register may price a sale here.
-	check_may_sell(data.get("pos_profile"))
+	# Only someone who may sell at this register, to this customer, may price a sale here.
+	check_may_sell(data.get("pos_profile"), data.get("customer"))
 	# A saved draft is previewed as itself (its header kept); nothing is written,
 	# no local id is claimed and no tender is recorded.
 	for key in ("local_id", "payments", "pos_change_legs", "change_amount"):
@@ -1339,7 +1351,7 @@ def save_draft_invoice(data: str | dict):
 	that draft is updated in place rather than creating a new document.
 	"""
 	data = json.loads(data) if isinstance(data, str) else data
-	check_may_sell(data.get("pos_profile"))
+	check_may_sell(data.get("pos_profile"), data.get("customer"))
 
 	pos_profile = data.get("pos_profile")
 	customer = data.get("customer")
