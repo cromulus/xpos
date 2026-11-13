@@ -64,12 +64,28 @@ def get_offers(pos_profile: str):
 	return data
 
 
+def coupon_company(customer: str | None, company: str | None, pos_profile: str | None) -> str:
+	"""The company a till may look up coupons in: its POS Profile's.
+
+	A customer is checked through the profile (customer groups and User
+	Permissions); with none picked yet, the profile still has to be the
+	caller's. Another company is refused.
+	"""
+	from xpos.api import customers
+
+	if customer:
+		return customers.customer_in_profile(customer, company, pos_profile)
+	return customers.profile_company(resolve_pos_profile(pos_profile), company)
+
+
 @frappe.whitelist()
-def get_pos_coupon(coupon: str, customer: str, company: str):
+def get_pos_coupon(coupon: str, customer: str, company: str | None = None, pos_profile: str | None = None):
 	"""Validate and return a POS coupon with its linked POS Offer.
 
+	Only in the caller's POS Profile company, for a customer that profile may see.
 	A coupon that cannot be used comes back as ``{"coupon": None, "msg": reason}``.
 	"""
+	company = coupon_company(customer, company, pos_profile)
 	result = check_coupon_code(coupon, customer, company)
 	coupon_doc = result.get("coupon")
 	if not coupon_doc:
@@ -105,8 +121,11 @@ def get_pos_coupon(coupon: str, customer: str, company: str):
 
 
 @frappe.whitelist()
-def get_active_gift_coupons(customer: str, company: str):
-	"""Returns all active gift card coupons for a customer."""
+def get_active_gift_coupons(customer: str, company: str | None = None, pos_profile: str | None = None):
+	"""Returns all active gift card coupons for a customer the caller's POS Profile may see."""
+	if not customer:
+		return []
+	company = coupon_company(customer, company, pos_profile)
 
 	today = getdate(nowdate())
 	coupons_data = frappe.get_all(

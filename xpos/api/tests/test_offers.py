@@ -98,6 +98,14 @@ class TestGetPosCoupon(unittest.TestCase):
 	xpos/x_pos/doctype/pos_coupon/test_pos_coupon.py.
 	"""
 
+	def setUp(self):
+		# The caller's profile and company are checked in test_access_scope.
+		patcher = patch(
+			"xpos.api.offers.coupon_company", side_effect=lambda customer, company, profile: company
+		)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	@patch("xpos.api.offers.frappe")
 	@patch("xpos.api.offers.check_coupon_code")
 	def test_get_pos_coupon_returns_coupon_and_offer(self, mock_check, mock_frappe):
@@ -167,6 +175,14 @@ class TestValidateCoupon(unittest.TestCase):
 
 class TestGetActiveGiftCoupons(unittest.TestCase):
 	"""Tests for get_active_gift_coupons function."""
+
+	def setUp(self):
+		# The caller's profile and company are checked in test_access_scope.
+		patcher = patch(
+			"xpos.api.offers.coupon_company", side_effect=lambda customer, company, profile: company
+		)
+		patcher.start()
+		self.addCleanup(patcher.stop)
 
 	@patch("xpos.api.offers.frappe")
 	def test_get_active_gift_coupons_returns_customer_coupons(self, mock_frappe):

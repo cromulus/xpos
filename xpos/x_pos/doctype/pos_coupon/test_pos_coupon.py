@@ -165,7 +165,14 @@ class TestCouponPreview(ERPNextTestSuite):
 		self.assert_rejected(coupon)
 
 	def test_company_restriction(self):
-		self.assert_rejected(make_coupon("_Test Company Bound"), company="_Test Company 1")
+		coupon = make_coupon("_Test Company Bound")
+		# The endpoints look coupons up only in the caller's POS Profile company.
+		for endpoint in (active_api.get_pos_coupon, legacy_api.get_pos_coupon):
+			with self.assertRaises(frappe.PermissionError, msg=endpoint.__module__):
+				endpoint(coupon.coupon_code, CUSTOMER, "_Test Company 1")
+		self.assertRaises(
+			frappe.ValidationError, validate_coupon_code, coupon.coupon_code, CUSTOMER, "_Test Company 1"
+		)
 
 	def test_gift_card_is_bound_to_its_customer(self):
 		"""Legacy Gift Card behaviour: one use in total, by the customer it was issued to."""

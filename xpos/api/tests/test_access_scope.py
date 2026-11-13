@@ -15,7 +15,9 @@ from xpos.api import offers, profiles
 from xpos.api.tests.test_record_access import (
 	CASHIER,
 	INSIDE,
+	OTHER_COMPANY,
 	OTHER_PROFILE,
+	OUTSIDE,
 	OWN_PROFILE,
 	RecordAccessTestCase,
 )
@@ -65,3 +67,34 @@ class TestOffersThroughTheCallersProfile(RecordAccessTestCase):
 		frappe.set_user("Guest")
 		with self.assertRaises(frappe.PermissionError):
 			offers.get_offers(OWN_PROFILE)
+
+
+class TestCouponsThroughTheCallersProfile(RecordAccessTestCase):
+	"""Coupon and gift card lookups take the customer and company from the caller's profile."""
+
+	def lookups(self, customer, **kwargs):
+		return (
+			lambda: offers.get_pos_coupon("_TEST-NO-SUCH-COUPON", customer, **kwargs),
+			lambda: legacy_offers.get_pos_coupon("_TEST-NO-SUCH-COUPON", customer, **kwargs),
+			lambda: offers.get_active_gift_coupons(customer, **kwargs),
+			lambda: legacy_offers.get_active_gift_coupons(customer, **kwargs),
+		)
+
+	def test_a_customer_inside_the_profile_is_looked_up(self):
+		for lookup in self.lookups(INSIDE, pos_profile=OWN_PROFILE):
+			lookup()
+
+	def test_a_customer_outside_the_profile_groups_is_refused(self):
+		for i, lookup in enumerate(self.lookups(OUTSIDE, pos_profile=OWN_PROFILE)):
+			with self.subTest(i), self.assertRaises(frappe.PermissionError):
+				lookup()
+
+	def test_another_company_is_refused(self):
+		for i, lookup in enumerate(self.lookups(INSIDE, company=OTHER_COMPANY, pos_profile=OWN_PROFILE)):
+			with self.subTest(i), self.assertRaises(frappe.PermissionError):
+				lookup()
+
+	def test_someone_elses_profile_is_refused_even_without_a_customer(self):
+		for get in (offers.get_pos_coupon, legacy_offers.get_pos_coupon):
+			with self.subTest(get.__module__), self.assertRaises(frappe.PermissionError):
+				get("_TEST-NO-SUCH-COUPON", "", pos_profile=OTHER_PROFILE)

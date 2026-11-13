@@ -62,6 +62,7 @@ export const useOfferStore = defineStore("offers", () => {
 		couponCode: string,
 		customer?: string,
 		company?: string,
+		posProfile?: string,
 	): Promise<{ coupon: POSCoupon | null; offer?: Record<string, unknown> | null; msg?: string }> {
 		isLoadingCoupon.value = true;
 		try {
@@ -73,6 +74,8 @@ export const useOfferStore = defineStore("offers", () => {
 				coupon: couponCode,
 				customer: customer || "",
 				company: company || "",
+				// The server checks the customer through the till's own profile.
+				pos_profile: posProfile || "",
 			});
 			coupon.value = result?.coupon ?? null;
 			return result || { coupon: null };
@@ -85,10 +88,11 @@ export const useOfferStore = defineStore("offers", () => {
 		}
 	}
 
-	async function fetchGiftCoupons(customer?: string): Promise<GiftCoupon[]> {
+	async function fetchGiftCoupons(customer?: string, posProfile?: string): Promise<GiftCoupon[]> {
 		try {
 			const result = await call<GiftCoupon[]>("xpos.api.offers.get_active_gift_coupons", {
 				customer: customer || "",
+				pos_profile: posProfile || "",
 			});
 			giftCoupons.value = result || [];
 			return giftCoupons.value;

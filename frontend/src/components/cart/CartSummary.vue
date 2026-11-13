@@ -691,6 +691,7 @@ async function applyCouponCode() {
 			couponInput.value,
 			cartStore.customer?.name || "",
 			posStore.companyName,
+			posStore.profileName,
 		);
 		if (cartStore.appliedCoupon) cartStore.removeCoupon();
 		if (result.coupon) {

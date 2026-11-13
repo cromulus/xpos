@@ -46,6 +46,21 @@ def require_customer_access(customer: str, ptype: str = "read", pos_profile: str
 	return pos
 
 
+def profile_company(pos, company: str | None = None) -> str:
+	"""The POS Profile's company; a different one asked for by the client is refused."""
+	if company and company != pos.company:
+		frappe.throw(
+			_("POS Profile {0} sells for {1}, not {2}.").format(pos.name, pos.company, company),
+			frappe.PermissionError,
+		)
+	return pos.company
+
+
+def customer_in_profile(customer: str, company: str | None = None, pos_profile: str | None = None) -> str:
+	"""Check the customer through the caller's POS Profile and return the profile's company."""
+	return profile_company(require_customer_access(customer, pos_profile=pos_profile), company)
+
+
 @frappe.whitelist()
 def get_customers(search_term: str = "", limit: int = 20, pos_profile: str | None = None):
 	"""Search customers by name, mobile, email, or tax ID within the POS Profile's customer groups."""
