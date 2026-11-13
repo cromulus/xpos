@@ -534,3 +534,96 @@ class TestLegacyQuotations(unittest.TestCase):
 				with self.assertRaises(frappe.PermissionError):
 					call()
 		get_doc.return_value.save.assert_not_called()
+
+
+class TestOpeningShiftOnTheCallersProfile(unittest.TestCase):
+	"""open_shift and the offline sync's create_opening_shift (MuleCity-jn61).
+
+	A shift opens only on a POS Profile the caller may use, in that profile's
+	company, for the caller.
+	"""
+
+	def setUp(self):
+		self.shift = MagicMock()
+		self.shift.name = "POS-OS-7"
+		self.shift.as_dict.return_value = {"name": "POS-OS-7"}
+		self.real_cached = frappe.get_cached_doc
+		for target, kwargs in (
+			("frappe.get_doc", {"side_effect": fake_get_doc(made=self.shift)}),
+			("frappe.session", {"new": frappe._dict(user="pos@mulecity.com")}),
+			("frappe.db.exists", {"return_value": True}),
+			("frappe.db.get_value", {"return_value": None}),
+			(
+				"frappe.get_cached_doc",
+				{
+					"side_effect": lambda doctype, *a, **k: (
+						PROFILE if doctype == "POS Profile" else self.real_cached(doctype, *a, **k)
+					)
+				},
+			),
+			("xpos.api.profiles.user_may_use_profile", {"return_value": False}),
+			("xpos.api.shifts._enrich_shift_data", {}),
+		):
+			patcher = patch(target, **kwargs)
+			setattr(self, target.rsplit(".", 1)[-1], patcher.start())
+			self.addCleanup(patcher.stop)
+
+	def made(self):
+		return [call.args[0] for call in self.get_doc.call_args_list if call.args and isinstance(call.args[0], dict)]
+
+	def test_negative_open_shift_refuses_a_profile_the_user_is_not_on(self):
+		with self.assertRaises(frappe.PermissionError):
+			shifts.open_shift("Mule City Retail", "Mule City", "[]")
+		self.assertEqual(self.made(), [])
+
+	def test_negative_open_shift_refuses_another_company(self):
+		self.user_may_use_profile.return_value = True
+		with self.assertRaises(frappe.PermissionError):
+			shifts.open_shift("Mule City Retail", "Other Co", "[]")
+		self.assertEqual(self.made(), [])
+
+	def test_open_shift_on_the_users_own_profile(self):
+		self.user_may_use_profile.return_value = True
+		shifts.open_shift("Mule City Retail", "Mule City", "[]")
+		made = self.made()[-1]
+		self.assertEqual(
+			(made["pos_profile"], made["company"], made["user"]),
+			("Mule City Retail", "Mule City", "pos@mulecity.com"),
+		)
+		self.shift.insert.assert_called_once()
+
+	def test_negative_a_synced_opening_refuses_a_profile_the_user_is_not_on(self):
+		data = {"pos_profile": "Mule City Retail", "company": "Mule City", "balance_details": []}
+		with self.assertRaises(frappe.PermissionError):
+			shifts.create_opening_shift(json.dumps(data), local_id="local-1")
+		self.assertEqual(self.made(), [])
+
+	def test_negative_a_synced_opening_cannot_learn_another_tills_shift_by_its_local_id(self):
+		self.get_value.return_value = "POS-OS-OTHER"
+		data = {"pos_profile": "Mule City Retail", "company": "Mule City"}
+		with self.assertRaises(frappe.PermissionError):
+			shifts.create_opening_shift(json.dumps(data), local_id="local-1")
+
+	def test_negative_a_synced_opening_refuses_another_company(self):
+		self.user_may_use_profile.return_value = True
+		data = {"pos_profile": "Mule City Retail", "company": "Other Co"}
+		with self.assertRaises(frappe.PermissionError):
+			shifts.create_opening_shift(json.dumps(data), local_id="local-1")
+		self.assertEqual(self.made(), [])
+
+	def test_negative_a_synced_opening_cannot_open_a_shift_for_someone_else(self):
+		self.user_may_use_profile.return_value = True
+		data = {"pos_profile": "Mule City Retail", "company": "Mule City", "user": "boss@mulecity.com"}
+		with self.assertRaises(frappe.PermissionError):
+			shifts.create_opening_shift(json.dumps(data), local_id="local-1")
+		self.assertEqual(self.made(), [])
+
+	def test_a_synced_opening_on_the_users_own_profile(self):
+		self.user_may_use_profile.return_value = True
+		data = {"pos_profile": "Mule City Retail", "company": "Mule City", "user": "pos@mulecity.com"}
+		self.assertEqual(shifts.create_opening_shift(json.dumps(data), local_id="local-1"), {"name": "POS-OS-7"})
+		made = self.made()[-1]
+		self.assertEqual(
+			(made["pos_profile"], made["company"], made["user"]),
+			("Mule City Retail", "Mule City", "pos@mulecity.com"),
+		)

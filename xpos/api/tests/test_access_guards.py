@@ -244,3 +244,125 @@ class TestCustomerAccessMc63(CustomerCase):
 			with self.assertRaises(frappe.ValidationError):
 				customers.make_address({"customer": "Walk-In", "address_line1": "1 Main St", "city": "Benson"})
 		insert.assert_not_called()
+
+
+class TestCustomerAccessJn61(CustomerCase):
+	"""Coupons and last invoice rates take a customer and company from the till (MuleCity-jn61).
+
+	Each is checked through the caller's POS Profile (customer_in_profile), and
+	read in that profile's company; another company is refused.
+	"""
+
+	COUPON = frappe._dict(
+		name="GIFT-1",
+		coupon_code="GIFT100",
+		coupon_type="Gift Card",
+		valid_from=None,
+		valid_upto=None,
+		customer="Greenview",
+		pos_offer=None,
+		maximum_use=0,
+		used=0,
+	)
+
+	def coupon_lookups(self):
+		"""Answer POS Coupon lookups with COUPON; record the filters they used."""
+		seen = []
+		customer_lookup = self.get_value.side_effect
+
+		def get_value(doctype, name=None, *args, **kwargs):
+			if doctype == "POS Coupon":
+				seen.append(name)
+				return self.COUPON
+			return customer_lookup(doctype, name, *args, **kwargs)
+
+		self.get_value.side_effect = get_value
+		return seen
+
+	def refused(self, call):
+		with self.assertRaises(frappe.PermissionError):
+			call()
+
+	def test_negative_a_coupon_is_not_checked_for_a_customer_outside_the_profile(self):
+		from xpos.api import offers
+		from xpos.x_pos.api import offers as legacy_offers
+
+		seen = self.coupon_lookups()
+		with patch.object(legacy_offers, "check_coupon_code", return_value={"coupon": None}) as legacy_check:
+			for call in (
+				lambda: offers.get_pos_coupon("GIFT100", "Insider", "Mule City"),
+				lambda: offers.get_pos_coupon("GIFT100", "Greenview", "Other Co"),
+				lambda: offers.get_pos_coupon("GIFT100", "", "Other Co"),
+				lambda: legacy_offers.get_pos_coupon("GIFT100", "Insider", "Mule City"),
+				lambda: legacy_offers.get_pos_coupon("GIFT100", "Greenview", "Other Co"),
+				lambda: legacy_offers.get_pos_coupon("GIFT100", "", "Other Co"),
+			):
+				self.refused(call)
+		self.assertEqual(seen, [])
+		legacy_check.assert_not_called()
+
+	def test_a_coupon_is_checked_in_the_profiles_company(self):
+		from xpos.api import offers
+		from xpos.x_pos.api import offers as legacy_offers
+
+		seen = self.coupon_lookups()
+		result = offers.get_pos_coupon("GIFT100", "Greenview", "", pos_profile=PROFILE.name)
+		self.assertEqual(result["msg"], "Apply")
+		self.assertEqual(seen[-1]["company"], "Mule City")
+		# No customer picked yet: still the profile's company.
+		offers.get_pos_coupon("SUMMER10", "", "Mule City")
+		self.assertEqual(seen[-1]["company"], "Mule City")
+		with patch.object(legacy_offers, "check_coupon_code", return_value={"coupon": None}) as legacy_check:
+			legacy_offers.get_pos_coupon("GIFT100", "Greenview", "")
+		legacy_check.assert_called_once_with("GIFT100", "Greenview", "Mule City")
+		self.resolve_pos_profile.assert_any_call(PROFILE.name)
+
+	def test_negative_gift_coupons_are_not_listed_for_a_customer_outside_the_profile(self):
+		from xpos.api import offers
+		from xpos.x_pos.api import offers as legacy_offers
+
+		with patch("frappe.get_all", return_value=[]) as get_all:
+			for call in (
+				lambda: offers.get_active_gift_coupons("Insider", "Mule City"),
+				lambda: offers.get_active_gift_coupons("Greenview", "Other Co"),
+				lambda: legacy_offers.get_active_gift_coupons("Insider", "Mule City"),
+				lambda: legacy_offers.get_active_gift_coupons("Greenview", "Other Co"),
+			):
+				self.refused(call)
+		get_all.assert_not_called()
+
+	def test_gift_coupons_are_listed_in_the_profiles_company(self):
+		from xpos.api import offers
+		from xpos.x_pos.api import offers as legacy_offers
+
+		with patch("frappe.get_all", return_value=[]) as get_all:
+			self.assertEqual(offers.get_active_gift_coupons("Greenview"), [])
+			self.assertEqual(legacy_offers.get_active_gift_coupons("Greenview", pos_profile=PROFILE.name), [])
+		self.assertEqual({call.kwargs["filters"]["company"] for call in get_all.call_args_list}, {"Mule City"})
+
+	def test_negative_last_invoice_rates_are_not_read_for_a_customer_outside_the_profile(self):
+		from xpos.x_pos.api.invoice_processing import data as legacy_data
+
+		with patch("frappe.db.sql", return_value=[]) as sql, patch("frappe.get_all", return_value=[]) as get_all:
+			for call in (
+				lambda: invoices.get_last_invoice_rates("Insider", ["FEED-1"], "Mule City"),
+				lambda: invoices.get_last_invoice_rates("Greenview", ["FEED-1"], "Other Co"),
+				lambda: legacy_data.get_last_invoice_rates("Insider", ["FEED-1"], "Mule City"),
+				lambda: legacy_data.get_last_invoice_rates("Greenview", ["FEED-1"], "Other Co"),
+			):
+				self.refused(call)
+		sql.assert_not_called()
+		get_all.assert_not_called()
+
+	def test_last_invoice_rates_are_read_in_the_profiles_company(self):
+		from xpos.x_pos.api.invoice_processing import data as legacy_data
+
+		with (
+			patch("frappe.db.sql", return_value=[]) as sql,
+			patch("frappe.get_all", return_value=[]) as get_all,
+			patch("frappe.db.get_default", return_value="Some Default Co"),
+		):
+			invoices.get_last_invoice_rates("Greenview", '["FEED-1"]', "", pos_profile=PROFILE.name)
+			legacy_data.get_last_invoice_rates("Greenview", ["FEED-1"])
+		self.assertEqual(sql.call_args.args[1]["company"], "Mule City")
+		self.assertIn(["Sales Invoice", "company", "=", "Mule City"], get_all.call_args.kwargs["filters"])
