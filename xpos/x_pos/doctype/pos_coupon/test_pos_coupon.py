@@ -82,6 +82,19 @@ def used(coupon):
 class TestCouponPreview(ERPNextTestSuite):
 	"""Both whitelisted endpoints must apply the one shared set of rules."""
 
+	def setUp(self):
+		# The endpoints look coupons up through the caller's POS Profile: give
+		# Administrator one in COMPANY, whatever profiles other tests left behind.
+		from xpos.api.tests.test_profile_settings_hardening import make_profile
+
+		make_profile("_Test Coupon Preview Profile")
+		frappe.db.set_value(
+			"POS Profile User",
+			{"parent": "_Test Coupon Preview Profile", "user": "Administrator"},
+			"default",
+			1,
+		)
+
 	def assert_rejected(self, coupon, customer=CUSTOMER, company=COMPANY):
 		for endpoint in (active_api.get_pos_coupon, legacy_api.get_pos_coupon):
 			result = endpoint(coupon.coupon_code, customer, company)
