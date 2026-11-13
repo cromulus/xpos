@@ -215,6 +215,147 @@ class TestNewInvoiceIsScopedToTheProfile(InvoiceCase):
 		self.assertEqual((made["pos_profile"], made["company"]), ("Mule City Retail", "Mule City"))
 
 
+class PastTheCustomerStep(Exception):
+	"""update_invoice got past the customer step (to the price list): it let the customer through."""
+
+
+class FakeCustomer:
+	def __init__(self, data):
+		self.data = data
+		self.name = data["customer_name"]
+		self.customer_name = data["customer_name"]
+		self.flags = frappe._dict()
+		self.inserted = []
+
+	def insert(self, ignore_permissions=None, **kwargs):
+		self.inserted.append(bool(ignore_permissions or self.flags.ignore_permissions))
+		return self
+
+
+class TestInvoiceForAnUnknownCustomer(InvoiceCase):
+	"""An invoice naming a customer that does not exist yet (MuleCity-py8t.79).
+
+	update_invoice used to make it with ignore_permissions in All Customer Groups,
+	so any till user could make a customer outside the profile's groups, without
+	Customer create permission, and invoice it; a failed insert was only logged.
+	Now: Customer create permission is required, the customer goes in a group the
+	profile may sell to (the Selling Settings default when it is one), or the sale
+	is refused; the final customer then passes require_customer_access.
+	"""
+
+	NEW = "New Farm"
+
+	def setUp(self):
+		super().setUp()
+		self.allowed_groups = ["Farm", "Resale"]
+		self.default_group = "Farm"
+		self.may_create = True
+		self.customers = []
+		self.invoices = []
+		self.exists.side_effect = lambda doctype, name=None, *a, **k: not (doctype == "Customer" and name == self.NEW)
+		for target, kwargs in (
+			("_get_return_validity_settings", {"return_value": (0, 0)}),
+			("_resolve_effective_price_list", {"side_effect": PastTheCustomerStep}),
+		):
+			patcher = patch.object(creation, target, **kwargs)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+		for target, kwargs in (
+			("xpos.api.customers.allowed_customer_groups", {"side_effect": lambda pos: list(self.allowed_groups)}),
+			(
+				"frappe.db.get_single_value",
+				{
+					"side_effect": lambda doctype, field, *a, **k: (
+						self.default_group if (doctype, field) == ("Selling Settings", "customer_group") else None
+					)
+				},
+			),
+			(
+				"frappe.has_permission",
+				{
+					"side_effect": lambda *a, **k: refuse_unless(
+						{("Customer", "create")} if self.may_create else set()
+					)(*a, **k)
+				},
+			),
+			("frappe.get_doc", {"side_effect": fake_get_doc(made=self._make)}),
+			("frappe.log_error", {}),
+		):
+			patcher = patch(target, **kwargs)
+			setattr(self, target.rsplit(".", 1)[-1], patcher.start())
+			self.addCleanup(patcher.stop)
+
+	def _make(self, data):
+		if data.get("doctype") == "Customer":
+			customer = FakeCustomer(data)
+			self.customers.append(customer)
+			return customer
+		invoice = FakeInvoice(**{"is_return": 0, **data})
+		self.invoices.append(invoice)
+		return invoice
+
+	def new_invoice(self, customer=NEW):
+		return creation.update_invoice(json.dumps({"pos_profile": PROFILE.name, "customer": customer}))
+
+	def test_negative_a_user_without_customer_create_permission_cannot_make_one(self):
+		self.may_create = False
+		with self.assertRaises(frappe.PermissionError):
+			self.new_invoice()
+		self.assertEqual(self.customers, [])
+		self.log_error.assert_not_called()
+
+	def test_the_new_customer_goes_in_the_default_group_when_the_profile_sells_to_it(self):
+		with self.assertRaises(PastTheCustomerStep):
+			self.new_invoice()
+		(customer,) = self.customers
+		self.assertEqual(customer.data["customer_group"], "Farm")
+		self.assertEqual(customer.inserted, [False], "inserted with the caller's own permissions")
+		(invoice,) = self.invoices
+		self.assertEqual(invoice.customer, self.NEW)
+		self.require_customer_access.assert_called_with(self.NEW, pos_profile=PROFILE.name)
+
+	def test_negative_never_in_all_customer_groups(self):
+		self.default_group = None
+		with self.assertRaises(frappe.ValidationError):
+			self.new_invoice()
+		self.assertEqual(self.customers, [])
+
+	def test_negative_a_default_group_the_profile_does_not_sell_to_is_refused(self):
+		self.default_group = "Mule City Internal References"
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.new_invoice()
+		self.assertEqual(self.customers, [])
+		self.assertIn(self.NEW, str(caught.exception))
+
+	def test_a_profile_without_group_limits_takes_the_default_group(self):
+		self.allowed_groups = []
+		self.default_group = "Resale"
+		with self.assertRaises(PastTheCustomerStep):
+			self.new_invoice()
+		(customer,) = self.customers
+		self.assertEqual(customer.data["customer_group"], "Resale")
+
+	def test_negative_a_failed_insert_stops_the_sale(self):
+		def refuse_insert(*a, **k):
+			raise frappe.ValidationError("duplicate")
+
+		with patch.object(FakeCustomer, "insert", refuse_insert), self.assertRaises(frappe.ValidationError):
+			self.new_invoice()
+		self.log_error.assert_not_called()
+		self.assertEqual(self.invoices[0].get("customer"), self.NEW)
+		_resolve = creation._resolve_effective_price_list
+		_resolve.assert_not_called()
+
+	def test_negative_the_final_customer_must_be_one_the_profile_sells_to(self):
+		"""Even a customer that exists and was not changed (a saved draft) is checked before save."""
+		self.draft.customer = "Insider"
+		self.draft.is_return = 0
+		self.draft.update = lambda data: self.draft.__dict__.update(data)
+		with self.assertRaises(frappe.PermissionError):
+			self.update()
+		creation._resolve_effective_price_list.assert_not_called()
+
+
 class TestShiftClosing(unittest.TestCase):
 	"""close_shift and the offline sync's create_closing_shift (upstream 86425a7, bb17c4f)."""
 
