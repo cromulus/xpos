@@ -11,6 +11,9 @@ def resolve_pos_profile(pos_profile: str | None = None, user: str | None = None)
 	"""Load a POS Profile the given user is allowed to act through."""
 	user = user or frappe.session.user
 
+	if user == "Guest":
+		frappe.throw(_("Log in to use a POS Profile."), frappe.PermissionError)
+
 	if isinstance(pos_profile, dict):
 		frappe.throw(
 			_("A POS Profile must be referenced by name, not supplied as data."),

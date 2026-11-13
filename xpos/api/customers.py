@@ -1159,8 +1159,11 @@ def get_sales_person_names(pos_profile: str | None = None):
 	)
 
 
-def get_customer_balance(customer: str, company: str):
-	"""Outstanding balance of a customer in one company; callers pass their POS Profile's company.
+def get_customer_balance(customer: str, company: str | None = None):
+	"""Outstanding balance of a customer in one company; the till passes its POS Profile's company.
+
+	``company`` stays optional for the site's own callers (Mule City has one
+	company); without it the GL fallback sums every company, as before mc62.
 
 	A site may define the figure (hook ``xpos_customer_balance``: a function of the
 	customer returning the amount). Mule City nets the Payment Ledger as its
@@ -1174,8 +1177,8 @@ def get_customer_balance(customer: str, company: str):
 		"""
 		SELECT SUM(debit - credit) AS balance
 		FROM `tabGL Entry`
-		WHERE party_type = 'Customer' AND party = %(customer)s AND company = %(company)s
-			AND docstatus = 1
+		WHERE party_type = 'Customer' AND party = %(customer)s
+			AND (%(company)s IS NULL OR company = %(company)s) AND docstatus = 1
 		""",
 		{"customer": customer, "company": company},
 		as_dict=True,
