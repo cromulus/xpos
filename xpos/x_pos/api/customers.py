@@ -303,6 +303,7 @@ def create_customer(
 	if method == "create":
 		is_exist = frappe.db.exists("Customer", {"customer_name": customer_name})
 		if pos_profile.get("allow_duplicate_customer_names") or not is_exist:
+			customer_group = new_customer_group(pos_profile, customer_group)
 			customer = frappe.get_doc(
 				{
 					"doctype": "Customer",
@@ -317,7 +318,7 @@ def create_customer(
 					"gender": gender,
 				}
 			)
-			customer.customer_group = new_customer_group(pos_profile, customer_group)
+			customer.customer_group = customer_group
 			if territory:
 				customer.territory = territory
 			else:
