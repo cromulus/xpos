@@ -135,6 +135,61 @@ def require_customer_access(customer: str, ptype: str = "read", pos_profile: str
 	return pos
 
 
+def _is_leaf_group(group: str | None) -> bool:
+	"""An existing Customer Group a customer can be put in (not a parent group)."""
+	if not group:
+		return False
+	is_group = frappe.db.get_value("Customer Group", group, "is_group")
+	return is_group is not None and not cint(is_group)
+
+
+def _first_leaf_group(root: str) -> str | None:
+	"""The first leaf at or under ``root``, in tree order."""
+	bounds = frappe.db.get_value("Customer Group", root, ["lft", "rgt"])
+	if not bounds:
+		return None
+	lft, rgt = bounds
+	leaves = frappe.get_all(
+		"Customer Group",
+		filters={"lft": [">=", lft], "rgt": ["<=", rgt], "is_group": 0},
+		pluck="name",
+		order_by="lft asc",
+		limit=1,
+	)
+	return leaves[0] if leaves else None
+
+
+def new_customer_group(pos, requested: str | None = None) -> str:
+	"""The Customer Group a customer made at the till goes in: one the POS Profile sells to (MuleCity-py8t.80).
+
+	In order: the group the client asked for, the profile's own default (a
+	``customer_group`` field, when a site adds one), Selling Settings' default,
+	each used only when it is a leaf group inside the profile's Customer Groups
+	(any leaf when the profile lists none); else the first leaf of the
+	profile's first group that has one (Mule City: Mule City Customers). Nothing
+	fits: refused, never All Customer Groups.
+	"""
+	allowed = allowed_customer_groups(pos)
+	for group in (
+		requested,
+		pos.get("customer_group"),
+		frappe.db.get_single_value("Selling Settings", "customer_group"),
+	):
+		if group and (not allowed or group in allowed) and _is_leaf_group(group):
+			return group
+	for row in pos.get("customer_groups") or []:
+		leaf = _first_leaf_group(row_value(row, "customer_group"))
+		if leaf:
+			return leaf
+	frappe.throw(
+		_(
+			"POS Profile {0} has no customer group a new customer can go in. "
+			"Ask a manager to add a customer group to the POS Profile."
+		).format(pos.name),
+		frappe.ValidationError,
+	)
+
+
 def profile_company(pos, company: str | None = None) -> str:
 	"""The POS Profile's company; a different one asked for by the client is refused (mc63)."""
 	if company and company != pos.company:
@@ -652,11 +707,20 @@ def create_customer(
 	pincode: str = None,
 	tax_exempt_reason: str = None,
 ):
-	"""
-	Create a new customer with optional address.
+	"""Create a new customer, with an optional address, from the till's New Customer form.
+
+	Any user with a seat on the POS Profile may (Bill, 2026-11-16, MuleCity-py8t.80):
+	no Customer create permission is needed, so the insert bypasses permissions.
+	The profile must be one the caller may use (``resolve_pos_profile``), a
+	company other than the profile's is refused, and the customer goes in one of
+	the profile's customer groups (``new_customer_group``; a requested group
+	outside them is not used).
 	"""
 	if not customer_name:
 		frappe.throw(_("Customer name is required"))
+
+	pos = resolve_pos_profile(pos_profile)
+	profile_company(pos, company)
 
 	# Validate before inserting the customer so a partial address is never lost.
 	if any((address_line1, address_line2, city, state, pincode)) and not (
@@ -667,10 +731,7 @@ def create_customer(
 	if tax_exempt_reason and tax_exempt_reason not in customer_tax_exempt_reasons():
 		frappe.throw(_("{0} is not a tax exemption reason you can set here").format(tax_exempt_reason))
 
-	if not customer_group:
-		customer_group = (
-			frappe.db.get_single_value("Selling Settings", "customer_group") or "All Customer Groups"
-		)
+	customer_group = new_customer_group(pos, customer_group)
 
 	if not territory:
 		territory = frappe.db.get_single_value("Selling Settings", "territory") or "All Territories"
@@ -706,9 +767,8 @@ def create_customer(
 			customer.birthday = birthday
 		except Exception:
 			pass
-	if company:
-		customer.company = company
-
+	# Any till user may add a customer (MuleCity-py8t.80): the seat on the
+	# profile, its groups and its company were checked above.
 	customer.insert(ignore_permissions=True)
 
 	if address_line1 and city:

@@ -78,6 +78,40 @@ the named profile without checking the caller may use it (closed below, gk78).
   own profile, so a cashier sees no change. Test:
   `TestOffersOnTheCallersProfile` in `test_access_guards` (fails on `d66dd0b`).
 
+### Every till user may add a customer, inside the POS Profile (MuleCity-py8t.80)
+
+Bill (2026-11-16): "everyone can add a new customer". The till's New Customer
+form (`xpos.api.customers.create_customer`) still inserts without the Customer
+create permission, but now:
+
+- only through a POS Profile the caller has a seat on (`resolve_pos_profile`);
+  the SPA sends the till's open profile (`customerStore.createCustomer`), else
+  the caller's default is used. No seat: PermissionError, nothing is made.
+- a `company` other than the profile's is refused (`profile_company`); the
+  stray `customer.company` assignment (Customer has no such field) is gone.
+- the customer goes in one of the profile's customer groups
+  (`customers.new_customer_group`): the requested group if it is a leaf inside
+  the profile's groups, else the profile's own `customer_group` (a site field;
+  stock has none), else Selling Settings' default if it is such a leaf, else
+  the first leaf of the profile's first group (tree order, not alphabetical:
+  Mule City Customers at Mule City). Nothing fits: ValidationError naming the
+  profile. Never All Customer Groups.
+- the site's `tax_exempt_reason` field (xpos_customer_fields) still saves.
+
+The legacy `xpos.x_pos.api.customers.create_customer` (and its
+`x_pos.api.customer.create_customer` wrapper; no SPA caller) does the same: the
+profile is resolved by the name in `pos_profile_doc`, never taken from the
+JSON (`allow_duplicate_customer_names` is the saved profile's), the referral
+company is the profile's, and `method="update"` needs `require_customer_access`
+write through the profile. It still saves under the caller's permissions.
+
+Unchanged: an invoice naming a customer that does not exist yet
+(`_settle_invoice_customer`, py8t.79) still needs Customer create and refuses
+when the default group is outside the profile.
+
+Tests: `test_create_customer_scope` (refusals fail on mc65 `732d284`),
+`frontend/tests/customerPreload.spec.ts`.
+
 ## mule-v2.10.1-mc63 (contains mc62)
 
 ### The access gaps mc62 left (MuleCity-0bsc)

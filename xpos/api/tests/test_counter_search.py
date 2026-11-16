@@ -62,6 +62,17 @@ class TestCounterSearch(unittest.TestCase):
 
 class TestCustomerAddress(unittest.TestCase):
 	"""A cashier can create a customer with a complete linked mailing address."""
+
+	def setUp(self):
+		# The POS Profile and its group are MuleCity-py8t.80's (test_create_customer_scope).
+		for name, kwargs in (
+			("resolve_pos_profile", {"return_value": frappe._dict(name="Till", company="Mule", customer_groups=[])}),
+			("new_customer_group", {"return_value": "Individual"}),
+		):
+			patcher = patch(f"xpos.api.customers.{name}", **kwargs)
+			patcher.start()
+			self.addCleanup(patcher.stop)
+
 	def test_full_address_is_passed_to_the_native_address_document(self):
 		from xpos.api.customers import create_customer
 		# create_customer inserts its own new customer's address (_insert_customer_address, MuleCity-0bsc).
@@ -98,6 +109,16 @@ class TestNewCustomerTaxExemptReason(unittest.TestCase):
 	a reason."""
 
 	REASONS = ["Farm", "Reseller (resale certificate)"]
+
+	def setUp(self):
+		# The POS Profile and its group are MuleCity-py8t.80's (test_create_customer_scope).
+		for name, kwargs in (
+			("resolve_pos_profile", {"return_value": frappe._dict(name="Till", company="Mule", customer_groups=[])}),
+			("new_customer_group", {"return_value": "Individual"}),
+		):
+			patcher = patch(f"xpos.api.customers.{name}", **kwargs)
+			patcher.start()
+			self.addCleanup(patcher.stop)
 
 	def test_the_reason_goes_on_the_customer_and_normal_validation_runs(self):
 		from xpos.api.customers import create_customer

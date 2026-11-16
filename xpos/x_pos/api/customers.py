@@ -12,7 +12,12 @@ from frappe import _
 from frappe.utils import cstr, flt, get_datetime
 from frappe.utils.caching import redis_cache
 
-from xpos.api.customers import require_customer_access, user_may_see_address
+from xpos.api.customers import (
+	new_customer_group,
+	profile_company,
+	require_customer_access,
+	user_may_see_address,
+)
 from xpos.api.profiles import resolve_pos_profile
 
 from .utils import fetch_sales_person_names
@@ -276,7 +281,11 @@ def create_customer(
 	city: str | None = None,
 	country: str | None = None,
 ):
-	pos_profile = json.loads(pos_profile_doc)
+	# The till's POS Profile, by name, as one the caller may use; the JSON's own
+	# settings and groups are never trusted (MuleCity-py8t.80).
+	sent = json.loads(pos_profile_doc) if isinstance(pos_profile_doc, str) else pos_profile_doc
+	pos_profile = resolve_pos_profile((sent or {}).get("name") if isinstance(sent, dict) else None)
+	company = profile_company(pos_profile, company)
 
 	formatted_birthday = None
 	if birthday:
@@ -308,10 +317,7 @@ def create_customer(
 					"gender": gender,
 				}
 			)
-			if customer_group:
-				customer.customer_group = customer_group
-			else:
-				customer.customer_group = "All Customer Groups"
+			customer.customer_group = new_customer_group(pos_profile, customer_group)
 			if territory:
 				customer.territory = territory
 			else:
@@ -338,6 +344,7 @@ def create_customer(
 			frappe.throw(_("Customer already exists"))
 
 	elif method == "update":
+		require_customer_access(customer_id, "write", pos_profile.name)
 		customer_doc = frappe.get_doc("Customer", customer_id)
 		customer_doc.customer_name = customer_name
 		customer_doc.tax_id = tax_id

@@ -124,7 +124,11 @@ export const useCustomerStore = defineStore("customers", () => {
 
 	async function createCustomer(data: Record<string, unknown>): Promise<Customer> {
 		try {
-			const result = await call<Customer>("xpos.api.customers.create_customer", data);
+			// Made through the till's open POS Profile: its groups and company (MuleCity-py8t.80).
+			const result = await call<Customer>("xpos.api.customers.create_customer", {
+				...data,
+				pos_profile: usePosStore().profileName || undefined,
+			});
 			showNewCustomerForm.value = false;
 
 			if (result && result.name) {

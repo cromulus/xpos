@@ -171,6 +171,12 @@ class TestGetCustomerInfo(unittest.TestCase):
 class TestCreateCustomer(unittest.TestCase):
 	"""Tests for create_customer function."""
 
+	def setUp(self):
+		self.profile = MagicMock(company="_Test Company", customer_groups=[])
+		patcher = patch("xpos.api.customers.resolve_pos_profile", return_value=self.profile)
+		patcher.start()
+		self.addCleanup(patcher.stop)
+
 	@patch("xpos.api.customers.frappe")
 	def test_create_customer_creates_new_customer(self, mock_frappe):
 		"""Test that create_customer creates a new Customer document."""
@@ -188,17 +194,18 @@ class TestCreateCustomer(unittest.TestCase):
 		mock_frappe.get_doc.assert_called()
 		mock_customer.insert.assert_called_once()
 
+	@patch("xpos.api.customers.new_customer_group", return_value="Mule City Customers")
 	@patch("xpos.api.customers.frappe")
-	def test_create_customer_assigns_default_group(self, mock_frappe):
-		"""Test that create_customer uses default customer group when not provided."""
+	def test_create_customer_assigns_default_group(self, mock_frappe, mock_group):
+		"""The group comes from the till's POS Profile (new_customer_group, MuleCity-py8t.80)."""
 		mock_customer = MagicMock()
 		mock_customer.as_dict.return_value = {"name": "CUST-NEW-002"}
 		mock_frappe.get_doc.return_value = mock_customer
-		mock_frappe.db.get_single_value.return_value = "All Customer Groups"
 
 		customers.create_customer(customer_name="New Customer")
 
-		mock_frappe.get_doc.assert_called()
+		mock_group.assert_called_once_with(self.profile, None)
+		self.assertEqual(mock_frappe.get_doc.call_args.args[0]["customer_group"], "Mule City Customers")
 
 
 class TestUpdateCustomer(unittest.TestCase):
