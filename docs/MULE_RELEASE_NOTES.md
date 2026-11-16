@@ -88,7 +88,7 @@ create permission, but now:
   the SPA sends the till's open profile (`customerStore.createCustomer`), else
   the caller's default is used. No seat: PermissionError, nothing is made.
 - a `company` other than the profile's is refused (`profile_company`); the
-  stray `customer.company` assignment (Customer has no such field) is gone.
+  stray `customer.company` assignment (stock Customer has no `company` field) is gone.
 - the customer goes in one of the profile's customer groups
   (`customers.new_customer_group`): the requested group if it is a leaf inside
   the profile's groups, else the profile's own `customer_group` (a site field;
@@ -109,7 +109,7 @@ Unchanged: an invoice naming a customer that does not exist yet
 (`_settle_invoice_customer`, py8t.79) still needs Customer create and refuses
 when the default group is outside the profile.
 
-Tests: `test_create_customer_scope` (refusals fail on mc65 `732d284`),
+Tests: `test_create_customer_scope` (20 of its 27 fail on mc65 `732d284`),
 `frontend/tests/customerPreload.spec.ts`.
 
 ## mule-v2.10.1-mc63 (contains mc62)
