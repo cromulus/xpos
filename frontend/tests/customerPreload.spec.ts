@@ -59,3 +59,12 @@ it("keeps the site's delivery policy with the customers, to price deliveries off
 	await useCustomerStore().cacheAllCustomers("Till");
 	expect(mocks.setMeta).toHaveBeenCalledWith("delivery_policy", JSON.stringify(policy));
 });
+
+it("a new customer is made through the till's open POS profile (MuleCity-py8t.80)", async () => {
+	mocks.call.mockResolvedValue({ name: "NEW-1", customer_name: "New Farm" });
+	await useCustomerStore().createCustomer({ customer_name: "New Farm" });
+	expect(mocks.call).toHaveBeenCalledWith("xpos.api.customers.create_customer", {
+		customer_name: "New Farm",
+		pos_profile: "Active Counter",
+	});
+});
