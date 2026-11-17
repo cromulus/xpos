@@ -13,7 +13,7 @@ from frappe.utils.background_jobs import enqueue
 from xpos.api import site_hooks
 from xpos.api.delivery import note_typed_miles, refuse_walk_in_delivery, resolve_new_shipping_address
 from xpos.api.exchange import get_currency_precision
-from xpos.api.items import selling_price
+from xpos.api.items import made_to_order_items, selling_price
 from xpos.api.profiles import resolve_pos_profile, user_may_use_profile
 from xpos.api.tender import build_change_legs, build_tender_legs, invoice_currency_of
 from xpos.api.utilities import can_recall_other_shift_tabs, get_invoice_type, is_pos_cashier
@@ -1844,6 +1844,16 @@ def get_invoice_details(invoice_name: str, doctype: str = ""):
 	if not doctype:
 		doctype = _detect_invoice_doctype(invoice_name)
 	doc = get_pos_invoice(doctype, invoice_name)
+	# Each line's stock kind, as the item list gives it, so a reopened draft's
+	# stock check skips a service line (a delivery charge) and a made-to-order
+	# one as a fresh cart does (MuleCity-b1xl, Bill 2026-11-17).
+	codes = sorted({i.item_code for i in doc.items if i.item_code})
+	stock_items = (
+		set(frappe.get_all("Item", filters={"name": ["in", codes], "is_stock_item": 1}, pluck="name"))
+		if codes
+		else set()
+	)
+	made_to_order = made_to_order_items(doc.get("pos_profile"))
 
 	return {
 		"name": doc.name,
@@ -1907,6 +1917,8 @@ def get_invoice_details(invoice_name: str, doctype: str = ""):
 				"serial_no": getattr(i, "serial_no", None),
 				"batch_no": getattr(i, "batch_no", None),
 				"description": i.description,
+				"is_stock_item": int(i.item_code in stock_items),
+				"is_made_to_order": int(i.item_code in made_to_order),
 			}
 			for i in doc.items
 		],

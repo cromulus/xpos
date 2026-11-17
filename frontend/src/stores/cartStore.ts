@@ -2168,7 +2168,10 @@ export const useCartStore = defineStore("cart", () => {
 						serial_no: item.serial_no || "",
 						batch_no: item.batch_no || "",
 						actual_qty: actualQty,
+						// The line's stock kind (server: get_invoice_details), so Pay's stock check
+						// skips a delivery charge and a made-to-order mix as on a fresh cart (MuleCity-b1xl).
 						is_stock_item: item.is_stock_item,
+						is_made_to_order: item.is_made_to_order,
 						has_serial_no: item.has_serial_no || false,
 						has_batch_no: item.has_batch_no || false,
 						conversion_factor: item.conversion_factor || 1,

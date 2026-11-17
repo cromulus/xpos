@@ -582,6 +582,34 @@ describe("a parked delivery sale", () => {
 		expect(sale.shipping_address_name).toBe("ADDR-FARM");
 		expect(sale.items[0]).toMatchObject({ item_code: "MC-ITEM-DEL", rate: 105, description: "42 mi, band 2 (1,600 lb)" });
 	});
+
+	it("reopened, its delivery charge and custom mix are not stock-checked at Pay (Bill 2026-11-17, MuleCity-b1xl)", async () => {
+		// Bill parked a sale (feed, a custom mix, a delivery), reopened it, and Pay said
+		// "Only 0 ... of Delivery Charge available": the reopened lines had lost their stock kind.
+		const { usePosStore } = await import("@/stores/posStore");
+		vi.mocked(usePosStore).mockReturnValue({ taxes: [], taxInclusiveMode: false, currency: "USD", tenderModeFor: vi.fn(),
+			defaultCustomer: "Walk-In", warehouse: "Main", profileName: "Till", blockSaleBeyondAvailableQty: true,
+			stockSettings: { allow_negative_stock: false } } as any);
+		const line = (item_code: string, flags: Record<string, number>) => ({ item_code, item_name: item_code, qty: 2, rate: 5,
+			price_list_rate: 5, amount: 10, uom: "Nos", discount_percentage: 0, discount_amount: 0, description: item_code, ...flags });
+		state.call.mockImplementation(async (method: string, args: Record<string, string>) => {
+			if (method === "xpos.api.invoices.get_invoice_details") return { name: "SINV-10", customer: "MC-CUST-2980",
+				customer_name: "Southern Woods", items: [line("FEED-50", { is_stock_item: 1, is_made_to_order: 0 }),
+				line("MC-ITEM-DEL", { is_stock_item: 0, is_made_to_order: 0 }), line("MIX-1", { is_stock_item: 1, is_made_to_order: 1 })] };
+			if (method === "xpos.api.items.get_stock_availability")
+				return JSON.parse(args.items).map((item_code: string) => ({ item_code, actual_qty: item_code === "FEED-50" ? 90 : 0 }));
+			return null;
+		});
+		const cart = useCartStore();
+		await cart.loadDraftInvoice("SINV-10");
+		expect(cart.items.map((i: any) => [i.item_code, Number(i.is_stock_item), Number(i.is_made_to_order)])).toEqual([
+			["FEED-50", 1, 0], ["MC-ITEM-DEL", 0, 0], ["MIX-1", 1, 1],
+		]);
+		const check = await cart.revalidateStock();
+		expect(check).toEqual({ valid: true, messages: [] });
+		const asked = state.call.mock.calls.filter(([method]) => method === "xpos.api.items.get_stock_availability");
+		expect(asked.map(([, args]) => JSON.parse(args.items))).toEqual([["FEED-50"]]);
+	});
 });
 
 describe("the customer card's Add delivery button (Bill 2026-10-01, MuleCity-qajl.2)", () => {

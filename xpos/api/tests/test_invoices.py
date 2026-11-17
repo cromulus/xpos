@@ -572,6 +572,44 @@ class TestGetInvoiceDetails(unittest.TestCase):
 		self.assertIn("payments", result)
 
 
+class TestGetInvoiceDetailsStockFlags(unittest.TestCase):
+	"""A parked sale reopens with each line's stock kind (MuleCity-b1xl).
+
+	Bill 2026-11-17: a draft with a Delivery Charge (not a stock item) and a
+	custom mix (made to order) was reopened and Pay refused it: "Only 0 ... of
+	Delivery Charge available". The lines came back without ``is_stock_item`` /
+	``is_made_to_order``, so the till's stock check counted them as stock.
+	"""
+
+	def _draft(self):
+		row = lambda code: SimpleNamespace(  # noqa: E731
+			item_code=code, item_name=code, qty=1, rate=5, price_list_rate=5, amount=5, uom="Nos",
+			conversion_factor=1, warehouse="Stores", discount_percentage=0, discount_amount=0, description=code,
+		)
+		doc = MagicMock()
+		doc.items = [row("FEED"), row("DELIVERY"), row("MIX")]
+		doc.payments, doc.taxes, doc.sales_team = [], [], []
+		doc.pos_profile = "Till"
+		doc.get.side_effect = lambda key, default=None: {"pos_profile": "Till"}.get(key, default)
+		return doc
+
+	@patch("xpos.api.invoices.made_to_order_items", return_value={"MIX"})
+	@patch("xpos.api.invoices.get_pos_invoice")
+	@patch("xpos.api.invoices.frappe")
+	def test_lines_carry_stock_item_and_made_to_order(self, mock_frappe, get_pos_invoice, made_to_order):
+		get_pos_invoice.return_value = self._draft()
+		mock_frappe.get_all.return_value = ["FEED", "MIX"]
+
+		result = invoices.get_invoice_details("SINV-1", doctype="Sales Invoice")
+
+		flags = {row["item_code"]: (row["is_stock_item"], row["is_made_to_order"]) for row in result["items"]}
+		self.assertEqual(flags, {"FEED": (1, 0), "DELIVERY": (0, 0), "MIX": (1, 1)})
+		made_to_order.assert_called_once_with("Till")
+		filters = mock_frappe.get_all.call_args.kwargs["filters"]
+		self.assertEqual(filters["is_stock_item"], 1)
+		self.assertEqual(sorted(filters["name"][1]), ["DELIVERY", "FEED", "MIX"])
+
+
 class TestInvoicePaymentProcessing(unittest.TestCase):
 	"""Tests for payment processing in invoices."""
 
