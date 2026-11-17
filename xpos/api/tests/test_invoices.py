@@ -582,7 +582,9 @@ class TestGetInvoiceDetailsStockFlags(unittest.TestCase):
 	"""
 
 	def _draft(self):
-		row = lambda code: SimpleNamespace(  # noqa: E731
+		import frappe
+
+		row = lambda code: frappe._dict(  # noqa: E731
 			item_code=code, item_name=code, qty=1, rate=5, price_list_rate=5, amount=5, uom="Nos",
 			conversion_factor=1, warehouse="Stores", discount_percentage=0, discount_amount=0, description=code,
 		)
