@@ -30,7 +30,7 @@ describe("Tax exemption in Edit Customer", () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it("links to the customer's Tax Category field on the desk, name encoded", () => {
-		expect(customerTaxUrl("SMITH/J 1")).toBe("/desk/customer/SMITH%2FJ%201#tax_category");
+		expect(customerTaxUrl("SMITH/J 1")).toBe("/desk/customer/SMITH%2FJ%201?scroll_to=tax_category");
 	});
 
 	it("opens the selected customer's tax section in a new tab and creates nothing", async () => {
@@ -38,7 +38,7 @@ describe("Tax exemption in Edit Customer", () => {
 		const wrapper = await dialog();
 		expect(wrapper.find('[data-testid="set-tax-exemption"]').text()).toContain("Tax exemption");
 		await wrapper.find('[data-testid="set-tax-exemption"]').trigger("click");
-		expect(open).toHaveBeenCalledWith("/desk/customer/SMITH%2FJ%201#tax_category", "_blank");
+		expect(open).toHaveBeenCalledWith("/desk/customer/SMITH%2FJ%201?scroll_to=tax_category", "_blank");
 		expect(mocks.call).not.toHaveBeenCalledWith(expect.stringContaining("tax_change"), expect.anything());
 		expect(mocks.showError).not.toHaveBeenCalled();
 		open.mockRestore();
