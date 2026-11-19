@@ -48,6 +48,11 @@
       <section v-if="details && mode === 'mixes'" ref="recipe" class="mix-recipe">
         <h3 :title="chosen.item_name">{{ chosen.display_name || chosen.item_name }}</h3>
         <p v-if="details.bom">Recipe batch: {{ details.quantity }} {{ details.uom }}. Finished stock: {{ details.available }} {{ details.stock_uom }}.</p>
+        <!-- Custom mix v2 §8.5 (MuleCity-nd08.5): protein, fat and fiber against the recipe's targets,
+             read-only (pos_workspace.mix_details "targets"). Formulating stays at the desk. -->
+        <p v-if="details.targets?.length" class="mix-targets">
+          <span v-for="chip in details.targets" :key="chip.label" class="mix-target" :class="{off: chip.ok === false}">{{ chipText(chip) }} <span>({{ chip.target_text }})</span></span>
+        </p>
         <p v-if="details.message">{{ details.message }}</p>
         <FeedDetails :details="details" />
       </section>
@@ -110,6 +115,11 @@ async function preview(row) {
   catch(e) { if (token === generation) fail(e); } finally { if (token === generation) busy.value = false; }
 }
 const number = (value) => Number(value).toLocaleString(undefined, {maximumFractionDigits: 2});
+// "Protein 16.1 % ✓"; a value the server couldn't add up shows "—" and no mark.
+function chipText(chip) {
+  if (chip.value == null) return chip.label + ' —';
+  return chip.label + ' ' + Number(chip.value).toFixed(1) + ' % ' + (chip.ok ? '✓' : '✗');
+}
 function sizeText(size) { return number(size.qty) + (size.uom === 'Bag' ? ' bags' : ' lb'); }
 function compositionText(row) {
   return row.composition.map(i => i.name + (i.percent == null ? '' : ' ' + number(i.percent) + '%')).join(' · ');
@@ -157,5 +167,7 @@ button:disabled { opacity:.5; cursor:not-allowed; } button:focus-visible, a:focu
 .mix-results article { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid hsl(var(--border)); } .mix-results article>div { flex:1; } .mix-results article>.mix-actions { flex:0 0 auto; display:flex; flex-direction:column; gap:8px; }
 @media (max-width:600px) { .mix-results article { flex-direction:column; align-items:stretch; } } .mix-results p { font-size:14px; margin:4px 0; }
 .mix-recipe { border-top:3px solid hsl(var(--ring)); margin-top:20px; padding-top:16px; } .mix-recipe table { width:100%; border-collapse:collapse; margin:12px 0; } th,td { padding:7px; text-align:left; border-bottom:1px solid hsl(var(--border)); }
+.mix-targets { display:flex; flex-wrap:wrap; gap:8px; } .mix-target { background:#EEF4FC; color:#173F73; border-radius:999px; padding:4px 12px; font-weight:600; } .mix-target>span { font-weight:400; }
+.mix-target.off { background:#FDECEC; color:#8A1C1C; }
 .mix-error { color:hsl(var(--destructive)); } .mix-workspace footer { display:flex; gap:12px; margin-top:16px; align-items:center; }
 </style>

@@ -21,10 +21,10 @@ const recipe = { composition: [{ item_code: "CORN", item_name: "CORN", lbs: 400,
 let mounted: ReturnType<typeof mount> | null = null;
 afterEach(() => { mounted?.unmount(); mounted = null; });
 
-async function openMixes(addMix?: (...args: any[]) => Promise<void>) {
+async function openMixes(addMix?: (...args: any[]) => Promise<void>, details: object = recipe) {
 	HTMLDialogElement.prototype.close = function () {};
 	HTMLDialogElement.prototype.showModal ??= function () {};
-	const request = vi.fn((method: string) => Promise.resolve(method.endsWith("find_mixes") ? { rows, has_more: false } : recipe));
+	const request = vi.fn((method: string) => Promise.resolve(method.endsWith("find_mixes") ? { rows, has_more: false } : details));
 	const wrapper = mount(MixWorkspace, { props: { customer: "MC-CUST-4112", profile: "Till", request, addMix }, attachTo: document.body });
 	mounted = wrapper;
 	// The customer card's "Mixes" sends this event (the Mule City row is gone, MuleCity-qajl.1).
@@ -124,5 +124,41 @@ describe("The register's shared login only sells (Bill, 2026-09-29, MuleCity-fb0
 		}
 		expect(document.querySelectorAll('a[href^="/desk/sales-order/new"], a[href^="/desk/payment-entry"]').length).toBe(0);
 		expect(request.mock.calls.map(c => c[0])).not.toContain("mulecity_erpnext.pos_workspace.create_mix_order");
+	});
+});
+
+// Custom mix v2 §8.5 (MuleCity-nd08.5): the detailed view shows protein, fat and fiber
+// against the recipe's targets, read-only. Shaped like pos_workspace.mix_details "targets".
+describe("Mix card target chips", () => {
+	async function detailedView(details: object) {
+		Element.prototype.scrollIntoView = vi.fn();
+		mounted?.unmount(); mounted = null;
+		await openMixes(undefined, details);
+		[...document.body.querySelectorAll("button")].find(b => b.textContent === "Detailed view")!.click();
+		await flushPromises();
+	}
+	it("shows each targeted macro's value, ✓ or ✗, and its target", async () => {
+		await detailedView({ ...recipe, targets: [
+			{ label: "Protein", value: 16.1, target_text: "16 ± 0.5", ok: true },
+			{ label: "Fat", value: 3.2, target_text: "at least 3", ok: true },
+			{ label: "Fiber", value: 7.94, target_text: "at most 7", ok: false },
+		] });
+		const chips = [...document.body.querySelectorAll(".mix-recipe .mix-target")].map(c => c.textContent?.replace(/\s+/g, " ").trim());
+		expect(chips).toEqual(["Protein 16.1 % ✓ (16 ± 0.5)", "Fat 3.2 % ✓ (at least 3)", "Fiber 7.9 % ✗ (at most 7)"]);
+		expect(document.body.querySelector(".mix-target.off")?.textContent).toContain("Fiber");
+		// Read-only: nothing to type into or press on a chip.
+		expect(document.body.querySelectorAll(".mix-targets input, .mix-targets button").length).toBe(0);
+	});
+	it("shows the target without a mark when the value can't be added up", async () => {
+		await detailedView({ ...recipe, targets: [{ label: "Protein", value: null, target_text: "16 ± 0.5", ok: null }] });
+		const chip = document.body.querySelector(".mix-target")?.textContent?.replace(/\s+/g, " ").trim();
+		expect(chip).toBe("Protein — (16 ± 0.5)");
+	});
+	it("shows no chips for a mix without targets", async () => {
+		await detailedView(recipe);
+		expect(document.body.querySelector(".mix-recipe")?.textContent).toContain("CORN");
+		expect(document.body.querySelectorAll(".mix-targets, .mix-target").length).toBe(0);
+		await detailedView({ ...recipe, targets: [] });
+		expect(document.body.querySelectorAll(".mix-targets, .mix-target").length).toBe(0);
 	});
 });
