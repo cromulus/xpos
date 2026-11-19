@@ -280,7 +280,6 @@ import { cachedAddress, withAddress, type AddedAddress } from "@/services/addres
 import { useAddressTypeahead } from "@/composables/useAddressTypeahead";
 import type { ResolvedAddress } from "@/services/addressLookup";
 import { extractErrorMessage, isOnline } from "@/utils";
-import { nowDate } from "@/utils/datetime";
 import { savedMilesNote } from "@/utils/savedMiles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -436,12 +435,13 @@ async function start() {
 	syncOnline();
 	busy.value = true;
 	try {
-		details.value = await customerDelivery(customer);
+		// The day starts at the site's ready date (MuleCity-nd08.1), else today.
+		[details.value] = await Promise.all([customerDelivery(customer), cartStore.loadDefaultReadyDate()]);
 		chosen.value = null;
 		search.value = "";
 		typedMiles.value = "";
 		resetDraft();
-		day.value = cartStore.deliveryDate || nowDate();
+		day.value = cartStore.deliveryDate || cartStore.defaultReadyDate();
 		const changing = !!cartStore.activeDelivery;
 		if (!addresses.value.length) {
 			// No address yet: straight to the add form.

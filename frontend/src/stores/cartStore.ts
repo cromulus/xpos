@@ -784,6 +784,69 @@ export const useCartStore = defineStore("cart", () => {
 		return !!uid && orderLineUids.value.has(uid);
 	}
 
+	// ------------------------------------------------- Default pickup/delivery day (MuleCity-nd08.1)
+	/**
+	 * The day an order is ready (Mule City spec custom-mix-formulation-v2 §7.2): the
+	 * site's `default_ready_date` method (two business days, past the weekend and
+	 * its Holiday List) answers `{ date: "YYYY-MM-DD" }`. Asked once a day; a site
+	 * without it, an offline till, a failed call or a reply that isn't a date from
+	 * today on gives today, as before. The clerk can still pick any day.
+	 */
+	const readyDate = ref<{ forDay: string; date: string } | null>(null);
+	let readyDateRequest: Promise<string> | null = null;
+
+	function defaultReadyDate(): string {
+		const today = nowDate();
+		const known = readyDate.value;
+		return known && known.forDay === today && known.date >= today ? known.date : today;
+	}
+
+	function readyDateReply(reply: unknown): string {
+		const date = typeof reply === "string" ? reply : (reply as { date?: unknown } | null)?.date;
+		return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
+	}
+
+	/** The site's method, when the ready date still needs its answer (else defaultReadyDate() is it). */
+	function readyDateToAsk(): string | undefined {
+		const method = siteMethod("default_ready_date");
+		if (!method || !isOnline() || readyDate.value?.forDay === nowDate()) return undefined;
+		return method;
+	}
+
+	async function loadDefaultReadyDate(): Promise<string> {
+		const method = readyDateToAsk();
+		if (!method) return defaultReadyDate();
+		if (!readyDateRequest) {
+			const today = nowDate();
+			readyDateRequest = call<unknown>(method, { company: usePosStore().companyName || undefined })
+				.then((reply) => {
+					readyDate.value = { forDay: today, date: readyDateReply(reply) || today };
+					return defaultReadyDate();
+				})
+				// Today, and ask again next time: a failed call is not the site's answer.
+				.catch(() => today)
+				.finally(() => {
+					readyDateRequest = null;
+				});
+		}
+		return readyDateRequest;
+	}
+
+	// An order line's pickup day starts at the delivery day, else the ready date: at
+	// once when it is known, when the site answers otherwise (unless the clerk picked
+	// a day meanwhile). Sync: a cart cleared and refilled in one tick gets it too.
+	watch(hasOrderLines, (has) => {
+		if (!has || pickupDate.value) return;
+		const delivery = activeDelivery.value && deliveryDate.value;
+		if (delivery || !readyDateToAsk()) {
+			pickupDate.value = delivery || defaultReadyDate();
+			return;
+		}
+		void loadDefaultReadyDate().then((day) => {
+			if (hasOrderLines.value && !pickupDate.value) pickupDate.value = day;
+		});
+	}, { flush: "sync" });
+
 	function canAddItem(item: POSItem): { allowed: boolean; message?: string } {
 		return checkAvailability(item, 1, (item as CartItem).conversion_factor || 1, item.batch_no);
 	}
@@ -2684,7 +2747,7 @@ export const useCartStore = defineStore("cart", () => {
 		deliveryQuote.value = { ...quote, amount };
 		deliveryItemCode.value = item.item_code;
 		deliveryMilesSource.value = options.milesSource || (address.miles_source === TYPED_OFFLINE ? "manual" : "address");
-		setDeliveryDate(options.date || deliveryDate.value || nowDate());
+		setDeliveryDate(options.date || deliveryDate.value || defaultReadyDate());
 	}
 
 	/**
@@ -2877,6 +2940,8 @@ export const useCartStore = defineStore("cart", () => {
 		activeDelivery,
 		setDelivery,
 		setDeliveryDate,
+		defaultReadyDate,
+		loadDefaultReadyDate,
 		itemRatePrecision,
 		pickupDate,
 		mixPayMode,

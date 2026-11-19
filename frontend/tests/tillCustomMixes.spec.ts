@@ -193,7 +193,12 @@ describe("the cart says whether the mix can be made before Pay", () => {
 			method === "mulecity_erpnext.counter_mix_orders.counter_check" ? QUOTE : undefined,
 		);
 		const cart = useCartStore();
+		cart.pickupDate = "";
 		cart.addItem(mix());
+		// The order's pickup day starts at the default (MuleCity-nd08.1; today on a site without
+		// `default_ready_date`); cleared, there is nothing to check.
+		expect(cart.pickupDate).not.toBe("");
+		cart.pickupDate = "";
 		await vi.advanceTimersByTimeAsync(700);
 		expect(mockedCall.mock.calls.some(([m]) => m === "mulecity_erpnext.counter_mix_orders.counter_check")).toBe(false);
 		cart.pickupDate = "2026-10-05";

@@ -148,6 +148,8 @@ describe("a custom mix ordered at the counter", () => {
 	it("negative: no pickup date, no Pay", async () => {
 		const cart = useCartStore();
 		cart.addItem(mix());
+		// The day starts at the default (MuleCity-nd08.1); the clerk cleared it.
+		cart.pickupDate = "";
 		await cart.openPaymentDialog();
 		expect(cart.showPaymentDialog).toBe(false);
 		expect(cart.serverPreviewError).toMatch(/pickup date/);
