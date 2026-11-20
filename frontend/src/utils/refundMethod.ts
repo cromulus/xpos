@@ -38,7 +38,7 @@ export function withCheckNumber<T extends { mode_of_payment: string }>(
 	payments: T[],
 	checkNumber: string,
 ): (T & { reference_no?: string })[] {
-	const number = checkNumber.trim();
+	const number = (checkNumber || "").replace(/\s+/g, "");
 	if (!number) return payments;
 	return payments.map((row) => (isCheckMode(row.mode_of_payment) ? { ...row, reference_no: number } : row));
 }

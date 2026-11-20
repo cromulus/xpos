@@ -323,7 +323,7 @@
 							data-testid="check-number"
 							inputmode="numeric"
 							autocomplete="off"
-							:placeholder="cartStore.isReturnMode ? __('Required') : __('Optional')"
+							:placeholder="__('Required')"
 						/>
 					</div>
 					<div>
@@ -950,6 +950,9 @@ import {
 	withCheckNumber,
 } from "@/utils/refundMethod";
 import { useCustomerAccount } from "@/composables/useCustomerAccount";
+import { cachedDeliveryPolicy } from "@/composables/useDelivery";
+import { isWalkInCustomer, type DeliveryPolicy } from "@/services/delivery";
+import { checkCustomerProblem, checkNumberProblem } from "@/utils/checkTender";
 import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
 import ManagerOverride from "@/components/dialogs/ManagerOverride.vue";
 import { requireSiteMethod, siteFeature } from "@/services/siteExtensions";
@@ -1072,6 +1075,8 @@ const refundingToAccount = computed(
 	() => cartStore.isReturnMode && isAccountRefund(selectedMethod.value) && !isSplitPayment.value,
 );
 const checkNumber = ref("");
+// The site's walk-in accounts (the cached delivery policy), for the check refusal.
+const walkInPolicy = ref<Pick<DeliveryPolicy, "walk_in_customers"> | null>(null);
 const asksCheckNumber = computed(() =>
 	!refundingToAccount.value &&
 	(isSplitPayment.value
@@ -1320,6 +1325,9 @@ async function payByCard() {
 }
 
 onMounted(async () => {
+	void cachedDeliveryPolicy()
+		.then((policy) => (walkInPolicy.value = policy))
+		.catch(() => (walkInPolicy.value = null));
 	if (!posStore.allowChangePostingDate || !cartStore.postingDate) {
 		cartStore.postingDate = nowDate();
 	}
@@ -1608,13 +1616,20 @@ function validateForSubmission(): { valid: boolean; message?: string } {
 			return { valid: false, message: __("Return total must be negative (refund amount)") };
 		}
 
-		if (asksCheckNumber.value && !checkNumber.value.trim()) {
-			return { valid: false, message: __("Write the number of the refund check before saving the return.") };
-		}
+		const refundCheck = asksCheckNumber.value ? checkNumberProblem(checkNumber.value, true) : null;
+		if (refundCheck) return { valid: false, message: refundCheck };
 	} else {
 		const invalidItems = cartStore.items.filter((item) => item.qty <= 0);
 		if (invalidItems.length > 0) {
 			return { valid: false, message: __("All items must have positive quantities") };
+		}
+		// A check taken at the till: its number, and never from the walk-in account (MuleCity-zegl).
+		if (asksCheckNumber.value) {
+			const problem =
+				checkCustomerProblem(
+					isWalkInCustomer(cartStore.customer?.name, walkInPolicy.value, posStore.defaultCustomer),
+				) || checkNumberProblem(checkNumber.value);
+			if (problem) return { valid: false, message: problem };
 		}
 	}
 

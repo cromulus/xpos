@@ -156,3 +156,41 @@ class TestSettleAsTheSharedLogin(TillPaymentCase):
 		self.settle(None)
 		self.assertEqual(stored_cashier(self.pe), "Ben Smith")
 		self.pe.insert.assert_called_once()
+
+
+@patch(OUTSTANDING, return_value=[])
+@patch(BANK, return_value={"account": "Cash on Deposit - MC"})
+@patch("xpos.api.payments.can_settle_outstanding", return_value=True)
+class TestCheckNumberOnTillPayments(TillPaymentCase):
+	"""Bill 2026-11-19 (MuleCity-zegl): "we should be recording the check number". A check
+	taken on account or against a ticket keeps the shift in ``reference_no`` (the close's tag)
+	and its own number in ``pos_check_number``, which the close lists."""
+
+	def setUp(self):
+		super().setUp()
+		invoice = MagicMock()
+		invoice.docstatus = 1
+		invoice.outstanding_amount = 250.0
+		invoice.customer = "CUST-001"
+		invoice.company = "Mule City"
+		self.frappe.db.exists.return_value = True
+		self.frappe.get_doc.return_value = invoice
+		self.frappe.db.get_value.return_value = "Mule City"
+		self.pe.name = "ACC-PAY-0003"
+		self.pe.unallocated_amount = 0
+		self.pe.references = []
+		self.pe.docstatus = 1
+
+	def test_receive_on_account_by_check_saves_its_number(self, *_):
+		payments.receive_on_account("CUST-342", 200, "Check", SHIFT, PROFILE, pos_cashier="le", check_number=" 10 452")
+		self.assertEqual(self.pe.reference_no, SHIFT)
+		self.assertEqual(self.pe.pos_check_number, "10452")
+
+	def test_settle_by_check_saves_its_number(self, *_):
+		payments.settle_outstanding_invoice("SI-001", 100, "Check", SHIFT, PROFILE, pos_cashier="le", check_number="3317")
+		self.assertEqual(self.pe.reference_no, SHIFT)
+		self.assertEqual(self.pe.pos_check_number, "3317")
+
+	def test_negative_cash_sets_no_check_number(self, *_):
+		payments.receive_on_account("CUST-342", 200, "Cash", SHIFT, PROFILE, pos_cashier="le")
+		self.assertNotIn("pos_check_number", vars(self.pe))

@@ -252,11 +252,16 @@ def get_shift_till_payments(opening_shift: str) -> list[dict]:
 		"paid_from_account_currency",
 		"paid_to_account_currency",
 		"party",
+		"party_name",
 		"posting_date",
 	]
-	has_cashier = frappe.get_meta("Payment Entry").has_field("pos_cashier")
+	meta = frappe.get_meta("Payment Entry")
+	has_cashier = meta.has_field("pos_cashier")
 	if has_cashier:
 		fields.append("pos_cashier")
+	has_check_number = meta.has_field("pos_check_number")
+	if has_check_number:
+		fields.append("pos_check_number")
 	rows = frappe.get_all(
 		"Payment Entry",
 		filters={
@@ -282,11 +287,78 @@ def get_shift_till_payments(opening_shift: str) -> list[dict]:
 				)
 				or "",
 				"party": row_value(row, "party"),
+				"party_name": row_value(row, "party_name"),
 				"posting_date": row_value(row, "posting_date"),
 				"pos_cashier": row_value(row, "pos_cashier") if has_cashier else None,
+				"check_number": row_value(row, "pos_check_number") if has_check_number else None,
 			}
 		)
 	return payments
+
+
+def is_check_mode(mode_of_payment: str | None) -> bool:
+	"""A paper check, by the Mode of Payment's name (the till's ``isCheckMode``)."""
+	name = (mode_of_payment or "").lower()
+	return "check" in name or "cheque" in name
+
+
+def get_shift_checks(doctype: str, invoices: list, till_payments: list[dict] | None = None) -> list[dict]:
+	"""Each paper check the shift took, for the close sheet's check list (MuleCity-zegl).
+
+	Bill 2026-11-19: "add up the total value of checks in the till and that should
+	match what xpos thinks we made in checks that day". The close's Check line
+	already compares Expected with the counted Closing; this lists the checks
+	behind Expected so the cashier can tick the paper ones off: the invoice
+	payment rows by check (the number is the row's ``reference_no``) and the
+	till's Payment Entries by check (``pos_check_number``). A refund check
+	written at the counter is a row with a negative amount (``is_refund``).
+
+	Each row is ``{source, number, customer, customer_name, amount, cashier,
+	is_refund}``, invoices first in the shift's order, then the payments.
+	"""
+	checks: list[dict] = []
+	by_name = {row_value(inv, "name"): inv for inv in invoices if row_value(inv, "name")}
+	if by_name:
+		rows = frappe.get_all(
+			"Sales Invoice Payment",
+			filters={"parent": ["in", list(by_name)], "parenttype": doctype},
+			fields=["parent", "mode_of_payment", "amount", "reference_no", "idx"],
+			order_by="idx asc",
+		)
+		rows_by_invoice = defaultdict(list)
+		for row in rows:
+			if is_check_mode(row_value(row, "mode_of_payment")) and flt(row_value(row, "amount")):
+				rows_by_invoice[row_value(row, "parent")].append(row)
+		for name, invoice in by_name.items():
+			for row in rows_by_invoice.get(name, ()):
+				amount = flt(row_value(row, "amount"), 2)
+				checks.append(
+					{
+						"source": name,
+						"number": row_value(row, "reference_no") or "",
+						"customer": row_value(invoice, "customer"),
+						"customer_name": row_value(invoice, "customer_name") or row_value(invoice, "customer"),
+						"amount": amount,
+						"cashier": row_value(invoice, "pos_cashier"),
+						"is_refund": amount < 0,
+					}
+				)
+	for payment in till_payments or ():
+		if not is_check_mode(payment.get("mode_of_payment")):
+			continue
+		amount = flt(payment.get("amount"), 2)
+		checks.append(
+			{
+				"source": payment.get("name"),
+				"number": payment.get("check_number") or "",
+				"customer": payment.get("party"),
+				"customer_name": payment.get("party_name") or payment.get("party"),
+				"amount": amount,
+				"cashier": payment.get("pos_cashier"),
+				"is_refund": amount < 0,
+			}
+		)
+	return checks
 
 
 def till_payments_by_mode(payments: list[dict]) -> dict[str, dict]:
@@ -690,6 +762,8 @@ def get_shift_summary(opening_shift: str):
 		"expected_amounts": get_shift_expected_amounts(opening, doctype, invoices, till_payments),
 		# Money taken at the till outside an invoice (order prepayments, payments on account).
 		"till_payments": till_payments_by_mode(till_payments),
+		# Each check behind the Check line's Expected, to tick off at the count (MuleCity-zegl).
+		"checks": get_shift_checks(doctype, invoices, till_payments),
 		"tax_summary": tax_summary,
 		"pos_profile": opening.pos_profile,
 		"company": opening.company,
