@@ -1022,3 +1022,74 @@ class TestShiftSummaryAccess(unittest.TestCase):
 		can_close.return_value = True
 		with patch("xpos.api.shifts.frappe.session", frappe._dict(user="manager@mulecity.com")):
 			shifts.ensure_shift_access(self.OPENING)
+
+
+class TestChecksAtTheClose(unittest.TestCase):
+	"""User story (Bill 2026-11-19, MuleCity-zegl): "add up the total value of checks in the
+	till and that should match what xpos thinks we made in checks that day". At Close Shift
+	the cashier sees every check behind the Check line's Expected (number, customer, amount):
+	a ticket paid by check (the number on the payment row), a payment on account by check
+	(the number in ``pos_check_number``, since ``reference_no`` holds the shift) and a refund
+	check written at the counter (negative). Cash and card rows are not listed."""
+
+	setUp = TestTillPaymentsInTheShift.setUp
+	_opening = TestTillPaymentsInTheShift._opening
+	_fake_get_all = TestTillPaymentsInTheShift._fake_get_all
+	SHIFT = TestTillPaymentsInTheShift.SHIFT
+	ENTRIES = TestTillPaymentsInTheShift.ENTRIES
+	CHECK_ENTRIES = TestTillPaymentsInTheShift.ENTRIES + (
+		{"name": "ACC-PAY-05009", "payment_type": "Receive", "mode_of_payment": "Check",
+		 "paid_amount": 250, "received_amount": 250, "paid_from_account_currency": "USD",
+		 "paid_to_account_currency": "USD", "party": "C-1044", "party_name": "Steve Barnes",
+		 "posting_date": "2026-11-19", "pos_cashier": "LE", "pos_check_number": "10452"},
+	)
+
+	@patch("xpos.api.shifts.payment_tender_fields_exist", return_value=False)
+	@patch("xpos.api.shifts.change_leg_table_exists", return_value=False)
+	@patch("xpos.api.shifts.get_invoice_type", return_value="Sales Invoice")
+	@patch("xpos.api.shifts.frappe")
+	def test_the_close_lists_each_check_behind_expected(self, mock_frappe, *_):
+		mock_frappe.get_doc.return_value = self._opening()
+		mock_frappe.db.get_value.return_value = "Cash"
+		mock_frappe.get_all.side_effect = self._fake_get_all(
+			invoices=[
+				{"name": "SINV-1", "currency": "USD", "grand_total": 82.4, "net_total": 82.4,
+				 "change_amount": 0, "is_return": 0, "pos_cashier": "BI", "customer": "C-2001",
+				 "customer_name": "Ada Farms"},
+				{"name": "SINV-2", "currency": "USD", "grand_total": -20, "net_total": -20,
+				 "change_amount": 0, "is_return": 1, "pos_cashier": "LE", "customer": "C-2002",
+				 "customer_name": "Bo Hill"},
+			],
+			payment_rows=[
+				{"parent": "SINV-1", "mode_of_payment": "Cash", "amount": 2.4, "idx": 1},
+				{"parent": "SINV-1", "mode_of_payment": "Check", "amount": 80, "reference_no": "3317", "idx": 2},
+				{"parent": "SINV-2", "mode_of_payment": "Check", "amount": -20, "reference_no": "88", "idx": 1},
+			],
+			entries=self.CHECK_ENTRIES,
+		)
+
+		summary = shifts.get_shift_summary(self.SHIFT)
+
+		self.assertEqual(
+			[(c["source"], c["number"], c["customer_name"], c["amount"], c["is_refund"]) for c in summary["checks"]],
+			[
+				("SINV-1", "3317", "Ada Farms", 80.0, False),
+				("SINV-2", "88", "Bo Hill", -20.0, True),
+				("ACC-PAY-05009", "10452", "Steve Barnes", 250.0, False),
+			],
+		)
+		# The list adds up to what the Check line expects (no Check float).
+		self.assertEqual(round(summary["expected_amounts"]["Check"]["amount"], 2), 310.0)
+		self.assertEqual(sum(c["amount"] for c in summary["checks"]), 310.0)
+
+	@patch("xpos.api.shifts.frappe")
+	def test_negative_no_checks_lists_nothing(self, mock_frappe):
+		mock_frappe.get_all.side_effect = self._fake_get_all(
+			payment_rows=[{"parent": "SINV-1", "mode_of_payment": "Cash", "amount": 10}],
+		)
+		invoices = [{"name": "SINV-1", "customer": "C-1"}]
+		till = [{"name": "ACC-PAY-1", "mode_of_payment": "Credit Card", "amount": 5, "party": "C-1"}]
+		self.assertEqual(shifts.get_shift_checks("Sales Invoice", invoices, till), [])
+		self.assertTrue(shifts.is_check_mode("Check"))
+		self.assertTrue(shifts.is_check_mode("Cheque"))
+		self.assertFalse(shifts.is_check_mode("Cash"))

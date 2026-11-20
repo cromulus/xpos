@@ -360,6 +360,63 @@
 							</div>
 						</div>
 					</div>
+
+					<div v-if="checks.length" data-testid="close-checks">
+						<h3 class="text-sm font-semibold text-foreground mb-1">
+							{{ __("Checks in the drawer") }}
+						</h3>
+						<p class="text-xs text-muted-foreground mb-2">
+							{{ __("Tick each paper check off this list, then type their total in Closing for Check.") }}
+						</p>
+						<div class="border border-border rounded-lg overflow-hidden">
+							<div class="overflow-x-auto">
+								<table class="w-full text-sm">
+									<thead class="bg-muted">
+										<tr>
+											<th class="text-start px-4 py-2 text-muted-foreground font-medium">
+												{{ __("Check #") }}
+											</th>
+											<th class="text-start px-4 py-2 text-muted-foreground font-medium">
+												{{ __("Customer") }}
+											</th>
+											<th class="text-end px-4 py-2 text-muted-foreground font-medium">
+												{{ __("Amount") }}
+											</th>
+										</tr>
+									</thead>
+									<tbody>
+										<tr
+											v-for="row in checks"
+											:key="`${row.source}-${row.number}-${row.amount}`"
+											class="border-t border-border"
+											data-testid="close-check-row"
+										>
+											<td class="px-4 py-2 font-medium text-foreground">
+												{{ row.number || __("(no number)") }}
+											</td>
+											<td class="px-4 py-2">
+												{{ row.customer_name || row.customer }}
+												<span v-if="row.is_refund" class="text-xs text-muted-foreground">
+													&middot; {{ __("refund check written") }}
+												</span>
+											</td>
+											<td class="px-4 py-2 text-end">{{ money(row.amount) }}</td>
+										</tr>
+									</tbody>
+									<tfoot>
+										<tr class="border-t border-border bg-muted/50">
+											<td class="px-4 py-2 font-semibold" colspan="2">
+												{{ __("{0} check(s)", [String(checks.length)]) }}
+											</td>
+											<td class="px-4 py-2 text-end font-semibold" data-testid="close-checks-total">
+												{{ money(checksTotal) }}
+											</td>
+										</tr>
+									</tfoot>
+								</table>
+							</div>
+						</div>
+					</div>
 				</template>
 			</div>
 
@@ -410,6 +467,7 @@ import { formatFor, precisionFor, roundFor } from "@/composables/useCurrency";
 import type {
 	POSClosingShiftTax,
 	ShiftCashierTotals,
+	ShiftCheck,
 	ShiftModeTotal,
 	ShiftTillPayments,
 } from "@/types/pos.types";
@@ -440,6 +498,8 @@ interface ClosingSummary {
 	by_cashier?: ShiftCashierTotals[];
 	// Payment Entries taken at the till, per mode; already in expected_amounts (MuleCity-49ue).
 	till_payments?: Record<string, ShiftTillPayments>;
+	// Each check behind the Check line's Expected (MuleCity-zegl).
+	checks?: ShiftCheck[];
 	[key: string]: unknown;
 }
 
@@ -475,6 +535,8 @@ function pendingCardHere(): PendingCardPayment | null {
 }
 const pendingCard = ref<PendingCardPayment | null>(pendingCardHere());
 const closeBlocked = computed(() => queueBlocksClose(queue.value) || !!pendingCard.value);
+const checks = computed<ShiftCheck[]>(() => summary.value?.checks || []);
+const checksTotal = computed(() => roundFor(posStore.invoiceCurrency, checks.value.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)));
 const hasTillPayments = computed(() => Object.keys(summary.value?.till_payments || {}).length > 0);
 const SYNC_WAIT_MS = 500;
 const SYNC_WAIT_TRIES = 120;

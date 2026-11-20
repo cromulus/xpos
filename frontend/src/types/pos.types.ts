@@ -949,6 +949,20 @@ export interface ShiftTillPayments {
 	currency: string;
 }
 
+/** One check behind the close's Check line (xpos.api.shifts.get_shift_checks, MuleCity-zegl). */
+export interface ShiftCheck {
+	/** The invoice or Payment Entry that took it. */
+	source: string;
+	/** The number printed on the check ("" if it was taken without one). */
+	number: string;
+	customer: string;
+	customer_name: string;
+	/** Negative for a refund check written at the counter. */
+	amount: number;
+	cashier?: string | null;
+	is_refund: boolean;
+}
+
 export interface ShiftSummary {
 	net_total: number;
 	grand_total: number;
@@ -959,6 +973,7 @@ export interface ShiftSummary {
 	opening_balances: Record<string, ShiftModeTotal>;
 	expected_amounts: Record<string, ShiftModeTotal>;
 	till_payments?: Record<string, ShiftTillPayments>;
+	checks?: ShiftCheck[];
 	tax_summary: POSClosingShiftTax[];
 	pos_profile: string;
 	company: string;

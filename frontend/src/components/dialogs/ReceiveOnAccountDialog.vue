@@ -49,6 +49,7 @@
 						:placeholder="__('Select mode of payment')"
 					/>
 				</div>
+				<CheckNumberField v-if="paidByCheck" v-model="checkNumber" />
 				<CashierInitialsField
 					v-if="till.required.value"
 					v-model="till.initials.value"
@@ -96,6 +97,8 @@ import { Select } from "@/components/ui/select";
 import { Banknote, Loader2 } from "lucide-vue-next";
 import { __ } from "@/lib/translate";
 import CashierInitialsField from "@/components/dialogs/CashierInitialsField.vue";
+import CheckNumberField from "@/components/dialogs/CheckNumberField.vue";
+import { checkNumberProblem, cleanCheckNumber, isCheckMode } from "@/utils/checkTender";
 import { useTillCashier } from "@/composables/useTillCashier";
 
 const props = defineProps<{ customer: string | null; customerLabel?: string; balance: number }>();
@@ -109,6 +112,10 @@ const toCents = (value: number) => roundTo(Number(value) || 0, moneyPrecision.va
 
 const amount = ref(0);
 const modeOfPayment = ref("");
+// A check needs its number (MuleCity-zegl), saved on the Payment Entry.
+const checkNumber = ref("");
+const paidByCheck = computed(() => isCheckMode(modeOfPayment.value));
+const checkOk = computed(() => !paidByCheck.value || !checkNumberProblem(checkNumber.value));
 const isSaving = ref(false);
 // On the shared login, who took the money (MuleCity-b9df), as at Pay.
 const till = useTillCashier();
@@ -122,7 +129,7 @@ const modeOptions = computed(() =>
 
 const overBalance = computed(() => amount.value > props.balance + 0.009);
 const canSubmit = computed(
-	() => !isSaving.value && amount.value > 0 && !!modeOfPayment.value && till.ok.value,
+	() => !isSaving.value && amount.value > 0 && !!modeOfPayment.value && checkOk.value && till.ok.value,
 );
 
 watch(
@@ -130,6 +137,7 @@ watch(
 	(customer) => {
 		if (!customer) return;
 		till.reset();
+		checkNumber.value = "";
 		amount.value = toCents(Math.max(Number(props.balance) || 0, 0));
 		modeOfPayment.value =
 			posStore.posProfile?.payments?.find((p) => p.default)?.mode_of_payment ||
@@ -154,6 +162,7 @@ async function submit() {
 			customer: props.customer,
 			amount: toCents(amount.value),
 			mode_of_payment: modeOfPayment.value,
+			...(paidByCheck.value ? { check_number: cleanCheckNumber(checkNumber.value) } : {}),
 			pos_opening_shift: shiftName,
 			pos_profile: posStore.profileName,
 			...till.payload(),
