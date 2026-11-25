@@ -1,5 +1,18 @@
 # Mule City XPOS release notes
 
+## mule-v2.10.1-mc67 (contains mc66)
+
+Tag on `6be2753` (mule-bill-preview: mc66 + mule-counter-checks + mix v2 till
+work). Pinned by mulecity-full `lane/mix-v2-release` (MuleCity-nd08.13).
+
+- Pickup and delivery day start at the site's ready date (two business days
+  out) instead of today (MuleCity-nd08.1, `3c7b008`).
+- The till's mix card shows protein, fat and fiber against the mix's targets
+  (MuleCity-nd08.5, `9499188`).
+- Counter checks: a check payment needs its number and a named customer; the
+  shift close lists each check (MuleCity-zegl, `bfe056a`). The Mule app's
+  `pos_check_number` field ships in the same Mule release.
+
 ## Unreleased (branch xpos-seams): XPOS names no site app (MuleCity-py8t.76)
 
 XPOS no longer imports or calls mulecity_erpnext. A site plugs in through the
